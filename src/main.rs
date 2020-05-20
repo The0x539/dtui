@@ -1,9 +1,11 @@
 use deluge_rpc::*;
 use deluge_rpc_macro::Query;
-use cursive::traits::*;
 use tokio::sync::mpsc;
 use cursive::event::Event;
 use std::collections::HashMap;
+use cursive::traits::*;
+use cursive::views::{LinearLayout, TextView};
+use cursive::direction::Orientation;
 
 mod views;
 use views::*;
@@ -69,9 +71,12 @@ async fn main() -> deluge_rpc::Result<()> {
     let (torrent_send, torrent_recv) = mpsc::channel(10);
     let (mut shutdown_send, shutdown_recv) = mpsc::channel(1);
 
-    let torrents = TorrentsView::new(session.get_torrents_status(None).await?, torrent_recv);
+    let torrents = TorrentsView::new(session.get_torrents_status(None).await?, torrent_recv).with_name("torrents");
     let filters = FiltersView::new(session.get_filter_tree(true, &[]).await?, filter_send);
-    let main_ui = DelugeView::new(torrents, filters);
+    let details = TextView::new("torrent details");
+
+    let torrents_ui = LinearLayout::new(Orientation::Horizontal).child(filters).child(torrents);
+    let main_ui = LinearLayout::new(Orientation::Vertical).child(torrents_ui).child(details);
 
     let session_thread = tokio::spawn(manage_session(session, filter_recv, torrent_send, shutdown_recv));
 
