@@ -4,7 +4,6 @@ use std::collections::HashMap;
 use cursive::event::{Event, EventResult, MouseEvent, MouseButton};
 use cursive::vec::Vec2;
 use cursive::theme::Effect;
-use cursive::view::ScrollBase;
 use tokio::sync::mpsc;
 
 #[derive(Default)]
@@ -145,6 +144,12 @@ impl FiltersView {
     }
 }
 
+impl super::ScrollInner for FiltersView {
+    fn draw_row(&self, printer: &Printer, row: usize) {
+        self.draw_row(printer, row);
+    }
+}
+
 impl View for FiltersView {
     fn draw(&self, printer: &Printer) {
         for y in 0..printer.output_size.y {
@@ -158,7 +163,7 @@ impl View for FiltersView {
         }
     }
 
-    fn required_size(&mut self, constraint: Vec2) -> Vec2 {
+    fn required_size(&mut self, _: Vec2) -> Vec2 {
         (self.content_width(), self.content_height()).into()
     }
 
