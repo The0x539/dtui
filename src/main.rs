@@ -26,7 +26,7 @@ struct Torrent {
     state: TorrentState,
     total_size: u64,
     progress: f32,
-    upload_payload_rate: f64,
+    upload_payload_rate: u64,
 }
 
 async fn manage_session(

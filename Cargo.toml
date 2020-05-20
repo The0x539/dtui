@@ -11,6 +11,7 @@ cursive = { version = "*", default-features = false, features = ["crossterm-back
 deluge-rpc = "0.2.1"
 deluge-rpc-macro = "0.2.1"
 serde_yaml = "*"
+human_format = "*"
 
 [patch.crates-io]
 webpki = { path = "./experiment/webpki" }

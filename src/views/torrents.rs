@@ -9,6 +9,7 @@ use cursive::view::ScrollBase;
 use std::cell::Cell;
 use tokio::sync::mpsc;
 use crate::TorrentsUpdate;
+use human_format::{Formatter, Scales};
 
 type Receiver = mpsc::Receiver<TorrentsUpdate>;
 
@@ -31,12 +32,20 @@ impl std::fmt::Display for Column {
     }
 }
 
+// TODO: move to a more general scope; this will be useful elsewhere
+fn fmt_bytes(amt: u64, units: &str) -> String {
+    Formatter::new()
+        .with_scales(Scales::Binary())
+        .with_units(units)
+        .format(amt as f64)
+}
+
 fn cell(tor: &Torrent, col: Column) -> String {
     match col {
         Column::Name => tor.name.clone(),
         Column::State => format!("{} {:.2}%", tor.state, tor.progress),
-        Column::Size => tor.total_size.to_string(),
-        Column::Speed => tor.upload_payload_rate.to_string(),
+        Column::Size => fmt_bytes(tor.total_size, "B"),
+        Column::Speed => fmt_bytes(tor.upload_payload_rate, "B/s"),
     }
 }
 
