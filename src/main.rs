@@ -21,25 +21,36 @@ struct Torrent {
     progress: f32,
 }
 
-async fn update_stuff(
+async fn manage_session(
     mut session: Session,
-    mut filter_recv: mpsc::Receiver<HashMap<String, String>>,
-    mut torrent_send: mpsc::Sender<HashMap<InfoHash, Torrent>>,
-) {
+    mut filters: mpsc::Receiver<HashMap<String, String>>,
+    mut torrents: mpsc::Sender<HashMap<InfoHash, Torrent>>,
+    mut shutdown: mpsc::Receiver<()>,
+) -> Session {
     loop {
-        let new_filters = filter_recv.recv().await.expect("uhhhhhh")
-            .into_iter()
-            .map(|(k, v)| (k, serde_yaml::Value::from(v)))
-            .collect();
-        let new_torrents = session.get_torrents_status::<Torrent>(Some(new_filters)).await.unwrap();
-        torrent_send.send(new_torrents).await.unwrap();
+        tokio::select! {
+            new_filters = filters.recv() => {
+                let new_filters = new_filters.unwrap()
+                    .into_iter()
+                    .map(|(k, v)| (k, serde_yaml::Value::from(v.as_str())))
+                    .collect();
+                let new_torrents = session.get_torrents_status::<Torrent>(Some(new_filters)).await.unwrap();
+                torrents.send(new_torrents).await.unwrap();
+            }
+            _ = shutdown.recv() => {
+                break;
+            }
+        }
+
+        std::thread::sleep(std::time::Duration::from_secs(1));
     }
+
+    session
 }
 
 #[tokio::main]
 async fn main() -> deluge_rpc::Result<()> {
     let mut session = Session::new(read_file("./experiment/endpoint")).await?;
-
 
     let user = read_file("./experiment/username");
     let pass = read_file("./experiment/password");
@@ -48,11 +59,12 @@ async fn main() -> deluge_rpc::Result<()> {
     
     let (filter_send, filter_recv) = mpsc::channel(10);
     let (torrent_send, torrent_recv) = mpsc::channel(10);
+    let (mut shutdown_send, shutdown_recv) = mpsc::channel(1);
 
     let torrents = TorrentsView::new(session.get_torrents_status(None).await?, torrent_recv);
     let filters = FiltersView::new(session.get_filter_tree(true, &[]).await?, filter_send);
 
-    tokio::spawn(update_stuff(session, filter_recv, torrent_send));
+    let session_thread = tokio::spawn(manage_session(session, filter_recv, torrent_send, shutdown_recv));
 
     let mut mux = Mux::new();
     let main_pane = mux.add_right_of(torrents.with_name("torrents"), mux.root().build().unwrap()).unwrap();
@@ -67,5 +79,7 @@ async fn main() -> deluge_rpc::Result<()> {
     
     siv.run();
 
-    Ok(())
+    shutdown_send.send(()).await.unwrap();
+
+    session_thread.await.unwrap().close().await
 }
