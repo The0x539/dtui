@@ -25,6 +25,7 @@ struct Torrent {
     state: TorrentState,
     total_size: u64,
     progress: f32,
+    upload_payload_rate: f64,
 }
 
 async fn manage_session(
@@ -45,14 +46,12 @@ async fn manage_session(
                 torrents.send(TorrentsUpdate::Replace(new_torrents)).await.unwrap();
             }
             _ = shutdown.recv() => break,
-            else => {
+            _ = tokio::time::delay_for(tokio::time::Duration::from_secs(1)) => {
                 // TODO: change API to accept an &Option?
                 let delta = session.get_torrents_status_diff::<Torrent>(filter_dict.clone()).await.unwrap();
                 torrents.send(TorrentsUpdate::Delta(delta)).await.unwrap();
             }
         }
-
-        std::thread::sleep(std::time::Duration::from_secs(1));
     }
 
     session

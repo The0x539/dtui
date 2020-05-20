@@ -24,7 +24,7 @@ pub(crate) struct TorrentsView {
 }
 
 #[derive(Debug, Copy, Clone)]
-enum Column { Name, State, Size, Progress }
+enum Column { Name, State, Size, Speed }
 impl std::fmt::Display for Column {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         std::fmt::Debug::fmt(self, f)
@@ -34,9 +34,9 @@ impl std::fmt::Display for Column {
 fn cell(tor: &Torrent, col: Column) -> String {
     match col {
         Column::Name => tor.name.clone(),
-        Column::State => tor.state.to_string(),
+        Column::State => format!("{} {:.2}%", tor.state, tor.progress),
         Column::Size => tor.total_size.to_string(),
-        Column::Progress => format!("{:.2}%", tor.progress),
+        Column::Speed => tor.upload_payload_rate.to_string(),
     }
 }
 
@@ -48,7 +48,7 @@ impl TorrentsView {
             (Column::Name, 30),
             (Column::State, 15),
             (Column::Size, 15),
-            (Column::Progress, 15),
+            (Column::Speed, 15),
         ];
         let scrollbase = ScrollBase { content_height: rows.len(), ..Default::default() };
         let offset = Cell::new(Vec2::zero());
