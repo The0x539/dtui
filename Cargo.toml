@@ -1,0 +1,19 @@
+[package]
+name = "dtui"
+version = "0.1.0"
+authors = ["The0x539 <the0x539@gmail.com>"]
+edition = "2018"
+
+[dependencies]
+serde = "*"
+tokio = "*"
+cursive = { version = "*", default-features = false, features = ["crossterm-backend"] }
+cursive-multiplex = "*"
+cursive_tree_view = "*"
+#deluge-rpc = "0.2.0"
+deluge-rpc.path = "../deluge-rpc"
+#deluge-rpc-macro = "0.2.0"
+deluge-rpc-macro.path = "../deluge-rpc/experiment/deluge-rpc-macro"
+
+[patch.crates-io]
+webpki = { path = "./experiment/webpki" }
