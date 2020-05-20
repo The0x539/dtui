@@ -9,11 +9,9 @@ serde = "*"
 tokio = "*"
 cursive = { version = "*", default-features = false, features = ["crossterm-backend"] }
 cursive-multiplex = "*"
-cursive_tree_view = "*"
-#deluge-rpc = "0.2.0"
-deluge-rpc.path = "../deluge-rpc"
-#deluge-rpc-macro = "0.2.0"
-deluge-rpc-macro.path = "../deluge-rpc/experiment/deluge-rpc-macro"
+deluge-rpc = "0.2.1"
+deluge-rpc-macro = "0.2.1"
+serde_yaml = "*"
 
 [patch.crates-io]
 webpki = { path = "./experiment/webpki" }

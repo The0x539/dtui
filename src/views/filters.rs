@@ -5,6 +5,7 @@ use cursive::event::{Event, EventResult, MouseEvent, MouseButton};
 use cursive::vec::Vec2;
 use cursive::theme::Effect;
 use cursive::view::ScrollBase;
+use tokio::sync::mpsc;
 
 #[derive(Default)]
 struct Category {
@@ -71,26 +72,31 @@ impl Category {
     }
 }
 
-#[derive(Default)]
+type Sender = mpsc::Sender<HashMap<String, String>>;
+
 pub(crate) struct FiltersView {
     categories: Vec<Category>,
     scrollbase: ScrollBase,
+    filter_updates: Sender,
 }
 
 impl FiltersView {
-    pub(crate) fn new(filter_tree: HashMap<String, Vec<(String, u64)>>) -> Self {
+    pub(crate) fn new(filter_tree: HashMap<String, Vec<(String, u64)>>, sender: Sender) -> Self {
         let mut categories = Vec::new();
         for (name, filters) in filter_tree {
             let category = Category { name, filters, ..Default::default() };
             categories.push(category);
         }
-        let mut obj = Self::default();
-        obj.categories = categories;
+        let mut obj = Self {
+            categories,
+            scrollbase: Default::default(),
+            filter_updates: sender,
+        };
         obj.scrollbase.content_height = obj.content_height();
         obj
     }
 
-    pub fn active_filters(&self) -> Vec<(String, String)> {
+    pub fn active_filters(&self) -> HashMap<String, String> {
         self.categories
             .iter()
             .filter(|c| c.active_filter.is_some())
@@ -102,6 +108,11 @@ impl FiltersView {
                 _ => true,
             })
             .collect()
+    }
+    
+    fn update_filters(&mut self) {
+        let active_filters = self.active_filters();
+        self.filter_updates.try_send(active_filters).unwrap();
     }
 
     fn click(&mut self, mut row: usize) {
@@ -118,7 +129,7 @@ impl FiltersView {
                     break;
                 },
                 ClickResult::UpdatedFilters => {
-                    todo!();
+                    self.update_filters();
                     break;
                 }
             }

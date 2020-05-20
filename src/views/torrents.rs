@@ -7,6 +7,9 @@ use cursive::vec::Vec2;
 use cursive::event::{Event, EventResult, MouseEvent, MouseButton};
 use cursive::view::ScrollBase;
 use std::cell::Cell;
+use tokio::sync::mpsc;
+
+type Receiver = mpsc::Receiver<HashMap<InfoHash, Torrent>>;
 
 #[derive(Debug)]
 pub(crate) struct TorrentsView {
@@ -16,6 +19,7 @@ pub(crate) struct TorrentsView {
     scrollbase: ScrollBase,
     // Don't trust the offset provided by on_event because of a bug in Mux
     offset: Cell<Vec2>,
+    updates: Receiver,
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -36,7 +40,7 @@ fn cell(tor: &Torrent, col: Column) -> String {
 }
 
 impl TorrentsView {
-    pub(crate) fn new(torrents: HashMap<InfoHash, Torrent>) -> Self {
+    pub(crate) fn new(torrents: HashMap<InfoHash, Torrent>, updates: Receiver) -> Self {
         let mut rows: Vec<InfoHash> = torrents.keys().copied().collect();
         rows.sort_by(|a, b| torrents[a].name.cmp(&torrents[b].name));
         let columns = vec![
@@ -45,9 +49,25 @@ impl TorrentsView {
             (Column::Size, 15),
             (Column::Progress, 15),
         ];
-        let scrollbase = ScrollBase::new();
+        let scrollbase = ScrollBase { content_height: rows.len(), ..Default::default() };
         let offset = Cell::new(Vec2::zero());
-        Self { torrents, rows, columns, scrollbase, offset }
+        Self { torrents, rows, columns, scrollbase, offset, updates }
+    }
+
+    pub fn replace_torrents(&mut self, torrents: HashMap<InfoHash, Torrent>) {
+        let mut rows: Vec<InfoHash> = torrents.keys().copied().collect();
+        rows.sort_by(|a, b| torrents[a].name.cmp(&torrents[b].name));
+        self.scrollbase.content_height = rows.len();
+        self.torrents = torrents;
+        self.rows = rows;
+    }
+
+    pub fn update_torrents(&mut self) {
+        match self.updates.try_recv() {
+            Ok(new_torrents) => self.replace_torrents(new_torrents),
+            Err(mpsc::error::TryRecvError::Empty) => (),
+            Err(_) => panic!(),
+        }
     }
 
     fn draw_header(&self, printer: &Printer) {
@@ -98,7 +118,7 @@ impl View for TorrentsView {
 
     fn layout(&mut self, constraint: Vec2) {
         self.columns[0].1 = constraint.x - 49;
-        self.scrollbase.set_heights(constraint.y - 2, self.rows.len());
+        self.scrollbase.view_height = constraint.y - 2;
     }
 
     fn take_focus(&mut self, _: cursive::direction::Direction) -> bool { true }
@@ -114,10 +134,12 @@ impl View for TorrentsView {
                     self.scrollbase.scroll_down(1);
                     EventResult::Consumed(None)
                 },
-                MouseEvent::Press(MouseButton::Left) => {
+                MouseEvent::Press(MouseButton::Left)=> {
                     let mut pos = position.saturating_sub(self.offset.get());
                     pos.y = pos.y.saturating_sub(2);
-                    self.scrollbase.start_drag(pos, self.width());
+                    if self.scrollbase.content_height > self.scrollbase.view_height {
+                        self.scrollbase.start_drag(pos, self.width());
+                    }
                     EventResult::Consumed(None)
                 },
                 MouseEvent::Hold(MouseButton::Left) => {
