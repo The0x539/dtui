@@ -1,6 +1,5 @@
 use deluge_rpc::*;
 use deluge_rpc_macro::Query;
-use cursive_multiplex::Mux;
 use cursive::traits::*;
 use tokio::sync::mpsc;
 use cursive::event::Event;
@@ -72,19 +71,15 @@ async fn main() -> deluge_rpc::Result<()> {
 
     let torrents = TorrentsView::new(session.get_torrents_status(None).await?, torrent_recv);
     let filters = FiltersView::new(session.get_filter_tree(true, &[]).await?, filter_send);
+    let main_ui = DelugeView::new(torrents, filters);
 
     let session_thread = tokio::spawn(manage_session(session, filter_recv, torrent_send, shutdown_recv));
-
-    let mut mux = Mux::new();
-    let main_pane = mux.add_right_of(torrents.with_name("torrents"), mux.root().build().unwrap()).unwrap();
-    mux.add_left_of(filters, main_pane).unwrap();
-    mux.set_focus(main_pane);
 
     let mut siv = cursive::default();
     siv.set_fps(1);
     siv.add_global_callback('q', |s| s.quit());
     siv.add_global_callback(Event::Refresh, |s| { s.call_on_name("torrents", TorrentsView::refresh); });
-    siv.add_fullscreen_layer(mux);
+    siv.add_fullscreen_layer(main_ui);
     
     siv.run();
 

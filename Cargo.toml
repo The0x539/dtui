@@ -8,7 +8,6 @@ edition = "2018"
 serde = "*"
 tokio = "*"
 cursive = { version = "*", default-features = false, features = ["crossterm-backend"] }
-cursive-multiplex = "*"
 deluge-rpc = "0.2.1"
 deluge-rpc-macro = "0.2.1"
 serde_yaml = "*"
