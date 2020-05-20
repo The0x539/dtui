@@ -13,6 +13,12 @@ fn read_file(path: &str) -> String {
     std::fs::read_to_string(path).unwrap()
 }
 
+#[derive(Debug)]
+enum TorrentsUpdate {
+    Replace(HashMap<InfoHash, Torrent>),
+    Delta(HashMap<InfoHash, <Torrent as Query>::Diff>),
+}
+
 #[derive(Clone, Debug, serde::Deserialize, Query)]
 struct Torrent {
     name: String,
@@ -24,21 +30,25 @@ struct Torrent {
 async fn manage_session(
     mut session: Session,
     mut filters: mpsc::Receiver<HashMap<String, String>>,
-    mut torrents: mpsc::Sender<HashMap<InfoHash, Torrent>>,
+    mut torrents: mpsc::Sender<TorrentsUpdate>,
     mut shutdown: mpsc::Receiver<()>,
 ) -> Session {
+    let mut filter_dict = None;
     loop {
         tokio::select! {
             new_filters = filters.recv() => {
-                let new_filters = new_filters.unwrap()
+                filter_dict = Some(new_filters.unwrap()
                     .into_iter()
                     .map(|(k, v)| (k, serde_yaml::Value::from(v.as_str())))
-                    .collect();
-                let new_torrents = session.get_torrents_status::<Torrent>(Some(new_filters)).await.unwrap();
-                torrents.send(new_torrents).await.unwrap();
+                    .collect());
+                let new_torrents = session.get_torrents_status(filter_dict.clone()).await.unwrap();
+                torrents.send(TorrentsUpdate::Replace(new_torrents)).await.unwrap();
             }
-            _ = shutdown.recv() => {
-                break;
+            _ = shutdown.recv() => break,
+            else => {
+                // TODO: change API to accept an &Option?
+                let delta = session.get_torrents_status_diff::<Torrent>(filter_dict.clone()).await.unwrap();
+                torrents.send(TorrentsUpdate::Delta(delta)).await.unwrap();
             }
         }
 
@@ -74,7 +84,7 @@ async fn main() -> deluge_rpc::Result<()> {
     let mut siv = cursive::default();
     siv.set_fps(1);
     siv.add_global_callback('q', |s| s.quit());
-    siv.add_global_callback(Event::Refresh, |s| s.call_on_name("torrents", TorrentsView::update_torrents).unwrap());
+    siv.add_global_callback(Event::Refresh, |s| { s.call_on_name("torrents", TorrentsView::refresh); });
     siv.add_fullscreen_layer(mux);
     
     siv.run();

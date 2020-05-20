@@ -8,8 +8,9 @@ use cursive::event::{Event, EventResult, MouseEvent, MouseButton};
 use cursive::view::ScrollBase;
 use std::cell::Cell;
 use tokio::sync::mpsc;
+use crate::TorrentsUpdate;
 
-type Receiver = mpsc::Receiver<HashMap<InfoHash, Torrent>>;
+type Receiver = mpsc::Receiver<TorrentsUpdate>;
 
 #[derive(Debug)]
 pub(crate) struct TorrentsView {
@@ -58,15 +59,33 @@ impl TorrentsView {
         let mut rows: Vec<InfoHash> = torrents.keys().copied().collect();
         rows.sort_by(|a, b| torrents[a].name.cmp(&torrents[b].name));
         self.scrollbase.content_height = rows.len();
+        self.scrollbase.start_line = 0;
         self.torrents = torrents;
         self.rows = rows;
     }
 
-    pub fn update_torrents(&mut self) {
-        match self.updates.try_recv() {
-            Ok(new_torrents) => self.replace_torrents(new_torrents),
-            Err(mpsc::error::TryRecvError::Empty) => (),
-            Err(_) => panic!(),
+    pub fn apply_delta(&mut self, delta: HashMap<InfoHash, <Torrent as Query>::Diff>) {
+        for (hash, diff) in delta {
+            if self.torrents.contains_key(&hash) {
+                self.torrents.get_mut(&hash).unwrap().update(diff);
+            }
+        }
+    }
+
+    pub fn perform_update(&mut self, update: TorrentsUpdate) {
+        match update {
+            TorrentsUpdate::Replace(new_torrents) => self.replace_torrents(new_torrents),
+            TorrentsUpdate::Delta(delta) => self.apply_delta(delta),
+        }
+    }
+
+    pub fn refresh(&mut self) {
+        loop {
+            match self.updates.try_recv() {
+                Ok(update) => self.perform_update(update),
+                Err(mpsc::error::TryRecvError::Empty) => break,
+                Err(_) => panic!(),
+            }
         }
     }
 
