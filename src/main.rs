@@ -72,7 +72,7 @@ async fn main() -> deluge_rpc::Result<()> {
     let (mut shutdown_send, shutdown_recv) = mpsc::channel(1);
 
     let torrents = TorrentsView::new(session.get_torrents_status(None).await?, torrent_recv).with_name("torrents");
-    let filters = FiltersView::new(session.get_filter_tree(true, &[]).await?, filter_send);
+    let filters = FiltersView::new(session.get_filter_tree(true, &[]).await?, filter_send).scrollable();
     let details = TextView::new("torrent details");
 
     let torrents_ui = LinearLayout::new(Orientation::Horizontal).child(filters).child(torrents);

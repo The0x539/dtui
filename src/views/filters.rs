@@ -17,7 +17,7 @@ struct Category {
 
 enum ClickResult {
     KeepGoing(usize),
-    Collapsed(usize, bool),
+    Collapsed,
     UpdatedFilters,
 }
 
@@ -43,7 +43,7 @@ impl Category {
     fn click(&mut self, row: usize) -> ClickResult {
         if row == 0 {
             self.collapsed = !self.collapsed;
-            ClickResult::Collapsed(self.len(), self.collapsed)
+            ClickResult::Collapsed
         } else if row < self.content_height() {
             self.active_filter = Some(self.filters[row - 1].0.clone());
             ClickResult::UpdatedFilters
@@ -76,7 +76,6 @@ type Sender = mpsc::Sender<HashMap<String, String>>;
 
 pub(crate) struct FiltersView {
     categories: Vec<Category>,
-    scrollbase: ScrollBase,
     filter_updates: Sender,
 }
 
@@ -87,13 +86,10 @@ impl FiltersView {
             let category = Category { name, filters, ..Default::default() };
             categories.push(category);
         }
-        let mut obj = Self {
+        Self {
             categories,
-            scrollbase: Default::default(),
             filter_updates: sender,
-        };
-        obj.scrollbase.content_height = obj.content_height();
-        obj
+        }
     }
 
     pub fn active_filters(&self) -> HashMap<String, String> {
@@ -114,20 +110,13 @@ impl FiltersView {
         let active_filters = self.active_filters();
         self.filter_updates.try_send(active_filters).unwrap();
     }
-
+    
+    // This appears to be broken when scrolling. Ugh.
     fn click(&mut self, mut row: usize) {
         for category in &mut self.categories {
             match category.click(row) {
                 ClickResult::KeepGoing(new_row) => row = new_row,
-                ClickResult::Collapsed(delta_h, should_subtract) => {
-                    let h = self.scrollbase.content_height;
-                    self.scrollbase.content_height = if should_subtract {
-                        h.saturating_sub(delta_h)
-                    } else {
-                        h.saturating_add(delta_h)
-                    };
-                    break;
-                },
+                ClickResult::Collapsed => break,
                 ClickResult::UpdatedFilters => {
                     self.update_filters();
                     break;
@@ -144,28 +133,33 @@ impl FiltersView {
         self.categories.iter().map(Category::content_height).sum()
     }
 
-    fn draw_row(&self, printer: &Printer, mut row: usize) {
+    fn draw_row(&self, printer: &Printer, mut row: usize) -> bool {
         for category in &self.categories {
             if let Some(new_row) = category.draw_row(&printer, row) {
                 row = new_row;
             } else {
-                break;
+                return false;
             }
         }
+        return true;
     }
 }
 
 impl View for FiltersView {
     fn draw(&self, printer: &Printer) {
-        self.scrollbase.draw(printer, |p, r| self.draw_row(p, r));
+        for y in 0..printer.output_size.y {
+            let row = printer.content_offset.y + y;
+            let printer = &printer
+                .offset((0, row))
+                .cropped((printer.output_size.x, 1));
+            if self.draw_row(printer, row) {
+                break;
+            }
+        }
     }
 
     fn required_size(&mut self, constraint: Vec2) -> Vec2 {
-        Vec2 { x: self.content_width() + 1, y: constraint.y }
-    }
-
-    fn layout(&mut self, constraint: Vec2) {
-        self.scrollbase.view_height = constraint.y;
+        (self.content_width(), self.content_height()).into()
     }
 
     fn take_focus(&mut self, _: cursive::direction::Direction) -> bool { true }
