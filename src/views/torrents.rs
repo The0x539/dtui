@@ -126,16 +126,17 @@ impl View for TorrentsView {
         let Vec2 { x: w, y: h } = printer.size;
         let mut x = 0;
         for (_column, width) in &self.columns {
-            printer.print_hline((x, 1), *width, "-");
+            printer.print_hline((x, 1), *width, "─");
             x += width;
             if x == w - 1 {
-                printer.print((x, 1), "-");
+                printer.print((x, 1), "─");
                 break;
             }
-            printer.print_vline((x, 0), h, "|");
-            printer.print((x, 1), "+");
+            printer.print_vline((x, 0), h, "│");
+            printer.print((x, 1), "┼");
             x += 1;
         }
+        printer.print((0, 1), "╶");
         self.draw_header(printer);
         self.scrollbase.draw(&printer.offset((0, 2)), |p, i| self.draw_row(p, i));
     }
