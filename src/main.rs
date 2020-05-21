@@ -47,10 +47,7 @@ async fn manage_session(
     loop {
         tokio::select! {
             new_filters = filters.recv() => {
-                filter_dict = Some(new_filters.unwrap()
-                    .into_iter()
-                    .map(|(k, v)| (k, serde_yaml::Value::from(v.as_str())))
-                    .collect());
+                filter_dict = Some(new_filters.unwrap());
                 let new_torrents = session.get_torrents_status(filter_dict.clone()).await.unwrap();
                 torrents.send(TorrentsUpdate::Replace(new_torrents)).await.unwrap();
             }
@@ -66,7 +63,7 @@ async fn manage_session(
             _ = shutdown.recv() => break,
             _ = tokio::time::delay_for(tokio::time::Duration::from_secs(1)) => {
                 // TODO: change API to accept an &Option?
-                let delta = session.get_torrents_status_diff::<Torrent>(filter_dict.clone()).await.unwrap();
+                let delta = session.get_torrents_status_diff::<Torrent, _>(filter_dict.clone()).await.unwrap();
                 torrents.send(TorrentsUpdate::Delta(delta)).await.unwrap();
             }
         }
@@ -89,7 +86,7 @@ async fn main() -> deluge_rpc::Result<()> {
     let (mut shutdown_send, shutdown_recv) = mpsc::channel(1);
     let (command_send, command_recv) = mpsc::channel(20);
 
-    let torrents = TorrentsView::new(session.get_torrents_status(None).await?, torrent_recv).with_name("torrents");
+    let torrents = TorrentsView::new(session.get_torrents_status::<_, ()>(None).await?, torrent_recv).with_name("torrents");
     let filters = FiltersView::new(session.get_filter_tree(true, &[]).await?, filter_send).into_scroll_wrapper();
 
     let status_tab = TextView::new("Torrent status (todo)");
