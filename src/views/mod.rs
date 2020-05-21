@@ -6,4 +6,4 @@ mod border;
 pub(crate) use torrents::TorrentsView;
 pub(crate) use filters::FiltersView;
 pub(crate) use scroll::ScrollInner;
-pub(crate) use border::{BorderType, BorderView};
+pub(crate) use border::*;

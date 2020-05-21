@@ -73,19 +73,13 @@ async fn main() -> deluge_rpc::Result<()> {
 
     let torrents = TorrentsView::new(session.get_torrents_status(None).await?, torrent_recv).with_name("torrents");
     let filters = FiltersView::new(session.get_filter_tree(true, &[]).await?, filter_send).into_scroll_wrapper();
-    let details = TextView::new("torrent details");
+    let details = TextView::new("session status (todo)");
 
     // This is so dumb. There should be a widget that draws these borders for me.
     let torrents_ui = LinearLayout::new(Orientation::Horizontal)
-        .child(LinearLayout::new(Orientation::Vertical)
-               .child(filters)
-               .child(BorderView(BorderType::Horizontal, "─")))
-        .child(LinearLayout::new(Orientation::Vertical)
-               .child(BorderView(BorderType::Vertical, "│"))
-               .child(BorderView(BorderType::Cell, "┴")))
-        .child(LinearLayout::new(Orientation::Vertical)
-               .child(torrents)
-               .child(BorderView(BorderType::Horizontal, "─")));
+        .child(filters.with_bottom_border("─"))
+        .child(VerticalBorderView("│").with_bottom_border("┴"))
+        .child(torrents.with_bottom_border("─"));
 
     let main_ui = LinearLayout::new(Orientation::Vertical)
         .child(torrents_ui)
