@@ -9,6 +9,8 @@ use cursive::view::ScrollBase;
 use std::cell::Cell;
 use tokio::sync::mpsc;
 use crate::TorrentsUpdate;
+use cursive::utils::Counter;
+use cursive::views::ProgressBar;
 use human_format::{Formatter, Scales};
 
 type Receiver = mpsc::Receiver<TorrentsUpdate>;
@@ -40,13 +42,32 @@ fn fmt_bytes(amt: u64, units: &str) -> String {
         .format(amt as f64)
 }
 
-fn cell(tor: &Torrent, col: Column) -> String {
-    match col {
+fn draw_cell(printer: &Printer, tor: &Torrent, col: Column) {
+    let x = match col {
         Column::Name => tor.name.clone(),
-        Column::State => format!("{} {:.2}%", tor.state, tor.progress),
+        Column::State => {
+            let status = match tor.state {
+                TorrentState::Downloading => "DOWN",
+                TorrentState::Seeding => "SEED",
+                TorrentState::Paused => "PAUSE",
+                TorrentState::Checking => "CHECK",
+                TorrentState::Moving => "MOVE",
+                TorrentState::Allocating => "ALLOC",
+                TorrentState::Error => "ERROR",
+                TorrentState::Queued => "QUEUE",
+            };
+            // TODO: draw my own damn progress bar
+            let status_msg = format!("{} {:.2}%", status, tor.progress);
+            ProgressBar::new()
+                .with_value(Counter::new(tor.progress as usize))
+                .with_label(move |_, _| status_msg.clone())
+                .draw(printer);
+            return;
+        },
         Column::Size => fmt_bytes(tor.total_size, "B"),
         Column::Speed => fmt_bytes(tor.upload_payload_rate, "B/s"),
-    }
+    };
+    printer.print((0, 0), &x);
 }
 
 impl TorrentsView {
@@ -110,7 +131,7 @@ impl TorrentsView {
         let torrent = &self.torrents[&self.rows[i]];
         let mut x = 0;
         for (column, width) in &self.columns {
-            printer.offset((x, 0)).cropped((*width, 1)).print((0, 0), &cell(torrent, *column));
+            draw_cell(&printer.offset((x, 0)).cropped((*width, 1)), torrent, *column);
             x += width + 1;
         }
     }
