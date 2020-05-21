@@ -75,8 +75,21 @@ async fn main() -> deluge_rpc::Result<()> {
     let filters = FiltersView::new(session.get_filter_tree(true, &[]).await?, filter_send).into_scroll_wrapper();
     let details = TextView::new("torrent details");
 
-    let torrents_ui = LinearLayout::new(Orientation::Horizontal).child(filters).child(torrents);
-    let main_ui = LinearLayout::new(Orientation::Vertical).child(torrents_ui).child(details);
+    // This is so dumb. There should be a widget that draws these borders for me.
+    let torrents_ui = LinearLayout::new(Orientation::Horizontal)
+        .child(LinearLayout::new(Orientation::Vertical)
+               .child(filters)
+               .child(BorderView(BorderType::Horizontal, "─")))
+        .child(LinearLayout::new(Orientation::Vertical)
+               .child(BorderView(BorderType::Vertical, "│"))
+               .child(BorderView(BorderType::Cell, "┴")))
+        .child(LinearLayout::new(Orientation::Vertical)
+               .child(torrents)
+               .child(BorderView(BorderType::Horizontal, "─")));
+
+    let main_ui = LinearLayout::new(Orientation::Vertical)
+        .child(torrents_ui)
+        .child(details);
 
     let session_thread = tokio::spawn(manage_session(session, filter_recv, torrent_send, shutdown_recv));
 
