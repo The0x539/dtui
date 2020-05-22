@@ -49,6 +49,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b41b7ea54a0c9d92199de89e20e58d49f02f8e699814ef3fdf266f6f748d15c7"
 
 [[package]]
+name = "base64"
+version = "0.12.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "53d1ccbaf7d9ec9537465a97bf19edc1a4e158ecb49fc16178202238c569cc42"
+
+[[package]]
 name = "bitflags"
 version = "1.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -303,8 +309,6 @@ dependencies = [
 [[package]]
 name = "deluge-rpc"
 version = "0.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "282700090b643c400145bb33c9c120ed3dfe8e1db1bcdc253e105cba38049ca8"
 dependencies = [
  "deluge-rpc-macro",
  "hex",
@@ -313,18 +317,18 @@ dependencies = [
  "libflate",
  "regex",
  "rencode",
+ "ron",
  "rustls",
  "serde",
- "serde_yaml",
  "tokio",
  "tokio-rustls",
 ]
 
 [[package]]
 name = "deluge-rpc-macro"
-version = "0.3.0"
+version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1815d6d2c67ff5a1ab75fbd48036ad606815a6041f8052b3a6ae09d2f0032921"
+checksum = "6b8e48f7fb67f204fb4994057b2efc2f9b60a43865d8fc1b20980951b97d05e0"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -344,7 +348,6 @@ dependencies = [
  "cursive",
  "cursive-tabs",
  "deluge-rpc",
- "deluge-rpc-macro",
  "human_format",
  "serde",
  "serde_yaml",
@@ -823,9 +826,9 @@ checksum = "7fe5bd57d1d7414c6b5ed48563a2c855d995ff777729dcd91c369ec7fea395ae"
 
 [[package]]
 name = "rencode"
-version = "0.1.0"
+version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a95ccc34079e4cb471914cc2316b74170e8a0e630f6f6da0157e7e8aa16671d7"
+checksum = "39d66459afb27b9b15c921744bda6c7b5faa7d9bd6273c65622833977e83e586"
 dependencies = [
  "byteorder",
  "serde",
@@ -853,12 +856,23 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cabe4fa914dec5870285fa7f71f602645da47c486e68486d2b4ceb4a343e90ac"
 
 [[package]]
+name = "ron"
+version = "0.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a91260f321dbf3b5a16ff91c451dc9eb644ce72775a6812f9c3dfffe63818f8f"
+dependencies = [
+ "base64 0.12.1",
+ "bitflags",
+ "serde",
+]
+
+[[package]]
 name = "rustls"
 version = "0.17.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c0d4a31f5d68413404705d6982529b0e11a9aacd4839d1d6222ee3b8cb4015e1"
 dependencies = [
- "base64",
+ "base64 0.11.0",
  "log",
  "ring",
  "sct",
@@ -978,9 +992,9 @@ checksum = "6446ced80d6c486436db5c078dde11a9f73d42b57fb273121e160b84f63d894c"
 
 [[package]]
 name = "syn"
-version = "1.0.22"
+version = "1.0.23"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1425de3c33b0941002740a420b1a906a350b88d08b82b2c8a01035a3f9447bac"
+checksum = "95b5f192649e48a5302a13f2feb224df883b98933222369e4b3b0fe2a5447269"
 dependencies = [
  "proc-macro2",
  "quote",

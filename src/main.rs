@@ -1,5 +1,4 @@
 use deluge_rpc::*;
-use deluge_rpc_macro::Query;
 use tokio::sync::mpsc;
 use cursive::event::Event;
 use cursive::Cursive;
