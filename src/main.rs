@@ -117,7 +117,12 @@ async fn main() -> deluge_rpc::Result<()> {
 
     let session_thread = tokio::spawn(manage_session(session, filter_recv, torrent_send, command_recv, shutdown_recv));
 
-    let mut siv = cursive::default();
+    let mut siv = cursive::Cursive::new(|| {
+        cursive::backend::crossterm::Backend::init()
+            .map(cursive_buffered_backend::BufferedBackend::new)
+            .map(Box::new)
+            .unwrap()
+    });
     siv.set_fps(1);
     siv.set_autohide_menu(false);
     siv.set_user_data(command_send);

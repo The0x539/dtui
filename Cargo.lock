@@ -272,6 +272,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "cursive_buffered_backend"
+version = "0.3.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "773e01bb5c7ecb08e328cc21e8069f136382ba6f0f35a59fe9bf83f06a3564be"
+dependencies = [
+ "cursive",
+ "enumset",
+ "log",
+ "smallvec",
+ "unicode-segmentation",
+ "unicode-width",
+]
+
+[[package]]
 name = "darling"
 version = "0.10.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -347,6 +361,7 @@ version = "0.1.0"
 dependencies = [
  "cursive",
  "cursive-tabs",
+ "cursive_buffered_backend",
  "deluge-rpc",
  "human_format",
  "serde",

@@ -12,6 +12,7 @@ deluge-rpc = "0.3.1"
 serde_yaml = "*"
 human_format = "*"
 cursive-tabs = "*"
+cursive_buffered_backend = "0.3.3"
 
 [patch.crates-io]
 webpki = { path = "./experiment/webpki" }
