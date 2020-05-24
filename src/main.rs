@@ -1,5 +1,5 @@
 use deluge_rpc::*;
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, Notify};
 use cursive::event::Event;
 use cursive::Cursive;
 use std::collections::HashMap;
@@ -8,6 +8,7 @@ use cursive::views::{LinearLayout, TextView, Panel, EditView, Dialog};
 use cursive::direction::Orientation;
 use cursive::menu::MenuTree;
 use cursive_tabs::TabPanel;
+use std::sync::Arc;
 
 mod views;
 use views::*;
@@ -40,35 +41,33 @@ async fn manage_session(
     mut filters: mpsc::Receiver<HashMap<String, String>>,
     mut torrents: mpsc::Sender<TorrentsUpdate>,
     mut commands: mpsc::Receiver<SessionCommand>,
-    mut shutdown: mpsc::Receiver<()>,
-) -> Session {
+    shutdown: Arc<Notify>,
+) -> deluge_rpc::Result<Session> {
     let mut filter_dict = None;
     loop {
         tokio::select! {
             new_filters = filters.recv() => {
-                filter_dict = Some(new_filters.unwrap());
-                let new_torrents = session.get_torrents_status(filter_dict.clone()).await.unwrap();
+                filter_dict = Some(new_filters.expect("filters channel closed"));
+                let new_torrents = session.get_torrents_status(filter_dict.clone()).await?;
                 torrents.send(TorrentsUpdate::Replace(new_torrents)).await.unwrap();
             }
             command = commands.recv() => {
-                match command.unwrap() {
+                match command.expect("command channel closed") {
                     SessionCommand::AddTorrentUrl(url) => {
                         let options = TorrentOptions::default();
                         let http_headers = None;
-                        session.add_torrent_url(&url, &options, http_headers).await.unwrap();
+                        session.add_torrent_url(&url, &options, http_headers).await?;
                     }
                 }
             }
-            _ = shutdown.recv() => break,
             _ = tokio::time::delay_for(tokio::time::Duration::from_secs(1)) => {
                 // TODO: change API to accept an &Option?
-                let delta = session.get_torrents_status_diff::<Torrent, _>(filter_dict.clone()).await.unwrap();
-                torrents.send(TorrentsUpdate::Delta(delta)).await.unwrap();
+                let delta = session.get_torrents_status_diff::<Torrent, _>(filter_dict.clone()).await?;
+                torrents.send(TorrentsUpdate::Delta(delta)).await.expect("torrents update channel closed");
             }
+            _ = shutdown.notified() => return Ok(session),
         }
     }
-
-    session
 }
 
 #[tokio::main]
@@ -82,8 +81,9 @@ async fn main() -> deluge_rpc::Result<()> {
     
     let (filter_send, filter_recv) = mpsc::channel(10);
     let (torrent_send, torrent_recv) = mpsc::channel(10);
-    let (mut shutdown_send, shutdown_recv) = mpsc::channel(1);
     let (command_send, command_recv) = mpsc::channel(20);
+
+    let shutdown = Arc::new(Notify::new());
 
     let torrents = TorrentsView::new(session.get_torrents_status::<_, ()>(None).await?, torrent_recv).with_name("torrents");
     let filters = FiltersView::new(session.get_filter_tree(true, &[]).await?, filter_send).into_scroll_wrapper();
@@ -115,7 +115,7 @@ async fn main() -> deluge_rpc::Result<()> {
         .child(torrent_tabs)
         .child(status_bar);
 
-    let session_thread = tokio::spawn(manage_session(session, filter_recv, torrent_send, command_recv, shutdown_recv));
+    let session_thread = tokio::spawn(manage_session(session, filter_recv, torrent_send, command_recv, shutdown.clone()));
 
     let mut siv = cursive::Cursive::new(|| {
         cursive::backend::crossterm::Backend::init()
@@ -157,7 +157,7 @@ async fn main() -> deluge_rpc::Result<()> {
     
     siv.run();
 
-    shutdown_send.send(()).await.unwrap();
+    shutdown.notify();
 
-    session_thread.await.unwrap().close().await
+    session_thread.await.unwrap()?.close().await
 }
