@@ -322,9 +322,12 @@ dependencies = [
 
 [[package]]
 name = "deluge-rpc"
-version = "0.3.0"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c9c06db80fb2134d113dd72acd02da65b85eea911e0450882d715d5d8b840cec"
 dependencies = [
  "deluge-rpc-macro",
+ "enum-kinds",
  "hex",
  "lazy-regex",
  "lazy_static",
@@ -340,9 +343,9 @@ dependencies = [
 
 [[package]]
 name = "deluge-rpc-macro"
-version = "0.3.1"
+version = "0.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6b8e48f7fb67f204fb4994057b2efc2f9b60a43865d8fc1b20980951b97d05e0"
+checksum = "854a27695f38de1d35795ab1e9d3d2db8438ed8d8e94b44c53834d411aa9911a"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -367,6 +370,17 @@ dependencies = [
  "serde",
  "serde_yaml",
  "tokio",
+]
+
+[[package]]
+name = "enum-kinds"
+version = "0.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c30ea541ff8aec761976f2eadf20371fa06fbc0f2cb2f8fb505a7f1340d459a0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
 ]
 
 [[package]]
