@@ -5,12 +5,14 @@ use cursive::event::{Event, EventResult, MouseEvent, MouseButton};
 use cursive::vec::Vec2;
 use cursive::theme::Effect;
 use tokio::sync::mpsc;
+use crate::SessionCommand;
+use futures::executor::block_on;
 
 #[derive(Default)]
 struct Category {
     name: String,
     filters: Vec<(String, u64)>,
-    active_filter: Option<String>,
+    commands: Option<String>,
     collapsed: bool,
 }
 
@@ -70,8 +72,7 @@ impl Category {
         }
     }
 }
-
-type Sender = mpsc::Sender<HashMap<String, String>>;
+type Sender = mpsc::Sender<SessionCommand>;
 
 pub(crate) struct FiltersView {
     categories: Vec<Category>,
@@ -107,7 +108,8 @@ impl FiltersView {
     
     fn update_filters(&mut self) {
         let active_filters = self.active_filters();
-        self.filter_updates.try_send(active_filters).unwrap();
+        let cmd = SessionCommand::NewFilters(active_filters);
+        block_on(self.commands.send(cmd)).expect("command channel closed");
     }
     
     // This appears to be broken when scrolling. Ugh.

@@ -26,6 +26,7 @@ enum TorrentsUpdate {
 #[derive(Debug)]
 pub enum SessionCommand {
     AddTorrentUrl(String),
+    NewFilters(HashMap<String, String>),
     Shutdown,
 }
 
@@ -41,7 +42,6 @@ struct Torrent {
 
 async fn manage_session(
     mut session: Session,
-    mut filters: mpsc::Receiver<HashMap<String, String>>,
     mut torrents: mpsc::Sender<TorrentsUpdate>,
     mut commands: mpsc::Receiver<SessionCommand>,
     shutdown: Arc<Notify>,
@@ -49,21 +49,21 @@ async fn manage_session(
     let mut filter_dict = None;
     loop {
         tokio::select! {
-            new_filters = filters.recv() => {
-                filter_dict = Some(new_filters.expect("filters channel closed"));
-                let new_torrents = session.get_torrents_status(filter_dict.as_ref()).await?;
-                torrents.send(TorrentsUpdate::Replace(new_torrents)).await.unwrap();
-            }
             command = commands.recv() => {
                 match command.expect("command channel closed") {
                     SessionCommand::AddTorrentUrl(url) => {
                         let options = TorrentOptions::default();
                         let http_headers = None;
                         session.add_torrent_url(&url, &options, http_headers).await?;
-                    }
+                    },
+                    SessionCommand::NewFilters(new_filters) => {
+                        filter_dict = Some(new_filters);
+                        let new_torrents = session.get_torrents_status(filter_dict.as_ref()).await?;
+                        torrents.send(TorrentsUpdate::Replace(new_torrents)).await.unwrap();
+                    },
                     SessionCommand::Shutdown => {
                         session.shutdown().await?;
-                    }
+                    },
                 }
             }
             _ = tokio::time::delay_for(tokio::time::Duration::from_secs(1)) => {
@@ -114,14 +114,13 @@ async fn main() -> deluge_rpc::Result<()> {
     let auth_level = session.login(&user, &pass).await?;
     assert!(auth_level >= AuthLevel::Normal);
     
-    let (filter_send, filter_recv) = mpsc::channel(10);
     let (torrent_send, torrent_recv) = mpsc::channel(10);
     let (command_send, command_recv) = mpsc::channel(20);
 
     let shutdown = Arc::new(Notify::new());
 
     let torrents = TorrentsView::new(session.get_torrents_status::<_, ()>(None).await?, torrent_recv).with_name("torrents");
-    let filters = FiltersView::new(session.get_filter_tree(true, &[]).await?, filter_send).into_scroll_wrapper();
+    let filters = FiltersView::new(session.get_filter_tree(true, &[]).await?, command_send.clone()).into_scroll_wrapper();
 
     let status_tab = TextView::new("Torrent status (todo)");
     let details_tab = TextView::new("Torrent details (todo)");
@@ -149,7 +148,7 @@ async fn main() -> deluge_rpc::Result<()> {
         .child(torrent_tabs)
         .child(status_bar);
 
-    let session_thread = tokio::spawn(manage_session(session, filter_recv, torrent_send, command_recv, shutdown.clone()));
+    let session_thread = tokio::spawn(manage_session(session, torrent_send, command_recv, shutdown.clone()));
 
     let mut siv = cursive::Cursive::new(|| {
         cursive::backend::crossterm::Backend::init()
