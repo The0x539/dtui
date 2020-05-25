@@ -44,7 +44,7 @@ fn fmt_bytes(amt: u64, units: &str) -> String {
 
 fn draw_cell(printer: &Printer, tor: &Torrent, col: Column) {
     let x = match col {
-        Column::Name => tor.name.clone(),
+        Column::Name => format!("{} {}", tor.hash, tor.name),
         Column::State => {
             let status = match tor.state {
                 TorrentState::Downloading => "DOWN",

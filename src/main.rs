@@ -25,10 +25,12 @@ enum TorrentsUpdate {
 
 enum SessionCommand {
     AddTorrentUrl(String),
+    Shutdown,
 }
 
 #[derive(Clone, Debug, serde::Deserialize, Query)]
 struct Torrent {
+    hash: InfoHash,
     name: String,
     state: TorrentState,
     total_size: u64,
@@ -48,7 +50,7 @@ async fn manage_session(
         tokio::select! {
             new_filters = filters.recv() => {
                 filter_dict = Some(new_filters.expect("filters channel closed"));
-                let new_torrents = session.get_torrents_status(filter_dict.clone()).await?;
+                let new_torrents = session.get_torrents_status(filter_dict.as_ref()).await?;
                 torrents.send(TorrentsUpdate::Replace(new_torrents)).await.unwrap();
             }
             command = commands.recv() => {
@@ -58,11 +60,14 @@ async fn manage_session(
                         let http_headers = None;
                         session.add_torrent_url(&url, &options, http_headers).await?;
                     }
+                    SessionCommand::Shutdown => {
+                        session.shutdown().await?;
+                    }
                 }
             }
             _ = tokio::time::delay_for(tokio::time::Duration::from_secs(1)) => {
                 // TODO: change API to accept an &Option?
-                let delta = session.get_torrents_status_diff::<Torrent, _>(filter_dict.clone()).await?;
+                let delta = session.get_torrents_status_diff::<Torrent, _>(filter_dict.as_ref()).await?;
                 torrents.send(TorrentsUpdate::Delta(delta)).await.expect("torrents update channel closed");
             }
             _ = shutdown.notified() => return Ok(session),
@@ -72,7 +77,7 @@ async fn manage_session(
 
 #[tokio::main]
 async fn main() -> deluge_rpc::Result<()> {
-    let mut session = Session::new(read_file("./experiment/endpoint")).await?;
+    let mut session = Session::connect(read_file("./experiment/endpoint")).await?;
 
     let user = read_file("./experiment/username");
     let pass = read_file("./experiment/password");
@@ -130,6 +135,11 @@ async fn main() -> deluge_rpc::Result<()> {
     siv.add_global_callback('q', |s| s.quit());
     siv.add_global_callback(Event::Refresh, |s| { s.call_on_name("torrents", TorrentsView::refresh); });
 
+    let _event_set = deluge_rpc::events! [
+        TorrentAdded,
+        TorrentRemoved,
+    ];
+
     siv.menubar()
         .add_subtree("File",
             MenuTree::new()
@@ -148,7 +158,15 @@ async fn main() -> deluge_rpc::Result<()> {
                 })
                 .leaf("Create torrent", |_| ())
                 .delimiter()
-                .leaf("Quit and shutdown daemon", |_| ())
+                .leaf("Quit and shutdown daemon", |s| {
+                    s.with_user_data(|c: &mut mpsc::Sender<SessionCommand>| {
+                        match c.try_send(SessionCommand::Shutdown) {
+                            Ok(()) => (),
+                            Err(_) => panic!("ughhhhh"),
+                        }
+                    });
+                    s.quit();
+                })
                 .delimiter()
                 .leaf("Quit", Cursive::quit))
         ;
@@ -159,5 +177,7 @@ async fn main() -> deluge_rpc::Result<()> {
 
     shutdown.notify();
 
-    session_thread.await.unwrap()?.close().await
+    session_thread.await.unwrap()?.disconnect().await.map_err(|(_stream, err)| err)?;
+
+    Ok(())
 }
