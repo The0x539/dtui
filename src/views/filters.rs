@@ -3,7 +3,6 @@ use cursive::Printer;
 use std::collections::HashMap;
 use cursive::event::{Event, EventResult, MouseEvent, MouseButton};
 use cursive::vec::Vec2;
-use cursive::theme::Effect;
 use tokio::sync::mpsc;
 use crate::SessionCommand;
 use futures::executor::block_on;
@@ -160,18 +159,26 @@ impl ScrollInner for FiltersView {
 
         match &self.rows[y] {
             Row::CollapsedParent { key, .. } => {
-                printer.print((0, 0), &format!("> {}", key));
+                printer.print((0, 0), &format!("▸ {}", key));
             },
             Row::ExpandedParent { key, .. } => {
-                printer.print((0, 0), &format!("v {}", key));
+                printer.print((0, 0), &format!("▾ {}", key));
             },
             Row::Child(Filter { key, value, hits }) => {
-                let e = if self.active_filters.get(&key) == Some(value) {
-                    Effect::Reverse
+                let bullet = if self.active_filters.get(&key) == Some(value) {
+                    '●'
                 } else {
-                    Effect::Simple
+                    '◌'
                 };
-                printer.with_effect(e, |p| p.print((2, 0), &format!("* {} {}", value, hits)));
+                let value = match (key, value.as_str()) {
+                    (FilterKey::Owner, "") => "All",
+                    (FilterKey::Tracker, "") => "No Tracker",
+                    (FilterKey::Label, "") => "No Label",
+                    (_, v) => v,
+                };
+                let nspaces = printer.size.x - (3 + value.len() + hits.to_string().len());
+                let spaces = " ".repeat(nspaces);
+                printer.print((0, 0), &format!(" {} {}{}{}", bullet, value, spaces, hits));
             },
         }
     }
