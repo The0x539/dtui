@@ -4,7 +4,7 @@ use cursive::event::Event;
 use cursive::Cursive;
 use std::collections::HashMap;
 use cursive::traits::*;
-use cursive::views::{LinearLayout, TextView, Panel, EditView, Dialog};
+use cursive::views::{LinearLayout, TextView, Panel};
 use cursive::direction::Orientation;
 use cursive::menu::MenuTree;
 use cursive_tabs::TabPanel;
@@ -23,7 +23,8 @@ enum TorrentsUpdate {
     Delta(HashMap<InfoHash, <Torrent as Query>::Diff>),
 }
 
-enum SessionCommand {
+#[derive(Debug)]
+pub enum SessionCommand {
     AddTorrentUrl(String),
     Shutdown,
 }
@@ -66,12 +67,41 @@ async fn manage_session(
                 }
             }
             _ = tokio::time::delay_for(tokio::time::Duration::from_secs(1)) => {
-                // TODO: change API to accept an &Option?
                 let delta = session.get_torrents_status_diff::<Torrent, _>(filter_dict.as_ref()).await?;
                 torrents.send(TorrentsUpdate::Delta(delta)).await.expect("torrents update channel closed");
             }
             _ = shutdown.notified() => return Ok(session),
         }
+    }
+}
+
+mod menu {
+    use cursive::Cursive;
+    use cursive::views::{EditView, Dialog};
+    use cursive::traits::*;
+    use futures::executor::block_on;
+    use tokio::sync::mpsc;
+    use super::SessionCommand;
+
+    fn send_cmd(siv: &mut Cursive, cmd: SessionCommand) {
+        siv.with_user_data(|chan: &mut mpsc::Sender<SessionCommand>| {
+            let fut = chan.send(cmd);
+            block_on(fut).expect("command channel closed");
+        });
+    }
+
+    pub fn add_torrent(siv: &mut Cursive) {
+        let edit_view = EditView::new()
+            .on_submit(|siv, text| {
+                let cmd = SessionCommand::AddTorrentUrl(text.to_string());
+                send_cmd(siv, cmd);
+            });
+        siv.add_layer(Dialog::around(edit_view).min_width(80));
+    }
+
+    pub fn quit_and_shutdown_daemon(siv: &mut Cursive) {
+        send_cmd(siv, SessionCommand::Shutdown);
+        siv.quit();
     }
 }
 
@@ -110,7 +140,6 @@ async fn main() -> deluge_rpc::Result<()> {
 
     let status_bar = TextView::new("Status bar (todo)");
 
-    // This is so dumb. There should be a widget that draws these borders for me.
     let torrents_ui = LinearLayout::new(Orientation::Horizontal)
         .child(Panel::new(filters).title("Filters"))
         .child(Panel::new(torrents).title("Torrents"));
@@ -132,7 +161,7 @@ async fn main() -> deluge_rpc::Result<()> {
     siv.set_autohide_menu(false);
     siv.set_user_data(command_send);
 
-    siv.add_global_callback('q', |s| s.quit());
+    siv.add_global_callback('q', Cursive::quit);
     siv.add_global_callback(Event::Refresh, |s| { s.call_on_name("torrents", TorrentsView::refresh); });
 
     let _event_set = deluge_rpc::events! [
@@ -143,33 +172,12 @@ async fn main() -> deluge_rpc::Result<()> {
     siv.menubar()
         .add_subtree("File",
             MenuTree::new()
-                .leaf("Add torrent", |s| {
-                    let edit_view = EditView::new()
-                        .on_submit(|s, x| {
-                            s.with_user_data(|c: &mut mpsc::Sender<SessionCommand>| {
-                                match c.try_send(SessionCommand::AddTorrentUrl(String::from(x))) {
-                                    Ok(()) => (),
-                                    Err(_) => panic!("ugh"),
-                                }
-                            });
-                            s.pop_layer();
-                        });
-                    s.add_layer(Dialog::around(edit_view).min_width(80));
-                })
+                .leaf("Add torrent", menu::add_torrent)
                 .leaf("Create torrent", |_| ())
                 .delimiter()
-                .leaf("Quit and shutdown daemon", |s| {
-                    s.with_user_data(|c: &mut mpsc::Sender<SessionCommand>| {
-                        match c.try_send(SessionCommand::Shutdown) {
-                            Ok(()) => (),
-                            Err(_) => panic!("ughhhhh"),
-                        }
-                    });
-                    s.quit();
-                })
+                .leaf("Quit and shutdown daemon", menu::quit_and_shutdown_daemon)
                 .delimiter()
-                .leaf("Quit", Cursive::quit))
-        ;
+                .leaf("Quit", Cursive::quit));
 
     siv.add_fullscreen_layer(main_ui);
     
