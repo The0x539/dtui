@@ -12,7 +12,7 @@ use futures::executor::block_on;
 struct Category {
     name: String,
     filters: Vec<(String, u64)>,
-    commands: Option<String>,
+    active_filter: Option<String>,
     collapsed: bool,
 }
 
@@ -76,20 +76,17 @@ type Sender = mpsc::Sender<SessionCommand>;
 
 pub(crate) struct FiltersView {
     categories: Vec<Category>,
-    filter_updates: Sender,
+    commands: Sender,
 }
 
 impl FiltersView {
-    pub(crate) fn new(filter_tree: HashMap<String, Vec<(String, u64)>>, sender: Sender) -> Self {
+    pub(crate) fn new(filter_tree: HashMap<String, Vec<(String, u64)>>, commands: Sender) -> Self {
         let mut categories = Vec::new();
         for (name, filters) in filter_tree {
             let category = Category { name, filters, ..Default::default() };
             categories.push(category);
         }
-        Self {
-            categories,
-            filter_updates: sender,
-        }
+        Self { categories, commands }
     }
 
     pub fn active_filters(&self) -> HashMap<String, String> {
