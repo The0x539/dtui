@@ -7,158 +7,184 @@ use cursive::theme::Effect;
 use tokio::sync::mpsc;
 use crate::SessionCommand;
 use futures::executor::block_on;
+use deluge_rpc::{FilterKey, FilterDict};
+use super::ScrollInner;
 
-#[derive(Default)]
-struct Category {
-    name: String,
-    filters: Vec<(String, u64)>,
-    active_filter: Option<String>,
-    collapsed: bool,
-}
-
-enum ClickResult {
-    KeepGoing(usize),
-    Collapsed,
-    UpdatedFilters,
-}
-
-impl Category {
-    fn len(&self) -> usize { self.filters.len() }
-    
-    fn content_width(&self) -> usize {
-        let mut w = 2 + self.name.len();
-        for (filter, hits) in &self.filters {
-            w = w.max(2 + 2 + filter.len() + 1 + hits.to_string().len());
-        }
-        w
-    }
-
-    fn content_height(&self) -> usize {
-        if self.collapsed {
-            1
-        } else {
-            1 + self.len()
-        }
-    }
-    
-    fn click(&mut self, row: usize) -> ClickResult {
-        if row == 0 {
-            self.collapsed = !self.collapsed;
-            ClickResult::Collapsed
-        } else if row < self.content_height() {
-            self.active_filter = Some(self.filters[row - 1].0.clone());
-            ClickResult::UpdatedFilters
-        } else {
-            ClickResult::KeepGoing(row - self.content_height())
-        }
-    }
-
-    fn draw_row(&self, printer: &Printer, row: usize) -> Option<usize> {
-        if row == 0 {
-            let c = if self.collapsed { '>' } else { 'v' };
-            printer.print((0, 0), &format!("{} {}", c, self.name));
-            None
-        } else if row < self.content_height() {
-            let (filter, hits) = &self.filters[row-1];
-            let e = if Some(filter) == self.active_filter.as_ref() {
-                Effect::Reverse
-            } else {
-                Effect::Simple
-            };
-            printer.with_effect(e, |p| p.print((2, 0), &format!("* {} {}", filter, hits)));
-            None
-        } else {
-            Some(row - self.content_height())
-        }
-    }
-}
 type Sender = mpsc::Sender<SessionCommand>;
 
+#[derive(Clone)]
+struct Filter {
+    key: FilterKey,
+    value: String,
+    hits: u64,
+}
+
+impl Filter {
+    fn width(&self) -> usize {
+        4 + self.value.len() + 1 + self.hits.to_string().len()
+    }
+}
+
+#[derive(Clone)]
+enum Row {
+    CollapsedParent {
+        key: FilterKey,
+        children: Vec<Filter>,
+    },
+    ExpandedParent {
+        key: FilterKey,
+        n_children: usize,
+    },
+    Child(Filter),
+}
+
+impl Row {
+    fn width(&self) -> usize {
+        match self {
+            Self::CollapsedParent { key, children } => {
+                children
+                    .iter()
+                    .map(Filter::width)
+                    .max()
+                    .unwrap_or(0)
+                    .max(2 + key.to_string().len())
+            },
+            Self::ExpandedParent { key, .. } => {
+                2 + key.to_string().len()
+            },
+            Self::Child(filter) => {
+                filter.width()
+            },
+        }
+    }
+}
+
 pub(crate) struct FiltersView {
-    categories: Vec<Category>,
+    active_filters: FilterDict,
+    rows: Vec<Row>,
     commands: Sender,
 }
 
 impl FiltersView {
-    pub(crate) fn new(filter_tree: HashMap<String, Vec<(String, u64)>>, commands: Sender) -> Self {
-        let mut categories = Vec::new();
-        for (name, filters) in filter_tree {
-            let category = Category { name, filters, ..Default::default() };
-            categories.push(category);
+    pub(crate) fn new(filter_tree: HashMap<FilterKey, Vec<(String, u64)>>, commands: Sender) -> Self {
+        let mut categories = Vec::with_capacity(filter_tree.len());
+
+        for (key, values) in filter_tree.into_iter() {
+            let mut filters = values
+                .into_iter()
+                .map(|(value, hits)| Filter { key, value, hits })
+                .collect::<Vec<Filter>>();
+            filters.sort_unstable_by_key(|f| f.value.clone());
+            categories.push((key, filters));
         }
-        Self { categories, commands }
+
+        categories.sort_unstable_by_key(|c| c.0);
+
+        let rows = categories
+            .into_iter()
+            .flat_map(|(key, filters)| {
+                let parent = Row::ExpandedParent {
+                    key,
+                    n_children: filters.len(),
+                };
+                let children = filters.into_iter().map(Row::Child);
+                std::iter::once(parent).chain(children)
+            })
+            .collect();
+
+        Self {
+            active_filters: FilterDict::new(),
+            rows,
+            commands,
+        }
     }
 
-    pub fn active_filters(&self) -> HashMap<String, String> {
-        self.categories
+    fn active_filters(&self) -> FilterDict {
+        self.active_filters
             .iter()
-            .filter(|c| c.active_filter.is_some())
-            .map(|c| (c.name.clone(), c.active_filter.clone().unwrap()))
-            .filter(|(c, f)| match (c.as_str(), f.as_str()) {
-                ("owner", "") => false,
-                ("owner", _) => true,
+            .filter(|(key, val)| match (key, val.as_ref()) {
+                (FilterKey::Owner, "") => false,
+                (FilterKey::Owner, "All") => true,
                 (_, "All") => false,
                 _ => true,
             })
+            .map(|(key, val)| (*key, val.clone()))
             .collect()
     }
     
     fn update_filters(&mut self) {
-        let active_filters = self.active_filters();
-        let cmd = SessionCommand::NewFilters(active_filters);
+        let cmd = SessionCommand::NewFilters(self.active_filters());
         block_on(self.commands.send(cmd)).expect("command channel closed");
     }
     
-    // This appears to be broken when scrolling. Ugh.
-    fn click(&mut self, mut row: usize) {
-        for category in &mut self.categories {
-            match category.click(row) {
-                ClickResult::KeepGoing(new_row) => row = new_row,
-                ClickResult::Collapsed => break,
-                ClickResult::UpdatedFilters => {
-                    self.update_filters();
-                    break;
-                }
-            }
+    fn click(&mut self, y: usize) {
+        self.rows[y] = match self.rows[y].clone() {
+            Row::CollapsedParent { key, children } => {
+                let n_children = children.len();
+                self.rows.splice(y+1..y+1, children.into_iter().map(Row::Child));
+                Row::ExpandedParent { key, n_children }
+            },
+            Row::ExpandedParent { key, n_children } => {
+                let children = self.rows.splice(y+1..=y+n_children, std::iter::empty())
+                    .map(|row| match row {
+                        Row::Child(filter) => filter,
+                        _ => unreachable!("a parent should never attempt to collapse a non-child"),
+                    })
+                    .collect();
+                Row::CollapsedParent { key, children }
+            },
+            Row::Child(filter) => {
+                self.active_filters.insert(filter.key, filter.value.clone());
+                self.update_filters();
+                Row::Child(filter)
+            },
         }
     }
 
     fn content_width(&self) -> usize {
-        self.categories.iter().map(Category::content_width).max().unwrap_or(50)
+        self.rows
+            .iter()
+            .map(Row::width)
+            .max()
+            .unwrap_or(1)
     }
 
     fn content_height(&self) -> usize {
-        self.categories.iter().map(Category::content_height).sum()
-    }
-
-    fn draw_row(&self, printer: &Printer, mut row: usize) -> bool {
-        for category in &self.categories {
-            if let Some(new_row) = category.draw_row(&printer, row) {
-                row = new_row;
-            } else {
-                return false;
-            }
-        }
-        return true;
+        self.rows.len()
     }
 }
 
-impl super::ScrollInner for FiltersView {
-    fn draw_row(&self, printer: &Printer, row: usize) {
-        self.draw_row(printer, row);
+impl ScrollInner for FiltersView {
+    fn draw_row(&self, printer: &Printer, y: usize) {
+        if y >= self.rows.len() { return; }
+
+        match &self.rows[y] {
+            Row::CollapsedParent { key, .. } => {
+                printer.print((0, 0), &format!("> {}", key));
+            },
+            Row::ExpandedParent { key, .. } => {
+                printer.print((0, 0), &format!("v {}", key));
+            },
+            Row::Child(Filter { key, value, hits }) => {
+                let e = if self.active_filters.get(&key) == Some(value) {
+                    Effect::Reverse
+                } else {
+                    Effect::Simple
+                };
+                printer.with_effect(e, |p| p.print((2, 0), &format!("* {} {}", value, hits)));
+            },
+        }
     }
 }
 
 impl View for FiltersView {
     fn draw(&self, printer: &Printer) {
         for y in 0..printer.output_size.y {
-            let row = printer.content_offset.y + y;
-            let printer = &printer
+            let row = y + printer.content_offset.y;
+            let printer = printer
                 .offset((0, row))
                 .cropped((printer.output_size.x, 1));
-            if self.draw_row(printer, row) {
-                break;
-            }
+            self.draw_row(&printer, row);
         }
     }
 

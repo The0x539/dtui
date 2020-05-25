@@ -26,7 +26,7 @@ enum TorrentsUpdate {
 #[derive(Debug)]
 pub enum SessionCommand {
     AddTorrentUrl(String),
-    NewFilters(HashMap<String, String>),
+    NewFilters(FilterDict),
     Shutdown,
 }
 
@@ -67,7 +67,7 @@ async fn manage_session(
                 }
             }
             _ = tokio::time::delay_for(tokio::time::Duration::from_secs(1)) => {
-                let delta = session.get_torrents_status_diff::<Torrent, _>(filter_dict.as_ref()).await?;
+                let delta = session.get_torrents_status_diff::<Torrent>(filter_dict.as_ref()).await?;
                 torrents.send(TorrentsUpdate::Delta(delta)).await.expect("torrents update channel closed");
             }
             _ = shutdown.notified() => return Ok(session),
@@ -119,7 +119,7 @@ async fn main() -> deluge_rpc::Result<()> {
 
     let shutdown = Arc::new(Notify::new());
 
-    let torrents = TorrentsView::new(session.get_torrents_status::<_, ()>(None).await?, torrent_recv).with_name("torrents");
+    let torrents = TorrentsView::new(session.get_torrents_status(None).await?, torrent_recv).with_name("torrents");
     let filters = FiltersView::new(session.get_filter_tree(true, &[]).await?, command_send.clone()).into_scroll_wrapper();
 
     let status_tab = TextView::new("Torrent status (todo)");
