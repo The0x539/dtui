@@ -21,6 +21,7 @@ fn read_file(path: &str) -> String {
 enum Update {
     NewFilters(FilterDict),
     Delta(HashMap<InfoHash, <Torrent as Query>::Diff>),
+    UpdateMatches(HashMap<(FilterKey, String), i64>),
 }
 
 #[derive(Debug)]
@@ -72,8 +73,7 @@ async fn manage_session(
     mut commands: mpsc::Receiver<SessionCommand>,
     shutdown: Arc<Notify>,
 ) -> deluge_rpc::Result<Session> {
-    let mut filter_dict = Default::default();
-    let interested = deluge_rpc::events![TorrentAdded, TorrentRemoved, TorrentStateChanged];
+    let interested = deluge_rpc::events![TorrentAdded, TorrentRemoved];
     let mut events = session.subscribe_events();
     session.set_event_interest(&interested).await?;
     loop {
@@ -86,7 +86,6 @@ async fn manage_session(
                         session.add_torrent_url(&url, &options, http_headers).await?;
                     },
                     SessionCommand::NewFilters(new_filters) => {
-                        filter_dict = new_filters.clone();
                         updates.send(Update::NewFilters(new_filters)).expect("update channel closed");
                     },
                     SessionCommand::Shutdown => {
@@ -98,12 +97,11 @@ async fn manage_session(
                 match event.expect("event channel closed") {
                     deluge_rpc::Event::TorrentAdded(_hash, _from_state) => todo!(),
                     deluge_rpc::Event::TorrentRemoved(_hash) => todo!(),
-                    deluge_rpc::Event::TorrentStateChanged(_hash, _new_state) => todo!(),
                     e => panic!("Received unexpected event: {:?}", e),
                 }
             }
             _ = tokio::time::delay_for(tokio::time::Duration::from_secs(1)) => {
-                let delta = session.get_torrents_status_diff::<Torrent>(Some(&filter_dict)).await?;
+                let delta = session.get_torrents_status_diff::<Torrent>(None).await?;
                 updates.send(Update::Delta(delta)).expect("update channel closed");
             }
             _ = shutdown.notified() => return Ok(session),
@@ -150,13 +148,24 @@ async fn main() -> deluge_rpc::Result<()> {
     let auth_level = session.login(&user, &pass).await?;
     assert!(auth_level >= AuthLevel::Normal);
     
-    let (update_send, update_recv) = broadcast::channel(50);
+    let (update_send, _) = broadcast::channel(50);
     let (command_send, command_recv) = mpsc::channel(20);
 
     let shutdown = Arc::new(Notify::new());
 
-    let torrents = TorrentsView::new(session.get_torrents_status(None).await?, update_recv).with_name("torrents");
-    let filters = FiltersView::new(session.get_filter_tree(true, &[]).await?, command_send.clone()).into_scroll_wrapper();
+    let torrents = {
+        let status = session.get_torrents_status(None).await?;
+        let (update_send, update_recv) = (update_send.clone(), update_send.subscribe());
+        TorrentsView::new(status, update_send, update_recv)
+            .with_name("torrents")
+    };
+    let filters = {
+        let tree = session.get_filter_tree(true, &[]).await?;
+        let update_recv = update_send.subscribe();
+        FiltersView::new(tree, command_send.clone(), update_recv)
+            .with_name("filters")
+            .into_scroll_wrapper()
+    };
 
     let status_tab = TextView::new("Torrent status (todo)");
     let details_tab = TextView::new("Torrent details (todo)");
@@ -198,6 +207,7 @@ async fn main() -> deluge_rpc::Result<()> {
 
     siv.add_global_callback('q', Cursive::quit);
     siv.add_global_callback(Event::Refresh, |s| { s.call_on_name("torrents", TorrentsView::refresh); });
+    siv.add_global_callback(Event::Refresh, |s| { s.call_on_name("filters", FiltersView::refresh); });
 
     siv.menubar()
         .add_subtree("File",

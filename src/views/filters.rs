@@ -3,13 +3,12 @@ use cursive::Printer;
 use std::collections::HashMap;
 use cursive::event::{Event, EventResult, MouseEvent, MouseButton};
 use cursive::vec::Vec2;
-use tokio::sync::mpsc;
-use crate::SessionCommand;
+use tokio::sync::{broadcast, mpsc};
+use crate::{SessionCommand, Update};
 use futures::executor::block_on;
 use deluge_rpc::{FilterKey, FilterDict};
 use super::ScrollInner;
-
-type Sender = mpsc::Sender<SessionCommand>;
+use std::convert::TryInto;
 
 #[derive(Clone)]
 struct Filter {
@@ -56,22 +55,48 @@ impl Row {
             },
         }
     }
+
+    fn get_filter(&self) -> &Filter {
+        match self {
+            Self::Child(filter) => filter,
+            _ => panic!("Expected this row to be a child"),
+        }
+    }
+
+    fn get_filter_mut(&mut self) -> &mut Filter {
+        match self {
+            Self::Child(filter) => filter,
+            _ => panic!("Expected this row to be a child"),
+        }
+    }
+
+    fn into_filter(self) -> Filter {
+        match self {
+            Self::Child(filter) => filter,
+            _ => panic!("Expected this row to be a child"),
+        }
+    }
 }
 
 pub(crate) struct FiltersView {
     active_filters: FilterDict,
     rows: Vec<Row>,
-    commands: Sender,
+    commands: mpsc::Sender<SessionCommand>,
+    updates: broadcast::Receiver<Update>,
 }
 
 impl FiltersView {
-    pub(crate) fn new(filter_tree: HashMap<FilterKey, Vec<(String, u64)>>, commands: Sender) -> Self {
+    pub(crate) fn new(
+        filter_tree: HashMap<FilterKey, Vec<(String, u64)>>,
+        commands: mpsc::Sender<SessionCommand>,
+        updates: broadcast::Receiver<Update>,
+    ) -> Self {
         let mut categories = Vec::with_capacity(filter_tree.len());
 
         for (key, values) in filter_tree.into_iter() {
             let mut filters = values
                 .into_iter()
-                .map(|(value, hits)| Filter { key, value, hits })
+                .map(|(value, hits)| Filter { key, value, hits: hits.try_into().unwrap() })
                 .collect::<Vec<Filter>>();
             filters.sort_unstable_by_key(|f| f.value.clone());
             categories.push((key, filters));
@@ -95,6 +120,7 @@ impl FiltersView {
             active_filters: FilterDict::new(),
             rows,
             commands,
+            updates,
         }
     }
 
@@ -115,6 +141,89 @@ impl FiltersView {
         let cmd = SessionCommand::NewFilters(self.active_filters());
         block_on(self.commands.send(cmd)).expect("command channel closed");
     }
+
+    fn get_filter_idx(&mut self, the_key: FilterKey, val: &str) -> usize {
+        let mut y = 0;
+        while y < self.rows.len() {
+            let range = match &mut self.rows[y] {
+                Row::CollapsedParent { key, ref mut children } => {
+                    if *key != the_key {
+                        y += 1;
+                        continue;
+                    }
+                    let idx = match children.binary_search_by_key(&val, |f| f.value.as_str()) {
+                        Ok(i) => i,
+                        Err(i) => {
+                            let filter = Filter { key: *key, value: val.to_string(), hits: 0 };
+                            children.insert(i, filter);
+                            i
+                        },
+                    };
+                    return idx;
+                },
+                Row::ExpandedParent { key, n_children: n } => {
+                    if *key != the_key {
+                        y += 1 + *n;
+                        continue;
+                    }
+                    // This is the only case in which this match block neither returns nor continues.
+                    y+1..=y+*n
+                },
+                Row::Child(_) => panic!("Expected a parent in this position"),
+            };
+
+            let idx = match self.rows[range].binary_search_by_key(&val, |r| r.get_filter().value.as_str()) {
+                Ok(i) => y+1 + i,
+                Err(i) => {
+                    let filter = Filter { key: the_key, value: val.to_string(), hits: 0 };
+                    self.rows.insert(y+1+i, Row::Child(filter));
+                    match &mut self.rows[y] {
+                        Row::ExpandedParent { n_children, .. } => *n_children += 1,
+                        _ => unreachable!(),
+                    }
+                    y+1 + i
+                },
+            };
+            return idx;
+        }
+
+        // TODO: Result/Option
+        panic!("key not found: {}", the_key);
+    }
+
+    fn update_filter(&mut self, key: FilterKey, val: &str, incr: i64) {
+        let idx = self.get_filter_idx(key, val);
+        let filter = self.rows[idx].get_filter_mut();
+        // TODO: fail better if decrementing past zero.
+        // Probably switch to usize for hit count.
+        if incr < 0 {
+            filter.hits -= -incr as u64;
+        } else {
+            filter.hits += incr as u64;
+        }
+    }
+
+    pub fn perform_update(&mut self, update: Update) {
+        match update {
+            Update::UpdateMatches(changes) => {
+                for ((key, val), incr) in changes.into_iter() {
+                    self.update_filter(key, &val, incr);
+                }
+            }
+            Update::Delta(_) => (),
+            Update::NewFilters(_) => (),
+        }
+    }
+
+    pub fn refresh(&mut self) {
+        loop {
+            match self.updates.try_recv() {
+                Ok(update) => self.perform_update(update),
+                Err(broadcast::TryRecvError::Empty) => break,
+                Err(_) => panic!(),
+            }
+        }
+    }
     
     fn click(&mut self, y: usize) {
         self.rows[y] = match self.rows[y].clone() {
@@ -125,10 +234,7 @@ impl FiltersView {
             },
             Row::ExpandedParent { key, n_children } => {
                 let children = self.rows.splice(y+1..=y+n_children, std::iter::empty())
-                    .map(|row| match row {
-                        Row::Child(filter) => filter,
-                        _ => unreachable!("a parent should never attempt to collapse a non-child"),
-                    })
+                    .map(Row::into_filter)
                     .collect();
                 Row::CollapsedParent { key, children }
             },

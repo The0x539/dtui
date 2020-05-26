@@ -13,8 +13,6 @@ use cursive::utils::Counter;
 use cursive::views::ProgressBar;
 use human_format::{Formatter, Scales};
 
-type Receiver = broadcast::Receiver<Update>;
-
 #[derive(Debug)]
 pub(crate) struct TorrentsView {
     torrents: HashMap<InfoHash, Torrent>,
@@ -24,7 +22,8 @@ pub(crate) struct TorrentsView {
     scrollbase: ScrollBase,
     // Don't trust the offset provided by on_event because of a bug in Mux
     offset: Cell<Vec2>,
-    updates: Receiver,
+    update_recv: broadcast::Receiver<Update>,
+    update_send: broadcast::Sender<Update>,
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -72,7 +71,11 @@ fn draw_cell(printer: &Printer, tor: &Torrent, col: Column) {
 }
 
 impl TorrentsView {
-    pub(crate) fn new(torrents: HashMap<InfoHash, Torrent>, updates: Receiver) -> Self {
+    pub(crate) fn new(
+        torrents: HashMap<InfoHash, Torrent>,
+        update_send: broadcast::Sender<Update>,
+        update_recv: broadcast::Receiver<Update>,
+    ) -> Self {
         let rows: Vec<InfoHash> = torrents.keys().copied().collect();
         let columns = vec![
             (Column::Name, 30),
@@ -83,7 +86,7 @@ impl TorrentsView {
         let scrollbase = ScrollBase { content_height: rows.len(), ..Default::default() };
         let offset = Cell::new(Vec2::zero());
         let filters = Default::default();
-        let mut obj = Self { torrents, rows, columns, scrollbase, offset, filters, updates };
+        let mut obj = Self { torrents, rows, columns, scrollbase, offset, filters, update_send, update_recv };
         obj.sort();
         obj
     }
@@ -92,7 +95,7 @@ impl TorrentsView {
         // TODO: choose column and direction
         let rows = &mut self.rows;
         let torrents = &self.torrents;
-        rows.sort_by_key(|t| &torrents[t].name);
+        rows.sort_by_key(|h| &torrents[h].name);
     }
 
     fn replace_filters(&mut self, filters: FilterDict) {
@@ -110,10 +113,63 @@ impl TorrentsView {
     }
 
     pub fn apply_delta(&mut self, delta: HashMap<InfoHash, <Torrent as Query>::Diff>) {
-        for (hash, diff) in delta {
-            if self.torrents.contains_key(&hash) {
-                self.torrents.get_mut(&hash).unwrap().update(diff);
+        let mut filter_updates = HashMap::new();
+
+        macro_rules! incr {
+            ($key:ident, $old:expr, $new:expr) => {
+                if let Some(new_val) = &$new {
+                    if new_val != &$old {
+                        let key = FilterKey::$key;
+                        let (old, new) = ($old.to_string(), new_val.to_string());
+                        *filter_updates.entry((key, old)).or_insert(0) -= 1;
+                        *filter_updates.entry((key, new)).or_insert(0) += 1;
+                    }
+                }
             }
+        }
+
+        for (hash, diff) in delta {
+            if diff == Default::default() {
+                continue;
+            } else if let Some(torrent) = self.torrents.get_mut(&hash) {
+                incr!(State, torrent.state, diff.state);
+                incr!(Owner, torrent.owner, diff.owner);
+                incr!(Tracker, torrent.tracker_host, diff.tracker_host);
+                incr!(Label, torrent.label, diff.label);
+
+                let did_match = torrent.matches_filters(&self.filters);
+                torrent.update(diff);
+                let does_match = torrent.matches_filters(&self.filters);
+
+                if did_match != does_match {
+                    let val = &self.torrents[&hash].name;
+                    match self.rows.binary_search_by_key(&val, |h| &self.torrents[h].name) {
+                        Ok(idx) => {
+                            debug_assert!(did_match && !does_match);
+                            self.scrollbase.content_height -= 1;
+                            if idx < self.scrollbase.start_line {
+                                self.scrollbase.start_line -= 1;
+                            }
+                            self.rows.remove(idx);
+                        },
+                        Err(idx) => {
+                            debug_assert!(does_match && !did_match);
+                            self.scrollbase.content_height += 1;
+                            if idx < self.scrollbase.start_line {
+                                self.scrollbase.start_line += 1;
+                            }
+                            self.rows.insert(idx, hash);
+                        },
+                    }
+                }
+            }
+        }
+
+        if !filter_updates.is_empty() {
+            filter_updates.shrink_to_fit();
+            self.update_send
+                .send(Update::UpdateMatches(filter_updates))
+                .expect("updates channel closed");
         }
     }
 
@@ -121,12 +177,13 @@ impl TorrentsView {
         match update {
             Update::Delta(delta) => self.apply_delta(delta),
             Update::NewFilters(filters) => self.replace_filters(filters),
+            Update::UpdateMatches(_) => (),
         }
     }
 
     pub fn refresh(&mut self) {
         loop {
-            match self.updates.try_recv() {
+            match self.update_recv.try_recv() {
                 Ok(update) => self.perform_update(update),
                 Err(broadcast::TryRecvError::Empty) => break,
                 Err(_) => panic!(),

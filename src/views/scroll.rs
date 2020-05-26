@@ -14,6 +14,12 @@ pub(crate) trait ScrollInner: View + Sized {
     }
 }
 
+impl<W: ViewWrapper> ScrollInner for W where W::V: ScrollInner {
+    fn draw_row(&self, printer: &Printer, row: usize) {
+        self.with_view(|v| v.draw_row(printer, row));
+    }
+}
+
 pub(crate) struct ScrollWrapper<V: ScrollInner> {
     inner: V,
     scrollbase: ScrollBase,
