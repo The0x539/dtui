@@ -79,8 +79,8 @@ async fn manage_session(
     mut commands: mpsc::Receiver<SessionCommand>,
     shutdown: Arc<Notify>,
 ) -> deluge_rpc::Result<Session> {
-    let interested = deluge_rpc::events![TorrentAdded, TorrentRemoved];
     let mut events = session.subscribe_events();
+    let interested = deluge_rpc::events![TorrentRemoved];
     session.set_event_interest(&interested).await?;
     loop {
         tokio::select! {
@@ -98,7 +98,6 @@ async fn manage_session(
             }
             event = events.recv() => {
                 match event.expect("event channel closed") {
-                    deluge_rpc::Event::TorrentAdded(_hash, _from_state) => todo!(),
                     deluge_rpc::Event::TorrentRemoved(_hash) => todo!(),
                     e => panic!("Received unexpected event: {:?}", e),
                 }

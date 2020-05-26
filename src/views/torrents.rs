@@ -123,17 +123,32 @@ impl TorrentsView {
         self.scrollbase.start_line = 0;
     }
 
-    pub fn apply_delta(&mut self, delta: HashMap<InfoHash, <Torrent as Query>::Diff>) {
+    fn apply_delta(&mut self, delta: HashMap<InfoHash, <Torrent as Query>::Diff>) {
         let mut filter_updates = HashMap::new();
 
         macro_rules! incr {
+            ($key:ident, $val:expr) => {
+                let key = FilterKey::$key;
+                let val = $val.to_string();
+                *filter_updates.entry((key, val)).or_insert(0) += 1;
+            }
+        }
+
+        macro_rules! decr {
+            ($key:ident, $val:expr) => {
+                let key = FilterKey::$key;
+                let val = $val.to_string();
+                // Panics on 0, which it ought to.
+                *filter_updates.entry((key, val)).or_insert(0) -= 1;
+            }
+        }
+
+        macro_rules! mv {
             ($key:ident, $old:expr, $new:expr) => {
                 if let Some(new_val) = &$new {
                     if new_val != &$old {
-                        let key = FilterKey::$key;
-                        let (old, new) = ($old.to_string(), new_val.to_string());
-                        *filter_updates.entry((key, old)).or_insert(0) -= 1;
-                        *filter_updates.entry((key, new)).or_insert(0) += 1;
+                        decr!($key, $old);
+                        incr!($key, new_val);
                     }
                 }
             }
@@ -143,10 +158,10 @@ impl TorrentsView {
             if diff == Default::default() {
                 continue;
             } else if let Some(torrent) = self.torrents.get_mut(&hash) {
-                incr!(State, torrent.state, diff.state);
-                incr!(Owner, torrent.owner, diff.owner);
-                incr!(Tracker, torrent.tracker_host, diff.tracker_host);
-                incr!(Label, torrent.label, diff.label);
+                mv!(State, torrent.state, diff.state);
+                mv!(Owner, torrent.owner, diff.owner);
+                mv!(Tracker, torrent.tracker_host, diff.tracker_host);
+                mv!(Label, torrent.label, diff.label);
 
                 let did_match = torrent.matches_filters(&self.filters);
                 torrent.update(diff);
@@ -173,6 +188,35 @@ impl TorrentsView {
                         },
                     }
                 }
+            } else {
+                // New torrent, so should have all the fields
+                // TODO: add a realize() method or something to derived Diffs
+                let new_torrent = Torrent {
+                    hash: diff.hash.unwrap(),
+                    name: diff.name.unwrap(),
+                    state: diff.state.unwrap(),
+                    total_size: diff.total_size.unwrap(),
+                    progress: diff.progress.unwrap(),
+                    upload_payload_rate: diff.upload_payload_rate.unwrap(),
+                    label: diff.label.unwrap(),
+                    owner: diff.owner.unwrap(),
+                    tracker_host: diff.tracker_host.unwrap(),
+                    tracker_status: diff.tracker_status.unwrap(),
+                };
+                incr!(State, new_torrent.state);
+                incr!(Owner, new_torrent.owner);
+                incr!(Tracker, new_torrent.tracker_host);
+                incr!(Label, new_torrent.label);
+                if new_torrent.matches_filters(&self.filters) {
+                    let val = &new_torrent.name;
+                    let idx = self.rows.binary_search_by_key(&val, |h| &self.torrents[h].name).unwrap_err();
+                    self.scrollbase.content_height += 1;
+                    if idx < self.scrollbase.start_line {
+                        self.scrollbase.start_line += 1;
+                    }
+                    self.rows.insert(idx, hash);
+                }
+                self.torrents.insert(hash, new_torrent);
             }
         }
 
