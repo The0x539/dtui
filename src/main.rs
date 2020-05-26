@@ -27,7 +27,6 @@ enum Update {
 #[derive(Debug)]
 pub enum SessionCommand {
     AddTorrentUrl(String),
-    NewFilters(FilterDict),
     Shutdown,
 }
 
@@ -84,9 +83,6 @@ async fn manage_session(
                         let options = TorrentOptions::default();
                         let http_headers = None;
                         session.add_torrent_url(&url, &options, http_headers).await?;
-                    },
-                    SessionCommand::NewFilters(new_filters) => {
-                        updates.send(Update::NewFilters(new_filters)).expect("update channel closed");
                     },
                     SessionCommand::Shutdown => {
                         session.shutdown().await?;
@@ -153,6 +149,8 @@ async fn main() -> deluge_rpc::Result<()> {
 
     let shutdown = Arc::new(Notify::new());
 
+    // TODO: By getting this data before subscribing to events, we introduce a race condition.
+    // Fix by starting out with empty data and having the session thread send out a big update.
     let torrents = {
         let status = session.get_torrents_status(None).await?;
         let (update_send, update_recv) = (update_send.clone(), update_send.subscribe());
@@ -161,8 +159,8 @@ async fn main() -> deluge_rpc::Result<()> {
     };
     let filters = {
         let tree = session.get_filter_tree(true, &[]).await?;
-        let update_recv = update_send.subscribe();
-        FiltersView::new(tree, command_send.clone(), update_recv)
+        let (update_send, update_recv) = (update_send.clone(), update_send.subscribe());
+        FiltersView::new(tree, update_send, update_recv)
             .with_name("filters")
             .into_scroll_wrapper()
     };
