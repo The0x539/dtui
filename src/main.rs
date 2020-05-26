@@ -47,6 +47,9 @@ async fn manage_session(
     shutdown: Arc<Notify>,
 ) -> deluge_rpc::Result<Session> {
     let mut filter_dict = None;
+    let interested = deluge_rpc::events![TorrentAdded, TorrentRemoved, TorrentStateChanged];
+    let mut events = session.subscribe_events();
+    session.set_event_interest(&interested).await?;
     loop {
         tokio::select! {
             command = commands.recv() => {
@@ -64,6 +67,14 @@ async fn manage_session(
                     SessionCommand::Shutdown => {
                         session.shutdown().await?;
                     },
+                }
+            }
+            event = events.recv() => {
+                match event.expect("event channel closed") {
+                    deluge_rpc::Event::TorrentAdded(_hash, _from_state) => todo!(),
+                    deluge_rpc::Event::TorrentRemoved(_hash) => todo!(),
+                    deluge_rpc::Event::TorrentStateChanged(_hash, _new_state) => todo!(),
+                    e => panic!("Received unexpected event: {:?}", e),
                 }
             }
             _ = tokio::time::delay_for(tokio::time::Duration::from_secs(1)) => {
@@ -162,11 +173,6 @@ async fn main() -> deluge_rpc::Result<()> {
 
     siv.add_global_callback('q', Cursive::quit);
     siv.add_global_callback(Event::Refresh, |s| { s.call_on_name("torrents", TorrentsView::refresh); });
-
-    let _event_set = deluge_rpc::events! [
-        TorrentAdded,
-        TorrentRemoved,
-    ];
 
     siv.menubar()
         .add_subtree("File",
