@@ -223,7 +223,7 @@ async fn main() -> deluge_rpc::Result<()> {
     siv.add_global_callback('q', Cursive::quit);
     siv.add_global_callback(Event::Refresh, |s| {
         s.call_on_name::<TorrentsView, _, _>("torrents", Refreshable::refresh);
-        s.call_on_name::<FiltersView, _, _>("torrents", Refreshable::refresh);
+        s.call_on_name::<FiltersView, _, _>("filters", Refreshable::refresh);
     });
 
     siv.menubar()
