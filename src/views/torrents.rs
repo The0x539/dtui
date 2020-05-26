@@ -14,6 +14,8 @@ use cursive::views::ProgressBar;
 use human_format::{Formatter, Scales};
 use futures::executor::block_on;
 
+use super::refresh::Refreshable;
+
 use crate::views::filters::Update as FiltersUpdate;
 
 #[derive(Debug)]
@@ -183,23 +185,6 @@ impl TorrentsView {
         }
     }
 
-    pub fn perform_update(&mut self, update: Update) {
-        match update {
-            Update::Delta(delta) => self.apply_delta(delta),
-            Update::NewFilters(filters) => self.replace_filters(filters),
-        }
-    }
-
-    pub fn refresh(&mut self) {
-        loop {
-            match self.update_recv.try_recv() {
-                Ok(update) => self.perform_update(update),
-                Err(mpsc::error::TryRecvError::Empty) => break,
-                Err(_) => panic!(),
-            }
-        }
-    }
-
     fn draw_header(&self, printer: &Printer) {
         let mut x = 0;
         for (column, width) in &self.columns {
@@ -219,6 +204,21 @@ impl TorrentsView {
 
     pub fn width(&self) -> usize {
         self.columns.iter().map(|(_, w)| w+1).sum::<usize>()
+    }
+}
+
+impl Refreshable for TorrentsView {
+    type Update = Update;
+
+    fn get_receiver(&mut self) -> &mut mpsc::Receiver<Update> {
+        &mut self.update_recv
+    }
+
+    fn perform_update(&mut self, update: Update) {
+        match update {
+            Update::Delta(delta) => self.apply_delta(delta),
+            Update::NewFilters(filters) => self.replace_filters(filters),
+        }
     }
 }
 

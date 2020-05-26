@@ -5,9 +5,11 @@ use cursive::event::{Event, EventResult, MouseEvent, MouseButton};
 use cursive::vec::Vec2;
 use tokio::sync::mpsc;
 use deluge_rpc::{FilterKey, FilterDict};
-use super::scroll::ScrollInner;
 use std::convert::TryInto;
 use futures::executor::block_on;
+
+use super::scroll::ScrollInner;
+use super::refresh::Refreshable;
 
 use crate::views::torrents::Update as TorrentsUpdate;
 use crate::UpdateSenders;
@@ -210,26 +212,6 @@ impl FiltersView {
             filter.hits += incr as u64;
         }
     }
-
-    pub fn perform_update(&mut self, update: Update) {
-        match update {
-            Update::UpdateMatches(changes) => {
-                for ((key, val), incr) in changes.into_iter() {
-                    self.update_filter(key, &val, incr);
-                }
-            }
-        }
-    }
-
-    pub fn refresh(&mut self) {
-        loop {
-            match self.update_recv.try_recv() {
-                Ok(update) => self.perform_update(update),
-                Err(mpsc::error::TryRecvError::Empty) => break,
-                Err(_) => panic!(),
-            }
-        }
-    }
     
     fn click(&mut self, y: usize) {
         self.rows[y] = match self.rows[y].clone() {
@@ -262,6 +244,24 @@ impl FiltersView {
 
     fn content_height(&self) -> usize {
         self.rows.len()
+    }
+}
+
+impl Refreshable for FiltersView {
+    type Update = Update;
+
+    fn get_receiver(&mut self) -> &mut mpsc::Receiver<Update> {
+        &mut self.update_recv
+    }
+
+    fn perform_update(&mut self, update: Update) {
+        match update {
+            Update::UpdateMatches(changes) => {
+                for ((key, val), incr) in changes.into_iter() {
+                    self.update_filter(key, &val, incr);
+                }
+            }
+        }
     }
 }
 

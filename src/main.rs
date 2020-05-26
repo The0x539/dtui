@@ -11,9 +11,11 @@ use std::sync::Arc;
 
 pub mod views;
 use views::{
-    scroll::ScrollInner,
     filters::FiltersView,
     torrents::TorrentsView,
+
+    scroll::ScrollInner,
+    refresh::Refreshable,
 
     filters::Update as FiltersUpdate,
     torrents::Update as TorrentsUpdate,
@@ -219,8 +221,10 @@ async fn main() -> deluge_rpc::Result<()> {
     siv.set_user_data(command_send);
 
     siv.add_global_callback('q', Cursive::quit);
-    siv.add_global_callback(Event::Refresh, |s| { s.call_on_name("torrents", TorrentsView::refresh); });
-    siv.add_global_callback(Event::Refresh, |s| { s.call_on_name("filters", FiltersView::refresh); });
+    siv.add_global_callback(Event::Refresh, |s| {
+        s.call_on_name::<TorrentsView, _, _>("torrents", Refreshable::refresh);
+        s.call_on_name::<FiltersView, _, _>("torrents", Refreshable::refresh);
+    });
 
     siv.menubar()
         .add_subtree("File",
