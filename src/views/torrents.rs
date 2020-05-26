@@ -7,11 +7,20 @@ use cursive::vec::Vec2;
 use cursive::event::{Event, EventResult, MouseEvent, MouseButton};
 use cursive::view::ScrollBase;
 use std::cell::Cell;
-use tokio::sync::broadcast;
-use crate::Update;
+use tokio::sync::mpsc;
+use crate::UpdateSenders;
 use cursive::utils::Counter;
 use cursive::views::ProgressBar;
 use human_format::{Formatter, Scales};
+use futures::executor::block_on;
+
+use crate::views::filters::Update as FiltersUpdate;
+
+#[derive(Debug)]
+pub(crate) enum Update {
+    NewFilters(FilterDict),
+    Delta(HashMap<InfoHash, <Torrent as Query>::Diff>),
+}
 
 #[derive(Debug)]
 pub(crate) struct TorrentsView {
@@ -22,8 +31,8 @@ pub(crate) struct TorrentsView {
     scrollbase: ScrollBase,
     // Don't trust the offset provided by on_event because of a bug in Mux
     offset: Cell<Vec2>,
-    update_recv: broadcast::Receiver<Update>,
-    update_send: broadcast::Sender<Update>,
+    update_recv: mpsc::Receiver<Update>,
+    update_send: UpdateSenders,
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -73,8 +82,8 @@ fn draw_cell(printer: &Printer, tor: &Torrent, col: Column) {
 impl TorrentsView {
     pub(crate) fn new(
         torrents: HashMap<InfoHash, Torrent>,
-        update_send: broadcast::Sender<Update>,
-        update_recv: broadcast::Receiver<Update>,
+        update_send: UpdateSenders,
+        update_recv: mpsc::Receiver<Update>,
     ) -> Self {
         let rows: Vec<InfoHash> = torrents.keys().copied().collect();
         let columns = vec![
@@ -167,9 +176,10 @@ impl TorrentsView {
 
         if !filter_updates.is_empty() {
             filter_updates.shrink_to_fit();
-            self.update_send
-                .send(Update::UpdateMatches(filter_updates))
-                .expect("updates channel closed");
+            let f = self.update_send
+                .filters
+                .send(FiltersUpdate::UpdateMatches(filter_updates));
+            block_on(f).expect("updates channel closed");
         }
     }
 
@@ -177,7 +187,6 @@ impl TorrentsView {
         match update {
             Update::Delta(delta) => self.apply_delta(delta),
             Update::NewFilters(filters) => self.replace_filters(filters),
-            Update::UpdateMatches(_) => (),
         }
     }
 
@@ -185,7 +194,7 @@ impl TorrentsView {
         loop {
             match self.update_recv.try_recv() {
                 Ok(update) => self.perform_update(update),
-                Err(broadcast::TryRecvError::Empty) => break,
+                Err(mpsc::error::TryRecvError::Empty) => break,
                 Err(_) => panic!(),
             }
         }

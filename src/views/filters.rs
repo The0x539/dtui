@@ -3,11 +3,19 @@ use cursive::Printer;
 use std::collections::HashMap;
 use cursive::event::{Event, EventResult, MouseEvent, MouseButton};
 use cursive::vec::Vec2;
-use tokio::sync::broadcast;
-use crate::Update;
+use tokio::sync::mpsc;
 use deluge_rpc::{FilterKey, FilterDict};
-use super::ScrollInner;
+use super::scroll::ScrollInner;
 use std::convert::TryInto;
+use futures::executor::block_on;
+
+use crate::views::torrents::Update as TorrentsUpdate;
+use crate::UpdateSenders;
+
+#[derive(Debug)]
+pub enum Update {
+    UpdateMatches(HashMap<(FilterKey, String), i64>),
+}
 
 #[derive(Clone)]
 struct Filter {
@@ -80,15 +88,15 @@ impl Row {
 pub(crate) struct FiltersView {
     active_filters: FilterDict,
     rows: Vec<Row>,
-    update_send: broadcast::Sender<Update>,
-    update_recv: broadcast::Receiver<Update>,
+    update_send: UpdateSenders,
+    update_recv: mpsc::Receiver<Update>,
 }
 
 impl FiltersView {
     pub(crate) fn new(
         filter_tree: HashMap<FilterKey, Vec<(String, u64)>>,
-        update_send: broadcast::Sender<Update>,
-        update_recv: broadcast::Receiver<Update>,
+        update_send: UpdateSenders,
+        update_recv: mpsc::Receiver<Update>,
     ) -> Self {
         let mut categories = Vec::with_capacity(filter_tree.len());
 
@@ -137,8 +145,9 @@ impl FiltersView {
     }
     
     fn update_filters(&mut self) {
-        let cmd = Update::NewFilters(self.active_filters());
-        self.update_send.send(cmd).expect("update channel closed");
+        let cmd = TorrentsUpdate::NewFilters(self.active_filters());
+        let f = self.update_send.torrents.send(cmd);
+        block_on(f).expect("update channel closed");
     }
 
     fn get_filter_idx(&mut self, the_key: FilterKey, val: &str) -> usize {
@@ -209,8 +218,6 @@ impl FiltersView {
                     self.update_filter(key, &val, incr);
                 }
             }
-            Update::Delta(_) => (),
-            Update::NewFilters(_) => (),
         }
     }
 
@@ -218,7 +225,7 @@ impl FiltersView {
         loop {
             match self.update_recv.try_recv() {
                 Ok(update) => self.perform_update(update),
-                Err(broadcast::TryRecvError::Empty) => break,
+                Err(mpsc::error::TryRecvError::Empty) => break,
                 Err(_) => panic!(),
             }
         }

@@ -1,7 +1,3 @@
-mod torrents;
-mod filters;
-mod scroll;
-
-pub(crate) use torrents::TorrentsView;
-pub(crate) use filters::FiltersView;
-pub(crate) use scroll::ScrollInner;
+pub(crate) mod torrents;
+pub(crate) mod filters;
+pub(crate) mod scroll;

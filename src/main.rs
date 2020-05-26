@@ -1,8 +1,7 @@
 use deluge_rpc::*;
-use tokio::sync::{mpsc, broadcast, Notify};
+use tokio::sync::{mpsc, Notify};
 use cursive::event::Event;
 use cursive::Cursive;
-use std::collections::HashMap;
 use cursive::traits::*;
 use cursive::views::{LinearLayout, TextView, Panel};
 use cursive::direction::Orientation;
@@ -10,24 +9,30 @@ use cursive::menu::MenuTree;
 use cursive_tabs::TabPanel;
 use std::sync::Arc;
 
-mod views;
-use views::*;
+pub mod views;
+use views::{
+    scroll::ScrollInner,
+    filters::FiltersView,
+    torrents::TorrentsView,
+
+    filters::Update as FiltersUpdate,
+    torrents::Update as TorrentsUpdate,
+};
 
 fn read_file(path: &str) -> String {
     std::fs::read_to_string(path).unwrap()
-}
-
-#[derive(Debug, Clone)]
-enum Update {
-    NewFilters(FilterDict),
-    Delta(HashMap<InfoHash, <Torrent as Query>::Diff>),
-    UpdateMatches(HashMap<(FilterKey, String), i64>),
 }
 
 #[derive(Debug)]
 pub enum SessionCommand {
     AddTorrentUrl(String),
     Shutdown,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct UpdateSenders {
+    pub filters: mpsc::Sender<FiltersUpdate>,
+    pub torrents: mpsc::Sender<TorrentsUpdate>,
 }
 
 #[derive(Clone, Debug, serde::Deserialize, Query)]
@@ -68,7 +73,7 @@ impl Torrent {
 
 async fn manage_session(
     mut session: Session,
-    updates: broadcast::Sender<Update>,
+    mut updates: UpdateSenders,
     mut commands: mpsc::Receiver<SessionCommand>,
     shutdown: Arc<Notify>,
 ) -> deluge_rpc::Result<Session> {
@@ -98,7 +103,10 @@ async fn manage_session(
             }
             _ = tokio::time::delay_for(tokio::time::Duration::from_secs(1)) => {
                 let delta = session.get_torrents_status_diff::<Torrent>(None).await?;
-                updates.send(Update::Delta(delta)).expect("update channel closed");
+                updates.torrents
+                    .send(TorrentsUpdate::Delta(delta))
+                    .await
+                    .expect("update channel closed");
             }
             _ = shutdown.notified() => return Ok(session),
         }
@@ -144,7 +152,16 @@ async fn main() -> deluge_rpc::Result<()> {
     let auth_level = session.login(&user, &pass).await?;
     assert!(auth_level >= AuthLevel::Normal);
     
-    let (update_send, _) = broadcast::channel(50);
+    let (filter_updates, torrent_updates, update_send) = {
+        let f = mpsc::channel(20);
+        let t = mpsc::channel(20);
+        let u = UpdateSenders {
+            filters: f.0,
+            torrents: t.0,
+        };
+        (f.1, t.1, u)
+    };
+
     let (command_send, command_recv) = mpsc::channel(20);
 
     let shutdown = Arc::new(Notify::new());
@@ -153,14 +170,12 @@ async fn main() -> deluge_rpc::Result<()> {
     // Fix by starting out with empty data and having the session thread send out a big update.
     let torrents = {
         let status = session.get_torrents_status(None).await?;
-        let (update_send, update_recv) = (update_send.clone(), update_send.subscribe());
-        TorrentsView::new(status, update_send, update_recv)
+        TorrentsView::new(status, update_send.clone(), torrent_updates)
             .with_name("torrents")
     };
     let filters = {
         let tree = session.get_filter_tree(true, &[]).await?;
-        let (update_send, update_recv) = (update_send.clone(), update_send.subscribe());
-        FiltersView::new(tree, update_send, update_recv)
+        FiltersView::new(tree, update_send.clone(), filter_updates)
             .with_name("filters")
             .into_scroll_wrapper()
     };
