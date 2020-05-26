@@ -7,17 +7,18 @@ use cursive::vec::Vec2;
 use cursive::event::{Event, EventResult, MouseEvent, MouseButton};
 use cursive::view::ScrollBase;
 use std::cell::Cell;
-use tokio::sync::mpsc;
-use crate::TorrentsUpdate;
+use tokio::sync::broadcast;
+use crate::Update;
 use cursive::utils::Counter;
 use cursive::views::ProgressBar;
 use human_format::{Formatter, Scales};
 
-type Receiver = mpsc::Receiver<TorrentsUpdate>;
+type Receiver = broadcast::Receiver<Update>;
 
 #[derive(Debug)]
 pub(crate) struct TorrentsView {
     torrents: HashMap<InfoHash, Torrent>,
+    filters: FilterDict,
     rows: Vec<InfoHash>,
     columns: Vec<(Column, usize)>,
     scrollbase: ScrollBase,
@@ -72,8 +73,7 @@ fn draw_cell(printer: &Printer, tor: &Torrent, col: Column) {
 
 impl TorrentsView {
     pub(crate) fn new(torrents: HashMap<InfoHash, Torrent>, updates: Receiver) -> Self {
-        let mut rows: Vec<InfoHash> = torrents.keys().copied().collect();
-        rows.sort_by(|a, b| torrents[a].name.cmp(&torrents[b].name));
+        let rows: Vec<InfoHash> = torrents.keys().copied().collect();
         let columns = vec![
             (Column::Name, 30),
             (Column::State, 15),
@@ -82,16 +82,31 @@ impl TorrentsView {
         ];
         let scrollbase = ScrollBase { content_height: rows.len(), ..Default::default() };
         let offset = Cell::new(Vec2::zero());
-        Self { torrents, rows, columns, scrollbase, offset, updates }
+        let filters = Default::default();
+        let mut obj = Self { torrents, rows, columns, scrollbase, offset, filters, updates };
+        obj.sort();
+        obj
     }
 
-    pub fn replace_torrents(&mut self, torrents: HashMap<InfoHash, Torrent>) {
-        let mut rows: Vec<InfoHash> = torrents.keys().copied().collect();
-        rows.sort_by(|a, b| torrents[a].name.cmp(&torrents[b].name));
-        self.scrollbase.content_height = rows.len();
+    fn sort(&mut self) {
+        // TODO: choose column and direction
+        let rows = &mut self.rows;
+        let torrents = &self.torrents;
+        rows.sort_by_key(|t| &torrents[t].name);
+    }
+
+    fn replace_filters(&mut self, filters: FilterDict) {
+        self.rows = self.torrents
+            .iter()
+            .filter_map(|(k, v)| if v.matches_filters(&filters) { Some(k) } else { None })
+            .copied()
+            .collect();
+        self.sort();
+
+        self.filters = filters;
+
+        self.scrollbase.content_height = self.rows.len();
         self.scrollbase.start_line = 0;
-        self.torrents = torrents;
-        self.rows = rows;
     }
 
     pub fn apply_delta(&mut self, delta: HashMap<InfoHash, <Torrent as Query>::Diff>) {
@@ -102,10 +117,10 @@ impl TorrentsView {
         }
     }
 
-    pub fn perform_update(&mut self, update: TorrentsUpdate) {
+    pub fn perform_update(&mut self, update: Update) {
         match update {
-            TorrentsUpdate::Replace(new_torrents) => self.replace_torrents(new_torrents),
-            TorrentsUpdate::Delta(delta) => self.apply_delta(delta),
+            Update::Delta(delta) => self.apply_delta(delta),
+            Update::NewFilters(filters) => self.replace_filters(filters),
         }
     }
 
@@ -113,7 +128,7 @@ impl TorrentsView {
         loop {
             match self.updates.try_recv() {
                 Ok(update) => self.perform_update(update),
-                Err(mpsc::error::TryRecvError::Empty) => break,
+                Err(broadcast::TryRecvError::Empty) => break,
                 Err(_) => panic!(),
             }
         }
