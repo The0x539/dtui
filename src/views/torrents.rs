@@ -167,17 +167,21 @@ impl TorrentsView {
     fn add_torrents(&mut self, torrents: Vec<(InfoHash, Torrent)>) {
         let mut delta = HashMap::new();
         for (hash, tor) in torrents.into_iter() {
+            debug_assert!(!self.torrents.contains_key(&hash));
+
             for (key, val) in Self::get_deltas(&tor).into_iter() {
                 *delta.entry((key, val.to_string())).or_insert(0) += 1;
             }
 
+            self.torrents.insert(hash, tor);
+
+            let tor = &self.torrents[&hash];
             if tor.matches_filters(&self.filters) {
                 let val = &tor.name;
                 let idx = self.rows.binary_search_by_key(&val, |h| &self.torrents[h].name).unwrap_err();
                 self.insert_row(idx, hash);
             }
 
-            self.torrents.insert(hash, tor);
         }
 
         let f = self.update_send
