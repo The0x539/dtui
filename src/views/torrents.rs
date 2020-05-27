@@ -179,7 +179,10 @@ impl TorrentsView {
             let tor = &self.torrents[&hash];
             if tor.matches_filters(&self.filters) {
                 let val = &tor.name;
-                let idx = self.rows.binary_search_by_key(&val, |h| &self.torrents[h].name).unwrap_err();
+                let idx = match self.rows.binary_search_by_key(&val, |h| &self.torrents[h].name) {
+                    Ok(i) => i, // Found something with the same name. No big deal.
+                    Err(i) => i,
+                };
                 self.insert_row(idx, hash);
             }
         }
