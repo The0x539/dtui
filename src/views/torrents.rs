@@ -141,25 +141,33 @@ impl TorrentsView {
         self.rows.remove(idx);
     }
 
-    fn add_torrent(&mut self, hash: InfoHash, tor: Torrent) {
+    fn add_torrents(&mut self, torrents: Vec<(InfoHash, Torrent)>) {
         let mut delta = HashMap::new();
-        delta.insert((FilterKey::State, tor.state.to_string()), 1);
-        delta.insert((FilterKey::Owner, tor.owner.to_string()), 1);
-        delta.insert((FilterKey::Tracker, tor.tracker_host.to_string()), 1);
-        delta.insert((FilterKey::Label, tor.label.to_string()), 1);
+        for (hash, tor) in torrents.into_iter() {
+            for (key, val) in &[
+                (FilterKey::State,   tor.state.into()),
+                (FilterKey::Owner,   tor.owner.as_str()),
+                (FilterKey::Tracker, tor.tracker_host.as_str()),
+                (FilterKey::Label,   tor.label.as_str()),
+            ] { *delta.entry((*key, val.to_string())).or_insert(0) += 1; }
 
-        if tor.is_active() {
-            delta.insert((FilterKey::State, "Active".into()), 1);
+            if tor.is_active() {
+                *delta.entry((FilterKey::State, "Active".to_string())).or_insert(0) += 1;
+            }
+
+            if tor.has_tracker_error() {
+                *delta.entry((FilterKey::Tracker, "Error".to_string())).or_insert(0) += 1;
+            }
+
+            if tor.matches_filters(&self.filters) {
+                let val = &tor.name;
+                let idx = self.rows.binary_search_by_key(&val, |h| &self.torrents[h].name).unwrap_err();
+                self.insert_row(idx, hash);
+            }
+
+            self.torrents.insert(hash, tor);
         }
-        if tor.has_tracker_error() {
-            delta.insert((FilterKey::Tracker, "Error".into()), 1);
-        }
-        if tor.matches_filters(&self.filters) {
-            let val = &tor.name;
-            let idx = self.rows.binary_search_by_key(&val, |h| &self.torrents[h].name).unwrap_err();
-            self.insert_row(idx, hash);
-        }
-        self.torrents.insert(hash, tor);
+
         let f = self.update_send
             .filters
             .send(FiltersUpdate::UpdateMatches(delta));
@@ -168,7 +176,6 @@ impl TorrentsView {
 
     fn apply_delta(&mut self, delta: HashMap<InfoHash, <Torrent as Query>::Diff>) {
         let mut filter_updates = HashMap::new();
-
         macro_rules! incr {
             ($key:ident[$val:expr] $oper:tt 1) => {
                 let key = FilterKey::$key;
@@ -185,6 +192,8 @@ impl TorrentsView {
                 }
             }
         }
+
+        let mut new_torrents = Vec::new();
 
         for (hash, diff) in delta {
             if diff == Default::default() {
@@ -244,9 +253,11 @@ impl TorrentsView {
                     tracker_host: diff.tracker_host.unwrap(),
                     tracker_status: diff.tracker_status.unwrap(),
                 };
-                self.add_torrent(hash, new_torrent);
+                new_torrents.push((hash, new_torrent));
             }
         }
+
+        self.add_torrents(new_torrents);
 
         if !filter_updates.is_empty() {
             filter_updates.shrink_to_fit();
