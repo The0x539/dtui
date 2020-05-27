@@ -123,6 +123,23 @@ impl TorrentsView {
         self.scrollbase.start_line = 0;
     }
 
+    fn insert_row(&mut self, idx: usize, hash: InfoHash) {
+        debug_assert!(self.torrents[&hash].matches_filters(&self.filters));
+        self.scrollbase.content_height += 1;
+        if idx < self.scrollbase.start_line {
+            self.scrollbase.start_line += 1;
+        }
+        self.rows.insert(idx, hash);
+    }
+
+    fn remove_row(&mut self, idx: usize) {
+        self.scrollbase.content_height -= 1;
+        if idx < self.scrollbase.start_line {
+            self.scrollbase.start_line -= 1;
+        }
+        self.rows.remove(idx);
+    }
+
     fn apply_delta(&mut self, delta: HashMap<InfoHash, <Torrent as Query>::Diff>) {
         let mut filter_updates = HashMap::new();
 
@@ -177,19 +194,11 @@ impl TorrentsView {
                     match self.rows.binary_search_by_key(&val, |h| &self.torrents[h].name) {
                         Ok(idx) => {
                             debug_assert!(did_match && !does_match);
-                            self.scrollbase.content_height -= 1;
-                            if idx < self.scrollbase.start_line {
-                                self.scrollbase.start_line -= 1;
-                            }
-                            self.rows.remove(idx);
+                            self.remove_row(idx);
                         },
                         Err(idx) => {
                             debug_assert!(does_match && !did_match);
-                            self.scrollbase.content_height += 1;
-                            if idx < self.scrollbase.start_line {
-                                self.scrollbase.start_line += 1;
-                            }
-                            self.rows.insert(idx, hash);
+                            self.insert_row(idx, hash);
                         },
                     }
                 }
@@ -222,11 +231,7 @@ impl TorrentsView {
                 if new_torrent.matches_filters(&self.filters) {
                     let val = &new_torrent.name;
                     let idx = self.rows.binary_search_by_key(&val, |h| &self.torrents[h].name).unwrap_err();
-                    self.scrollbase.content_height += 1;
-                    if idx < self.scrollbase.start_line {
-                        self.scrollbase.start_line += 1;
-                    }
-                    self.rows.insert(idx, hash);
+                    self.insert_row(idx, hash);
                 }
                 self.torrents.insert(hash, new_torrent);
             }
