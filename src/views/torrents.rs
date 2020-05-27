@@ -165,14 +165,22 @@ impl TorrentsView {
 
                 let did_match = torrent.matches_filters(&self.filters);
                 let was_active = torrent.is_active();
+                let had_error = torrent.has_tracker_error();
                 torrent.update(diff);
                 let does_match = torrent.matches_filters(&self.filters);
                 let is_active = torrent.is_active();
+                let has_error = torrent.has_tracker_error();
 
                 if is_active && !was_active {
                     incr!(State, "Active");
                 } else if was_active && !is_active {
                     decr!(State, "Active");
+                }
+
+                if has_error && !had_error {
+                    incr!(Tracker, "Error");
+                } else if had_error && !has_error {
+                    decr!(Tracker, "Error");
                 }
 
                 if did_match != does_match {
@@ -218,6 +226,9 @@ impl TorrentsView {
                 incr!(Label, new_torrent.label);
                 if new_torrent.is_active() {
                     incr!(State, "Active");
+                }
+                if new_torrent.has_tracker_error() {
+                    incr!(Tracker, "Error");
                 }
                 if new_torrent.matches_filters(&self.filters) {
                     let val = &new_torrent.name;

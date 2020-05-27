@@ -56,21 +56,17 @@ impl Torrent {
     pub fn matches_filters(&self, filters: &FilterDict) -> bool {
         for (key, val) in filters.iter() {
             let cmp_val = match key {
-                FilterKey::State if val == "Active" => {
-                    if self.is_active() {
-                        continue;
-                    } else {
-                        return false;
-                    }
-                },
+                FilterKey::State if val == "Active" => if self.is_active() {
+                    continue;
+                } else {
+                    return false;
+                }
 
-                FilterKey::Tracker if val == "Error" => {
-                    if self.tracker_status.starts_with("Error:") {
-                        continue;
-                    } else {
-                        return false;
-                    }
-                },
+                FilterKey::Tracker if val == "Error" => if self.has_tracker_error() {
+                    continue;
+                } else {
+                    return false;
+                }
 
                 FilterKey::State   => self.state.into(),
                 FilterKey::Owner   => self.owner.as_str(),
@@ -80,6 +76,10 @@ impl Torrent {
             if val != cmp_val { return false; }
         }
         true
+    }
+
+    pub fn has_tracker_error(&self) -> bool {
+        self.tracker_status.starts_with("Error:")
     }
 
     pub fn is_active(&self) -> bool {
