@@ -5,7 +5,6 @@ use cursive::event::{Event, EventResult, MouseEvent, MouseButton};
 use cursive::vec::Vec2;
 use tokio::sync::mpsc;
 use deluge_rpc::{FilterKey, FilterDict};
-use std::convert::TryInto;
 use futures::executor::block_on;
 
 use super::scroll::ScrollInner;
