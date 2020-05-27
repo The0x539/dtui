@@ -141,29 +141,33 @@ impl TorrentsView {
         self.rows.remove(idx);
     }
 
+    fn get_deltas(tor: &Torrent) -> Vec<(FilterKey, &str)> {
+        let mut ret = vec![
+            (FilterKey::State,   tor.state.into()),
+            (FilterKey::Owner,   tor.owner.as_str()),
+            (FilterKey::Tracker, tor.tracker_host.as_str()),
+            (FilterKey::Label,   tor.label.as_str()),
+
+            (FilterKey::State,   "All"),
+            (FilterKey::Tracker, "All"),
+            (FilterKey::Label,   "All"),
+        ];
+
+        if tor.is_active() {
+            ret.push((FilterKey::State, "Active"));
+        }
+
+        if tor.has_tracker_error() {
+            ret.push((FilterKey::Tracker, "Error"));
+        }
+
+        ret
+    }
+
     fn add_torrents(&mut self, torrents: Vec<(InfoHash, Torrent)>) {
         let mut delta = HashMap::new();
         for (hash, tor) in torrents.into_iter() {
-            let mut to_incr = vec![
-                (FilterKey::State,   tor.state.into()),
-                (FilterKey::Owner,   tor.owner.as_str()),
-                (FilterKey::Tracker, tor.tracker_host.as_str()),
-                (FilterKey::Label,   tor.label.as_str()),
-
-                (FilterKey::State,   "All"),
-                (FilterKey::Tracker, "All"),
-                (FilterKey::Label,   "All"),
-            ];
-
-            if tor.is_active() {
-                to_incr.push((FilterKey::State, "Active"));
-            }
-
-            if tor.has_tracker_error() {
-                to_incr.push((FilterKey::Tracker, "Error"));
-            }
-
-            for (key, val) in to_incr.into_iter() {
+            for (key, val) in Self::get_deltas(&tor).into_iter() {
                 *delta.entry((key, val.to_string())).or_insert(0) += 1;
             }
 
@@ -176,6 +180,46 @@ impl TorrentsView {
             self.torrents.insert(hash, tor);
         }
 
+        let f = self.update_send
+            .filters
+            .send(FiltersUpdate::UpdateMatches(delta));
+        block_on(f).expect("updates channel closed");
+    }
+
+    fn remove_torrent(&mut self, hash: InfoHash) {
+        let tor = &self.torrents[&hash];
+
+        let mut to_decr = vec![
+                (FilterKey::State,   tor.state.into()),
+                (FilterKey::Owner,   tor.owner.as_str()),
+                (FilterKey::Tracker, tor.tracker_host.as_str()),
+                (FilterKey::Label,   tor.label.as_str()),
+
+                (FilterKey::State,   "All"),
+                (FilterKey::Tracker, "All"),
+                (FilterKey::Label,   "All"),
+        ];
+
+        if tor.is_active() {
+            to_decr.push((FilterKey::State, "Active"));
+        }
+
+        if tor.has_tracker_error() {
+            to_decr.push((FilterKey::Tracker, "Error"));
+        }
+
+        let mut delta = HashMap::new();
+        for (key, val) in Self::get_deltas(&tor).into_iter() {
+            delta.insert((key, val.to_string()), -1);
+        }
+
+        if tor.matches_filters(&self.filters) {
+            let val = &tor.name;
+            let idx = self.rows.binary_search_by_key(&val, |h| &self.torrents[h].name).unwrap();
+            self.remove_row(idx);
+        }
+
+        self.torrents.remove(&hash);
         let f = self.update_send
             .filters
             .send(FiltersUpdate::UpdateMatches(delta));
