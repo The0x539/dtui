@@ -124,6 +124,7 @@ impl TorrentsView {
     }
 
     fn insert_row(&mut self, idx: usize, hash: InfoHash) {
+        debug_assert!(self.torrents.contains_key(&hash));
         debug_assert!(self.torrents[&hash].matches_filters(&self.filters));
         self.scrollbase.content_height += 1;
         if idx < self.scrollbase.start_line {
@@ -138,6 +139,31 @@ impl TorrentsView {
             self.scrollbase.start_line -= 1;
         }
         self.rows.remove(idx);
+    }
+
+    fn add_torrent(&mut self, hash: InfoHash, tor: Torrent) {
+        let mut delta = HashMap::new();
+        delta.insert((FilterKey::State, tor.state.to_string()), 1);
+        delta.insert((FilterKey::Owner, tor.owner.to_string()), 1);
+        delta.insert((FilterKey::Tracker, tor.tracker_host.to_string()), 1);
+        delta.insert((FilterKey::Label, tor.label.to_string()), 1);
+
+        if tor.is_active() {
+            delta.insert((FilterKey::State, "Active".into()), 1);
+        }
+        if tor.has_tracker_error() {
+            delta.insert((FilterKey::Tracker, "Error".into()), 1);
+        }
+        if tor.matches_filters(&self.filters) {
+            let val = &tor.name;
+            let idx = self.rows.binary_search_by_key(&val, |h| &self.torrents[h].name).unwrap_err();
+            self.insert_row(idx, hash);
+        }
+        self.torrents.insert(hash, tor);
+        let f = self.update_send
+            .filters
+            .send(FiltersUpdate::UpdateMatches(delta));
+        block_on(f).expect("updates channel closed");
     }
 
     fn apply_delta(&mut self, delta: HashMap<InfoHash, <Torrent as Query>::Diff>) {
@@ -218,22 +244,7 @@ impl TorrentsView {
                     tracker_host: diff.tracker_host.unwrap(),
                     tracker_status: diff.tracker_status.unwrap(),
                 };
-                incr!(State[new_torrent.state] += 1);
-                incr!(Owner[new_torrent.owner] += 1);
-                incr!(Tracker[new_torrent.tracker_host] += 1);
-                incr!(Label[new_torrent.label] += 1);
-                if new_torrent.is_active() {
-                    incr!(State["Active"] += 1);
-                }
-                if new_torrent.has_tracker_error() {
-                    incr!(Tracker["Error"] += 1);
-                }
-                if new_torrent.matches_filters(&self.filters) {
-                    let val = &new_torrent.name;
-                    let idx = self.rows.binary_search_by_key(&val, |h| &self.torrents[h].name).unwrap_err();
-                    self.insert_row(idx, hash);
-                }
-                self.torrents.insert(hash, new_torrent);
+                self.add_torrent(hash, new_torrent);
             }
         }
 
