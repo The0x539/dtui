@@ -127,29 +127,18 @@ impl TorrentsView {
         let mut filter_updates = HashMap::new();
 
         macro_rules! incr {
-            ($key:ident, $val:expr) => {
+            ($key:ident[$val:expr] $oper:tt 1) => {
                 let key = FilterKey::$key;
                 let val = $val.to_string();
-                *filter_updates.entry((key, val)).or_insert(0) += 1;
-            }
-        }
-
-        macro_rules! decr {
-            ($key:ident, $val:expr) => {
-                let key = FilterKey::$key;
-                let val = $val.to_string();
-                // Panics on 0, which it ought to.
-                *filter_updates.entry((key, val)).or_insert(0) -= 1;
+                *filter_updates.entry((key, val)).or_insert(0) $oper 1;
             }
         }
 
         macro_rules! mv {
             ($key:ident, $old:expr, $new:expr) => {
-                if let Some(new_val) = &$new {
-                    if new_val != &$old {
-                        decr!($key, $old);
-                        incr!($key, new_val);
-                    }
+                if $new.is_some() && $new.as_ref() != Some(&$old) {
+                    incr!($key[$old] -= 1);
+                    incr!($key[$new.as_ref().unwrap()] += 1);
                 }
             }
         }
@@ -172,15 +161,15 @@ impl TorrentsView {
                 let has_error = torrent.has_tracker_error();
 
                 if is_active && !was_active {
-                    incr!(State, "Active");
+                    incr!(State["Active"] += 1);
                 } else if was_active && !is_active {
-                    decr!(State, "Active");
+                    incr!(State["Active"] -= 1);
                 }
 
                 if has_error && !had_error {
-                    incr!(Tracker, "Error");
+                    incr!(Tracker["Error"] += 1);
                 } else if had_error && !has_error {
-                    decr!(Tracker, "Error");
+                    incr!(Tracker["Error"] -= 1);
                 }
 
                 if did_match != does_match {
@@ -220,15 +209,15 @@ impl TorrentsView {
                     tracker_host: diff.tracker_host.unwrap(),
                     tracker_status: diff.tracker_status.unwrap(),
                 };
-                incr!(State, new_torrent.state);
-                incr!(Owner, new_torrent.owner);
-                incr!(Tracker, new_torrent.tracker_host);
-                incr!(Label, new_torrent.label);
+                incr!(State[new_torrent.state] += 1);
+                incr!(Owner[new_torrent.owner] += 1);
+                incr!(Tracker[new_torrent.tracker_host] += 1);
+                incr!(Label[new_torrent.label] += 1);
                 if new_torrent.is_active() {
-                    incr!(State, "Active");
+                    incr!(State["Active"] += 1);
                 }
                 if new_torrent.has_tracker_error() {
-                    incr!(Tracker, "Error");
+                    incr!(Tracker["Error"] += 1);
                 }
                 if new_torrent.matches_filters(&self.filters) {
                     let val = &new_torrent.name;
