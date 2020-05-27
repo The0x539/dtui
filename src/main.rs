@@ -186,11 +186,8 @@ async fn main() -> deluge_rpc::Result<()> {
 
     let shutdown = Arc::new(Notify::new());
 
-    // TODO: By getting this data before subscribing to events, we introduce a race condition.
-    // Fix by starting out with empty data and having the session thread send out a big update.
     let torrents = {
-        let status = session.get_torrents_status(None).await?;
-        TorrentsView::new(status, update_send.clone(), torrent_updates)
+        TorrentsView::new(Default::default(), update_send.clone(), torrent_updates)
             .with_name("torrents")
     };
     let filters = {

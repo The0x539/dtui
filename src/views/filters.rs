@@ -105,7 +105,7 @@ impl FiltersView {
         for (key, values) in filter_tree.into_iter() {
             let mut filters = values
                 .into_iter()
-                .map(|(value, hits)| Filter { key, value, hits: hits.try_into().unwrap() })
+                .map(|(value, _hits)| Filter { key, value, hits: 0 })
                 .collect::<Vec<Filter>>();
             filters.sort_unstable_by_key(|f| f.value.clone());
             categories.push((key, filters));
