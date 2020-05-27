@@ -6,7 +6,6 @@ use cursive::Printer;
 use cursive::vec::Vec2;
 use cursive::event::{Event, EventResult, MouseEvent, MouseButton};
 use cursive::view::ScrollBase;
-use std::cell::Cell;
 use tokio::sync::mpsc;
 use crate::UpdateSenders;
 use cursive::utils::Counter;
@@ -32,8 +31,6 @@ pub(crate) struct TorrentsView {
     rows: Vec<InfoHash>,
     columns: Vec<(Column, usize)>,
     scrollbase: ScrollBase,
-    // Don't trust the offset provided by on_event because of a bug in Mux
-    offset: Cell<Vec2>,
     update_recv: mpsc::Receiver<Update>,
     update_send: UpdateSenders,
 }
@@ -96,9 +93,8 @@ impl TorrentsView {
             (Column::Speed, 15),
         ];
         let scrollbase = ScrollBase { content_height: rows.len(), ..Default::default() };
-        let offset = Cell::new(Vec2::zero());
         let filters = Default::default();
-        let mut obj = Self { torrents, rows, columns, scrollbase, offset, filters, update_send, update_recv };
+        let mut obj = Self { torrents, rows, columns, scrollbase, filters, update_send, update_recv };
         obj.sort();
         obj
     }
@@ -348,7 +344,6 @@ impl Refreshable for TorrentsView {
 
 impl View for TorrentsView {
     fn draw(&self, printer: &Printer) {
-        self.offset.set(printer.offset);
         let Vec2 { x: w, y: h } = printer.size;
         let mut x = 0;
         for (_column, width) in &self.columns {
@@ -380,7 +375,7 @@ impl View for TorrentsView {
 
     fn on_event(&mut self, event: Event) -> EventResult {
         match event {
-            Event::Mouse { offset: _, position, event } => match event {
+            Event::Mouse { offset, position, event } => match event {
                 MouseEvent::WheelUp => {
                     self.scrollbase.scroll_up(1);
                     EventResult::Consumed(None)
@@ -390,7 +385,7 @@ impl View for TorrentsView {
                     EventResult::Consumed(None)
                 },
                 MouseEvent::Press(MouseButton::Left)=> {
-                    let mut pos = position.saturating_sub(self.offset.get());
+                    let mut pos = position.saturating_sub(offset);
                     pos.y = pos.y.saturating_sub(2);
                     if self.scrollbase.content_height > self.scrollbase.view_height {
                         self.scrollbase.start_drag(pos, self.width());
@@ -398,7 +393,7 @@ impl View for TorrentsView {
                     EventResult::Consumed(None)
                 },
                 MouseEvent::Hold(MouseButton::Left) => {
-                    let mut pos = position.saturating_sub(self.offset.get());
+                    let mut pos = position.saturating_sub(offset);
                     pos.y = pos.y.saturating_sub(2);
                     self.scrollbase.drag(pos);
                     EventResult::Consumed(None)
