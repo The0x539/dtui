@@ -193,25 +193,6 @@ impl TorrentsView {
     fn remove_torrent(&mut self, hash: InfoHash) {
         let tor = &self.torrents[&hash];
 
-        let mut to_decr = vec![
-                (FilterKey::State,   tor.state.into()),
-                (FilterKey::Owner,   tor.owner.as_str()),
-                (FilterKey::Tracker, tor.tracker_host.as_str()),
-                (FilterKey::Label,   tor.label.as_str()),
-
-                (FilterKey::State,   "All"),
-                (FilterKey::Tracker, "All"),
-                (FilterKey::Label,   "All"),
-        ];
-
-        if tor.is_active() {
-            to_decr.push((FilterKey::State, "Active"));
-        }
-
-        if tor.has_tracker_error() {
-            to_decr.push((FilterKey::Tracker, "Error"));
-        }
-
         let mut delta = HashMap::new();
         for (key, val) in Self::get_deltas(&tor).into_iter() {
             delta.insert((key, val.to_string()), -1);
