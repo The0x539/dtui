@@ -164,8 +164,16 @@ impl TorrentsView {
                 mv!(Label, torrent.label, diff.label);
 
                 let did_match = torrent.matches_filters(&self.filters);
+                let was_active = torrent.is_active();
                 torrent.update(diff);
                 let does_match = torrent.matches_filters(&self.filters);
+                let is_active = torrent.is_active();
+
+                if is_active && !was_active {
+                    incr!(State, "Active");
+                } else if was_active && !is_active {
+                    decr!(State, "Active");
+                }
 
                 if did_match != does_match {
                     let val = &self.torrents[&hash].name;
@@ -198,6 +206,7 @@ impl TorrentsView {
                     total_size: diff.total_size.unwrap(),
                     progress: diff.progress.unwrap(),
                     upload_payload_rate: diff.upload_payload_rate.unwrap(),
+                    download_payload_rate: diff.download_payload_rate.unwrap(),
                     label: diff.label.unwrap(),
                     owner: diff.owner.unwrap(),
                     tracker_host: diff.tracker_host.unwrap(),
@@ -207,6 +216,9 @@ impl TorrentsView {
                 incr!(Owner, new_torrent.owner);
                 incr!(Tracker, new_torrent.tracker_host);
                 incr!(Label, new_torrent.label);
+                if new_torrent.is_active() {
+                    incr!(State, "Active");
+                }
                 if new_torrent.matches_filters(&self.filters) {
                     let val = &new_torrent.name;
                     let idx = self.rows.binary_search_by_key(&val, |h| &self.torrents[h].name).unwrap_err();

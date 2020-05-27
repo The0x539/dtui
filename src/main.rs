@@ -45,6 +45,7 @@ struct Torrent {
     total_size: u64,
     progress: f32,
     upload_payload_rate: u64,
+    download_payload_rate: u64,
     label: String,
     owner: String,
     tracker_host: String,
@@ -55,9 +56,14 @@ impl Torrent {
     pub fn matches_filters(&self, filters: &FilterDict) -> bool {
         for (key, val) in filters.iter() {
             let cmp_val = match key {
-                FilterKey::State   => self.state.into(),
-                FilterKey::Owner   => self.owner.as_str(),
-                FilterKey::Label   => self.label.as_str(),
+                FilterKey::State if val == "Active" => {
+                    if self.is_active() {
+                        continue;
+                    } else {
+                        return false;
+                    }
+                },
+
                 FilterKey::Tracker if val == "Error" => {
                     if self.tracker_status.starts_with("Error:") {
                         continue;
@@ -65,11 +71,19 @@ impl Torrent {
                         return false;
                     }
                 },
+
+                FilterKey::State   => self.state.into(),
+                FilterKey::Owner   => self.owner.as_str(),
+                FilterKey::Label   => self.label.as_str(),
                 FilterKey::Tracker => self.tracker_host.as_str(),
             };
             if val != cmp_val { return false; }
         }
         true
+    }
+
+    pub fn is_active(&self) -> bool {
+        self.download_payload_rate > 0 || self.upload_payload_rate > 0
     }
 }
 
