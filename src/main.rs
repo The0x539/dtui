@@ -112,7 +112,12 @@ async fn manage_session(
             }
             event = events.recv() => {
                 match event.expect("event channel closed") {
-                    deluge_rpc::Event::TorrentRemoved(_hash) => todo!(),
+                    deluge_rpc::Event::TorrentRemoved(hash) => {
+                        updates.torrents
+                            .send(TorrentsUpdate::TorrentRemoved(hash))
+                            .await
+                            .expect("update channel closed");
+                    },
                     e => panic!("Received unexpected event: {:?}", e),
                 }
             }

@@ -22,6 +22,7 @@ use crate::views::filters::Update as FiltersUpdate;
 pub(crate) enum Update {
     NewFilters(FilterDict),
     Delta(HashMap<InfoHash, <Torrent as Query>::Diff>),
+    TorrentRemoved(InfoHash),
 }
 
 #[derive(Debug)]
@@ -181,7 +182,6 @@ impl TorrentsView {
                 let idx = self.rows.binary_search_by_key(&val, |h| &self.torrents[h].name).unwrap_err();
                 self.insert_row(idx, hash);
             }
-
         }
 
         let f = self.update_send
@@ -357,6 +357,7 @@ impl Refreshable for TorrentsView {
         match update {
             Update::Delta(delta) => self.apply_delta(delta),
             Update::NewFilters(filters) => self.replace_filters(filters),
+            Update::TorrentRemoved(hash) => self.remove_torrent(hash),
         }
     }
 }
