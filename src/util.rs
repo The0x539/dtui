@@ -8,6 +8,8 @@ pub fn fmt_bytes(amt: u64, units: &str) -> String {
 }
 
 pub fn digit_width(mut n: u64) -> usize {
+    if n == 0 { return 1; }
+
     let mut digits = 0;
     while n > 0 {
         n /= 10;
