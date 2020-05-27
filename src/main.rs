@@ -8,6 +8,7 @@ use cursive::direction::Orientation;
 use cursive::menu::MenuTree;
 use cursive_tabs::TabPanel;
 use std::sync::Arc;
+use tokio::task::JoinHandle;
 
 pub mod views;
 use views::{
@@ -24,6 +25,9 @@ use views::{
 fn read_file(path: &str) -> String {
     std::fs::read_to_string(path).unwrap()
 }
+
+
+pub(crate) type CmdFuture = JoinHandle<mpsc::Sender<SessionCommand>>;
 
 #[derive(Debug)]
 pub enum SessionCommand {
@@ -138,13 +142,18 @@ mod menu {
     use cursive::views::{EditView, Dialog};
     use cursive::traits::*;
     use futures::executor::block_on;
-    use tokio::sync::mpsc;
     use super::SessionCommand;
+    use super::CmdFuture;
 
     fn send_cmd(siv: &mut Cursive, cmd: SessionCommand) {
-        siv.with_user_data(|chan: &mut mpsc::Sender<SessionCommand>| {
-            let fut = chan.send(cmd);
-            block_on(fut).expect("command channel closed");
+        siv.with_user_data(|fut: &mut Option<CmdFuture>| {
+            let mut chan = block_on(fut.take().unwrap()).unwrap();
+            fut.replace(tokio::spawn(async move {
+                chan.send(cmd)
+                    .await
+                    .expect("Couldn't send command to session thread");
+                chan
+            }));
         });
     }
 
@@ -173,8 +182,8 @@ async fn main() -> deluge_rpc::Result<()> {
     assert!(auth_level >= AuthLevel::Normal);
     
     let (filter_updates, torrent_updates, update_send) = {
-        let f = mpsc::channel(20);
-        let t = mpsc::channel(20);
+        let f = mpsc::channel(50);
+        let t = mpsc::channel(50);
         let u = UpdateSenders {
             filters: f.0,
             torrents: t.0,
@@ -182,7 +191,7 @@ async fn main() -> deluge_rpc::Result<()> {
         (f.1, t.1, u)
     };
 
-    let (command_send, command_recv) = mpsc::channel(20);
+    let (command_send, command_recv) = mpsc::channel(50);
 
     let shutdown = Arc::new(Notify::new());
 
@@ -233,7 +242,7 @@ async fn main() -> deluge_rpc::Result<()> {
     });
     siv.set_autorefresh(true);
     siv.set_autohide_menu(false);
-    siv.set_user_data(command_send);
+    siv.set_user_data(Some(tokio::spawn(async { command_send })));
 
     siv.add_global_callback('q', Cursive::quit);
     siv.add_global_callback(Event::Refresh, |s| {
