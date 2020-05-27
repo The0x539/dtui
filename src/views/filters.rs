@@ -11,6 +11,7 @@ use super::scroll::ScrollInner;
 use super::refresh::Refreshable;
 
 use crate::views::torrents::Update as TorrentsUpdate;
+use crate::util::digit_width;
 use crate::UpdateSenders;
 
 #[derive(Debug)]
@@ -27,7 +28,7 @@ struct Filter {
 
 impl Filter {
     fn width(&self) -> usize {
-        4 + self.value.len() + 1 + self.hits.to_string().len()
+        4 + self.value.len() + 1 + digit_width(self.hits)
     }
 }
 
@@ -53,10 +54,10 @@ impl Row {
                     .map(Filter::width)
                     .max()
                     .unwrap_or(0)
-                    .max(2 + key.to_string().len())
+                    .max(2 + Into::<&'static str>::into(*key).len())
             },
             Self::ExpandedParent { key, .. } => {
-                2 + key.to_string().len()
+                2 + Into::<&'static str>::into(*key).len()
             },
             Self::Child(filter) => {
                 filter.width()
@@ -106,7 +107,7 @@ impl FiltersView {
                 .into_iter()
                 .map(|(value, _hits)| Filter { key, value, hits: 0 })
                 .collect::<Vec<Filter>>();
-            filters.sort_unstable_by_key(|f| f.value.clone());
+            filters.sort_by(|a, b| a.value.cmp(&b.value));
             categories.push((key, filters));
         }
 
@@ -151,7 +152,7 @@ impl FiltersView {
         block_on(f).expect("update channel closed");
     }
 
-    fn get_filter_idx(&mut self, the_key: FilterKey, val: &str) -> usize {
+    fn get_filter_idx(&mut self, the_key: FilterKey, val: String) -> usize {
         let mut y = 0;
         while y < self.rows.len() {
             let range = match &mut self.rows[y] {
@@ -160,10 +161,10 @@ impl FiltersView {
                         y += 1;
                         continue;
                     }
-                    let idx = match children.binary_search_by_key(&val, |f| f.value.as_str()) {
+                    let idx = match children.binary_search_by_key(&val.as_str(), |f| f.value.as_str()) {
                         Ok(i) => i,
                         Err(i) => {
-                            let filter = Filter { key: *key, value: val.to_string(), hits: 0 };
+                            let filter = Filter { key: *key, value: val, hits: 0 };
                             children.insert(i, filter);
                             i
                         },
@@ -181,10 +182,10 @@ impl FiltersView {
                 Row::Child(_) => panic!("Expected a parent in this position"),
             };
 
-            let idx = match self.rows[range].binary_search_by_key(&val, |r| r.get_filter().value.as_str()) {
+            let idx = match self.rows[range].binary_search_by_key(&val.as_str(), |r| r.get_filter().value.as_str()) {
                 Ok(i) => y+1 + i,
                 Err(i) => {
-                    let filter = Filter { key: the_key, value: val.to_string(), hits: 0 };
+                    let filter = Filter { key: the_key, value: val, hits: 0 };
                     self.rows.insert(y+1+i, Row::Child(filter));
                     match &mut self.rows[y] {
                         Row::ExpandedParent { n_children, .. } => *n_children += 1,
@@ -200,7 +201,7 @@ impl FiltersView {
         panic!("key not found: {}", the_key);
     }
 
-    fn update_filter(&mut self, key: FilterKey, val: &str, incr: i64) {
+    fn update_filter(&mut self, key: FilterKey, val: String, incr: i64) {
         let idx = self.get_filter_idx(key, val);
         let filter = self.rows[idx].get_filter_mut();
         // TODO: fail better if decrementing past zero.
@@ -257,7 +258,7 @@ impl Refreshable for FiltersView {
         match update {
             Update::UpdateMatches(changes) => {
                 for ((key, val), incr) in changes.into_iter() {
-                    self.update_filter(key, &val, incr);
+                    self.update_filter(key, val, incr);
                 }
             }
         }
@@ -287,7 +288,7 @@ impl ScrollInner for FiltersView {
                     (FilterKey::Label, "") => "No Label",
                     (_, v) => v,
                 };
-                let nspaces = printer.size.x - (3 + value.len() + hits.to_string().len());
+                let nspaces = printer.size.x - (3 + value.len() + digit_width(*hits));
                 let spaces = " ".repeat(nspaces);
                 printer.print((0, 0), &format!(" {} {}{}{}", bullet, value, spaces, hits));
             },

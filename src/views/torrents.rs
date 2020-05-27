@@ -10,12 +10,13 @@ use tokio::sync::mpsc;
 use crate::UpdateSenders;
 use cursive::utils::Counter;
 use cursive::views::ProgressBar;
-use human_format::{Formatter, Scales};
 use futures::executor::block_on;
 
 use super::refresh::Refreshable;
 
 use crate::views::filters::Update as FiltersUpdate;
+
+use crate::util::fmt_bytes;
 
 #[derive(Debug)]
 pub(crate) enum Update {
@@ -24,7 +25,6 @@ pub(crate) enum Update {
     TorrentRemoved(InfoHash),
 }
 
-#[derive(Debug)]
 pub(crate) struct TorrentsView {
     torrents: HashMap<InfoHash, Torrent>,
     filters: FilterDict,
@@ -35,25 +35,22 @@ pub(crate) struct TorrentsView {
     update_send: UpdateSenders,
 }
 
-#[derive(Debug, Copy, Clone)]
+#[derive(Clone, Copy)]
 enum Column { Name, State, Size, Speed }
-impl std::fmt::Display for Column {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        std::fmt::Debug::fmt(self, f)
+impl AsRef<str> for Column {
+    fn as_ref(&self) -> &'static str {
+        match self {
+            Self::Name => "Name",
+            Self::State => "State",
+            Self::Size => "Size",
+            Self::Speed => "Speed",
+        }
     }
 }
 
-// TODO: move to a more general scope; this will be useful elsewhere
-fn fmt_bytes(amt: u64, units: &str) -> String {
-    Formatter::new()
-        .with_scales(Scales::Binary())
-        .with_units(units)
-        .format(amt as f64)
-}
-
 fn draw_cell(printer: &Printer, tor: &Torrent, col: Column) {
-    let x = match col {
-        Column::Name => format!("{} {}", tor.hash, tor.name),
+    match col {
+        Column::Name => printer.print((0, 0), &tor.name),
         Column::State => {
             let status = match tor.state {
                 TorrentState::Downloading => "DOWN",
@@ -69,14 +66,12 @@ fn draw_cell(printer: &Printer, tor: &Torrent, col: Column) {
             let status_msg = format!("{} {:.2}%", status, tor.progress);
             ProgressBar::new()
                 .with_value(Counter::new(tor.progress as usize))
-                .with_label(move |_, _| status_msg.clone())
+                .with_label(move |_, _| status_msg.to_owned())
                 .draw(printer);
-            return;
         },
-        Column::Size => fmt_bytes(tor.total_size, "B"),
-        Column::Speed => fmt_bytes(tor.upload_payload_rate, "B/s"),
+        Column::Size => printer.print((0, 0), &fmt_bytes(tor.total_size, "B")),
+        Column::Speed => printer.print((0, 0), &fmt_bytes(tor.upload_payload_rate, "B/s")),
     };
-    printer.print((0, 0), &x);
 }
 
 impl TorrentsView {
@@ -167,7 +162,7 @@ impl TorrentsView {
             debug_assert!(!self.torrents.contains_key(&hash));
 
             for (key, val) in Self::get_deltas(&tor).into_iter() {
-                *delta.entry((key, val.to_string())).or_insert(0) += 1;
+                *delta.entry((key, val.to_owned())).or_insert(0) += 1;
             }
 
             self.torrents.insert(hash, tor);
@@ -190,11 +185,11 @@ impl TorrentsView {
     }
 
     fn remove_torrent(&mut self, hash: InfoHash) {
-        let tor = &self.torrents[&hash];
+        let tor = self.torrents.remove(&hash).expect("Tried to remove nonexistent torrent");
 
         let mut delta = HashMap::new();
         for (key, val) in Self::get_deltas(&tor).into_iter() {
-            delta.insert((key, val.to_string()), -1);
+            delta.insert((key, val.to_owned()), -1);
         }
 
         if tor.matches_filters(&self.filters) {
@@ -307,7 +302,7 @@ impl TorrentsView {
     fn draw_header(&self, printer: &Printer) {
         let mut x = 0;
         for (column, width) in &self.columns {
-            printer.offset((x, 0)).cropped((*width, 1)).print((0, 0), &column.to_string());
+            printer.offset((x, 0)).cropped((*width, 1)).print((0, 0), column.as_ref());
             x += width + 1;
         }
     }
