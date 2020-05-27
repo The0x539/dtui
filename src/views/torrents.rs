@@ -144,19 +144,27 @@ impl TorrentsView {
     fn add_torrents(&mut self, torrents: Vec<(InfoHash, Torrent)>) {
         let mut delta = HashMap::new();
         for (hash, tor) in torrents.into_iter() {
-            for (key, val) in &[
+            let mut to_incr = vec![
                 (FilterKey::State,   tor.state.into()),
                 (FilterKey::Owner,   tor.owner.as_str()),
                 (FilterKey::Tracker, tor.tracker_host.as_str()),
                 (FilterKey::Label,   tor.label.as_str()),
-            ] { *delta.entry((*key, val.to_string())).or_insert(0) += 1; }
+
+                (FilterKey::State,   "All"),
+                (FilterKey::Tracker, "All"),
+                (FilterKey::Label,   "All"),
+            ];
 
             if tor.is_active() {
-                *delta.entry((FilterKey::State, "Active".to_string())).or_insert(0) += 1;
+                to_incr.push((FilterKey::State, "Active"));
             }
 
             if tor.has_tracker_error() {
-                *delta.entry((FilterKey::Tracker, "Error".to_string())).or_insert(0) += 1;
+                to_incr.push((FilterKey::Tracker, "Error"));
+            }
+
+            for (key, val) in to_incr.into_iter() {
+                *delta.entry((key, val.to_string())).or_insert(0) += 1;
             }
 
             if tor.matches_filters(&self.filters) {
