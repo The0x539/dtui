@@ -328,9 +328,9 @@ dependencies = [
 
 [[package]]
 name = "deluge-rpc"
-version = "0.6.1"
+version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cacf6c0e3248c6ef7def09e0ef953a89ebdbd6faff57cdb25a0652f2b4fdebc0"
+checksum = "8b4e55f41639a510909c8f4294405ffe1a33135330c6109ea0c3ee2f581bade8"
 dependencies = [
  "deluge-rpc-macro",
  "enum-kinds",
@@ -351,9 +351,9 @@ dependencies = [
 
 [[package]]
 name = "deluge-rpc-macro"
-version = "0.6.1"
+version = "0.6.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8d285ea05b2a841d236a3276f50bdced7a20762cce603d1c00fa43a5cbdde0a0"
+checksum = "bf66e71f7ef10775015790c5a9dfda21f7fb5b2ccbda2b6b1cb6608bc202655d"
 dependencies = [
  "proc-macro2",
  "quote",

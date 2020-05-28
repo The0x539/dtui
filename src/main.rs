@@ -10,7 +10,6 @@ use cursive_tabs::TabPanel;
 use cursive::theme;
 use tokio::task::JoinHandle;
 use std::sync::Arc;
-use tokio::sync::Mutex;
 
 pub mod views;
 use views::{
@@ -99,17 +98,13 @@ impl Torrent {
 }
 
 async fn manage_events(
-    session: Arc<Mutex<Session>>,
+    session: Arc<Session>,
     mut update_send: UpdateSenders,
     mut shutdown: broadcast::Receiver<()>,
 ) -> deluge_rpc::Result<()> {
-    let mut events = {
-        let mut session = session.lock().await;
-        let events = session.subscribe_events();
-        let interested = deluge_rpc::events![TorrentRemoved];
-        session.set_event_interest(&interested).await?;
-        events
-    };
+    let mut events = session.subscribe_events();
+    let interested = deluge_rpc::events![TorrentRemoved];
+    session.set_event_interest(&interested).await?;
     loop {
         tokio::select! {
             event = events.recv() => {
@@ -129,7 +124,7 @@ async fn manage_events(
 }
 
 async fn manage_updates(
-    session: Arc<Mutex<Session>>,
+    session: Arc<Session>,
     mut update_send: UpdateSenders,
     mut update_recv: mpsc::Receiver<SessionUpdate>,
     mut shutdown: broadcast::Receiver<()>,
@@ -146,12 +141,8 @@ async fn manage_updates(
                 }
             },
             _ = tokio::time::delay_for(tokio::time::Duration::from_secs(1)) => {
-                let (delta, new_tree) = {
-                    let mut session = session.lock().await;
-                    let delta = session.get_torrents_status_diff::<Torrent>(filter_dict.as_ref()).await?;
-                    let new_tree = session.get_filter_tree(false, &[]).await?;
-                    (delta, new_tree)
-                };
+                let delta = session.get_torrents_status_diff::<Torrent>(filter_dict.as_ref()).await?;
+                let new_tree = session.get_filter_tree(false, &[]).await?;
                 update_send.torrents
                     .send(TorrentsUpdate::Delta(delta))
                     .await
@@ -168,7 +159,7 @@ async fn manage_updates(
 
 
 async fn manage_commands(
-    session: Arc<Mutex<Session>>,
+    session: Arc<Session>,
     mut commands: mpsc::Receiver<SessionCommand>,
     mut shutdown: broadcast::Receiver<()>,
 ) -> deluge_rpc::Result<()> {
@@ -179,10 +170,10 @@ async fn manage_commands(
                     SessionCommand::AddTorrentUrl(url) => {
                         let options = TorrentOptions::default();
                         let http_headers = None;
-                        session.lock().await.add_torrent_url(&url, &options, http_headers).await?;
+                        session.add_torrent_url(&url, &options, http_headers).await?;
                     },
                     SessionCommand::Shutdown => {
-                        session.lock().await.shutdown().await?;
+                        session.shutdown().await?;
                     },
                 }
             }
@@ -288,7 +279,7 @@ async fn main() -> deluge_rpc::Result<()> {
         .child(torrent_tabs)
         .child(status_bar);
 
-    let session = Arc::new(Mutex::new(session));
+    let session = Arc::new(session);
 
     let command_thread = tokio::spawn(manage_commands(session.clone(), command_recv, shutdown.subscribe()));
     let update_thread = tokio::spawn(manage_updates(session.clone(), update_send.clone(), session_updates, shutdown.subscribe()));
@@ -348,7 +339,7 @@ async fn main() -> deluge_rpc::Result<()> {
     update_thread.await.unwrap()?;
     event_thread.await.unwrap()?;
         
-    let session = Arc::try_unwrap(session).unwrap().into_inner();
+    let session = Arc::try_unwrap(session).unwrap();
     
     session.disconnect().await.map_err(|(_stream, err)| err)?;
 
