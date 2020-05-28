@@ -31,15 +31,21 @@ pub(crate) type CmdFuture = JoinHandle<mpsc::Sender<SessionCommand>>;
 #[derive(Debug)]
 pub enum SessionCommand {
     AddTorrentUrl(String),
-    NewFilters(FilterDict),
     Shutdown,
+}
+
+#[derive(Debug)]
+pub enum SessionUpdate {
+    NewFilters(FilterDict),
 }
 
 #[derive(Clone, Debug)]
 pub(crate) struct UpdateSenders {
     pub filters: mpsc::Sender<FiltersUpdate>,
     pub torrents: mpsc::Sender<TorrentsUpdate>,
-    pub session: mpsc::Sender<SessionCommand>,
+    pub session_updates: mpsc::Sender<SessionUpdate>,
+    #[allow(unused)]
+    pub session_commands: mpsc::Sender<SessionCommand>,
 }
 
 #[derive(Clone, Debug, serde::Deserialize, Query)]
@@ -93,16 +99,23 @@ impl Torrent {
 }
 
 async fn manage_events(
-    mut events: broadcast::Receiver<deluge_rpc::Event>,
-    mut updates: UpdateSenders,
+    session: Arc<Mutex<Session>>,
+    mut update_send: UpdateSenders,
     mut shutdown: broadcast::Receiver<()>,
-) {
+) -> deluge_rpc::Result<()> {
+    let mut events = {
+        let mut session = session.lock().await;
+        let events = session.subscribe_events();
+        let interested = deluge_rpc::events![TorrentRemoved];
+        session.set_event_interest(&interested).await?;
+        events
+    };
     loop {
         tokio::select! {
             event = events.recv() => {
                 match event.expect("event channel closed") {
                     deluge_rpc::Event::TorrentRemoved(hash) => {
-                        updates.torrents
+                        update_send.torrents
                             .send(TorrentsUpdate::TorrentRemoved(hash))
                             .await
                             .expect("update channel closed");
@@ -110,24 +123,55 @@ async fn manage_events(
                     e => panic!("Received unexpected event: {:?}", e),
                 }
             },
-            _ = shutdown.recv() => return,
+            _ = shutdown.recv() => return Ok(()),
         }
     }
 }
 
-async fn manage_session(
-    mut session: Session,
-    mut updates: UpdateSenders,
+async fn manage_updates(
+    session: Arc<Mutex<Session>>,
+    mut update_send: UpdateSenders,
+    mut update_recv: mpsc::Receiver<SessionUpdate>,
+    mut shutdown: broadcast::Receiver<()>,
+) -> deluge_rpc::Result<()> {
+    let mut filter_dict = None;
+    // TODO: something smarter than this
+    loop {
+        tokio::select! {
+            update = update_recv.recv() => {
+                match update.expect("update channel closed") {
+                    SessionUpdate::NewFilters(new_filters) => {
+                        filter_dict.replace(new_filters);
+                    }
+                }
+            },
+            _ = tokio::time::delay_for(tokio::time::Duration::from_secs(1)) => {
+                let (delta, new_tree) = {
+                    let mut session = session.lock().await;
+                    let delta = session.get_torrents_status_diff::<Torrent>(filter_dict.as_ref()).await?;
+                    let new_tree = session.get_filter_tree(false, &[]).await?;
+                    (delta, new_tree)
+                };
+                update_send.torrents
+                    .send(TorrentsUpdate::Delta(delta))
+                    .await
+                    .expect("update channel closed");
+                update_send.filters
+                    .send(FiltersUpdate::ReplaceTree(new_tree))
+                    .await
+                    .expect("update channel closed");
+            }
+            _ = shutdown.recv() => return Ok(()),
+        }
+    }
+}
+
+
+async fn manage_commands(
+    session: Arc<Mutex<Session>>,
     mut commands: mpsc::Receiver<SessionCommand>,
     mut shutdown: broadcast::Receiver<()>,
-    shutdown2: broadcast::Receiver<()>,
-) -> deluge_rpc::Result<Session> {
-    let events = session.subscribe_events();
-    let interested = deluge_rpc::events![TorrentRemoved];
-    session.set_event_interest(&interested).await?;
-    tokio::spawn(manage_events(events, updates.clone(), shutdown2));
-    let session = Arc::new(Mutex::new(session));
-    let mut filter_dict = None;
+) -> deluge_rpc::Result<()> {
     loop {
         tokio::select! {
             command = commands.recv() => {
@@ -137,34 +181,12 @@ async fn manage_session(
                         let http_headers = None;
                         session.lock().await.add_torrent_url(&url, &options, http_headers).await?;
                     },
-                    SessionCommand::NewFilters(new_filters) => {
-                        filter_dict.replace(new_filters);
-                    },
                     SessionCommand::Shutdown => {
                         session.lock().await.shutdown().await?;
                     },
                 }
             }
-            _ = tokio::time::delay_for(tokio::time::Duration::from_secs(1)) => {
-                let (delta, new_tree) = {
-                    let mut session = session.lock().await;
-                    let delta = session.get_torrents_status_diff::<Torrent>(filter_dict.as_ref()).await?;
-                    let new_tree = session.get_filter_tree(false, &[]).await?;
-                    (delta, new_tree)
-                };
-                updates.torrents
-                    .send(TorrentsUpdate::Delta(delta))
-                    .await
-                    .expect("update channel closed");
-                updates.filters
-                    .send(FiltersUpdate::ReplaceTree(new_tree))
-                    .await
-                    .expect("update channel closed");
-            }
-            _ = shutdown.recv() => {
-                let session = Arc::try_unwrap(session).unwrap().into_inner();
-                return Ok(session);
-            }
+            _ = shutdown.recv() => return Ok(()),
         }
     }
 }
@@ -217,15 +239,17 @@ async fn main() -> deluge_rpc::Result<()> {
     let (command_send, command_recv) = mpsc::channel(50);
     let (shutdown, _) = broadcast::channel(1);
 
-    let (filter_updates, torrent_updates, update_send) = {
+    let (filter_updates, torrent_updates, session_updates, update_send) = {
         let f = mpsc::channel(50);
         let t = mpsc::channel(50);
+        let s = mpsc::channel(50);
         let u = UpdateSenders {
             filters: f.0,
             torrents: t.0,
-            session: command_send.clone(),
+            session_updates: s.0,
+            session_commands: command_send.clone(),
         };
-        (f.1, t.1, u)
+        (f.1, t.1, s.1, u)
     };
 
     let torrents = {
@@ -264,7 +288,11 @@ async fn main() -> deluge_rpc::Result<()> {
         .child(torrent_tabs)
         .child(status_bar);
 
-    let session_thread = tokio::spawn(manage_session(session, update_send, command_recv, shutdown.subscribe(), shutdown.subscribe()));
+    let session = Arc::new(Mutex::new(session));
+
+    let command_thread = tokio::spawn(manage_commands(session.clone(), command_recv, shutdown.subscribe()));
+    let update_thread = tokio::spawn(manage_updates(session.clone(), update_send.clone(), session_updates, shutdown.subscribe()));
+    let event_thread = tokio::spawn(manage_events(session.clone(), update_send.clone(), shutdown.subscribe()));
 
     let theme = {
         use theme::{Theme, PaletteColor::*, Color::Rgb};
@@ -316,7 +344,13 @@ async fn main() -> deluge_rpc::Result<()> {
 
     shutdown.send(()).unwrap();
 
-    session_thread.await.unwrap()?.disconnect().await.map_err(|(_stream, err)| err)?;
+    command_thread.await.unwrap()?;
+    update_thread.await.unwrap()?;
+    event_thread.await.unwrap()?;
+        
+    let session = Arc::try_unwrap(session).unwrap().into_inner();
+    
+    session.disconnect().await.map_err(|(_stream, err)| err)?;
 
     Ok(())
 }

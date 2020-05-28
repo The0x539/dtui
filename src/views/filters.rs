@@ -11,7 +11,7 @@ use super::scroll::ScrollInner;
 use super::refresh::Refreshable;
 
 use crate::views::torrents::Update as TorrentsUpdate;
-use crate::SessionCommand;
+use crate::SessionUpdate;
 use crate::util::digit_width;
 use crate::UpdateSenders;
 
@@ -99,9 +99,9 @@ impl FiltersView {
             .try_send(update)
             .expect("couldn't send new filters to torrents view");
 
-        let cmd = SessionCommand::NewFilters(filters);
+        let cmd = SessionUpdate::NewFilters(filters);
         self.update_send
-            .session
+            .session_updates
             .try_send(cmd)
             .expect("couldn't send new filters to session thread");
     }
