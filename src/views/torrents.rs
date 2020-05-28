@@ -272,7 +272,7 @@ impl TorrentsView {
                 }
 
                 if did_match != does_match {
-                    let val = &self.torrents[&hash].name;
+                    let val = &torrent.name;
                     match self.rows.binary_search_by_key(&val, |h| &self.torrents[h].name) {
                         Ok(idx) => {
                             debug_assert!(did_match && !does_match);
@@ -284,6 +284,8 @@ impl TorrentsView {
                         },
                     }
                 }
+
+                self.torrents.insert(hash, torrent);
             } else {
                 // New torrent, so should have all the fields
                 // TODO: add a realize() method or something to derived Diffs
