@@ -1,5 +1,5 @@
 use deluge_rpc::*;
-use tokio::sync::{broadcast, mpsc, Notify};
+use tokio::sync::{broadcast, mpsc, Barrier};
 use cursive::event::Event;
 use cursive::Cursive;
 use cursive::traits::*;
@@ -96,7 +96,7 @@ impl Torrent {
 async fn manage_events(
     mut events: broadcast::Receiver<deluge_rpc::Event>,
     mut updates: UpdateSenders,
-    shutdown: Arc<Notify>,
+    shutdown: Arc<Barrier>,
 ) {
     loop {
         tokio::select! {
@@ -111,7 +111,7 @@ async fn manage_events(
                     e => panic!("Received unexpected event: {:?}", e),
                 }
             },
-            _ = shutdown.notified() => return,
+            _ = shutdown.wait() => return,
         }
     }
 }
@@ -120,7 +120,7 @@ async fn manage_session(
     mut session: Session,
     mut updates: UpdateSenders,
     mut commands: mpsc::Receiver<SessionCommand>,
-    shutdown: Arc<Notify>,
+    shutdown: Arc<Barrier>,
 ) -> deluge_rpc::Result<Session> {
     let events = session.subscribe_events();
     let interested = deluge_rpc::events![TorrentRemoved];
@@ -147,7 +147,7 @@ async fn manage_session(
                     .await
                     .expect("update channel closed");
             }
-            _ = shutdown.notified() => return Ok(session),
+            _ = shutdown.wait() => return Ok(session),
         }
     }
 }
@@ -208,7 +208,7 @@ async fn main() -> deluge_rpc::Result<()> {
 
     let (command_send, command_recv) = mpsc::channel(50);
 
-    let shutdown = Arc::new(Notify::new());
+    let shutdown = Arc::new(Barrier::new(3));
 
     let torrents = {
         TorrentsView::new(update_send.clone(), torrent_updates)
@@ -290,7 +290,7 @@ async fn main() -> deluge_rpc::Result<()> {
     
     siv.run();
 
-    shutdown.notify();
+    shutdown.wait().await;
 
     session_thread.await.unwrap()?.disconnect().await.map_err(|(_stream, err)| err)?;
 
