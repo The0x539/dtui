@@ -27,12 +27,6 @@ mod themes;
 mod menu;
 
 #[derive(Debug)]
-pub enum SessionCommand {
-    AddTorrentUrl(String),
-    Shutdown,
-}
-
-#[derive(Debug)]
 pub enum SessionUpdate {
     NewFilters(FilterDict),
 }
