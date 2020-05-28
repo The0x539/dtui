@@ -11,6 +11,7 @@ use super::scroll::ScrollInner;
 use super::refresh::Refreshable;
 
 use crate::views::torrents::Update as TorrentsUpdate;
+use crate::SessionCommand;
 use crate::util::digit_width;
 use crate::UpdateSenders;
 
@@ -83,11 +84,19 @@ impl FiltersView {
     }
     
     fn update_filters(&mut self) {
-        let cmd = TorrentsUpdate::NewFilters(self.active_filters());
+        let filters = self.active_filters();
+
+        let update = TorrentsUpdate::NewFilters(filters.clone());
         self.update_send
             .torrents
+            .try_send(update)
+            .expect("couldn't send new filters to torrents view");
+
+        let cmd = SessionCommand::NewFilters(filters);
+        self.update_send
+            .session
             .try_send(cmd)
-            .expect("couldn't send new filters");
+            .expect("couldn't send new filters to session thread");
     }
 
     fn get_row(&self, mut y: usize) -> Option<Row> {

@@ -31,6 +31,7 @@ pub(crate) type CmdFuture = JoinHandle<mpsc::Sender<SessionCommand>>;
 #[derive(Debug)]
 pub enum SessionCommand {
     AddTorrentUrl(String),
+    NewFilters(FilterDict),
     Shutdown,
 }
 
@@ -38,6 +39,7 @@ pub enum SessionCommand {
 pub(crate) struct UpdateSenders {
     pub filters: mpsc::Sender<FiltersUpdate>,
     pub torrents: mpsc::Sender<TorrentsUpdate>,
+    pub session: mpsc::Sender<SessionCommand>,
 }
 
 #[derive(Clone, Debug, serde::Deserialize, Query)]
@@ -125,6 +127,7 @@ async fn manage_session(
     session.set_event_interest(&interested).await?;
     tokio::spawn(manage_events(events, updates.clone(), shutdown2));
     let session = Arc::new(Mutex::new(session));
+    let mut filter_dict = None;
     loop {
         tokio::select! {
             command = commands.recv() => {
@@ -134,6 +137,9 @@ async fn manage_session(
                         let http_headers = None;
                         session.lock().await.add_torrent_url(&url, &options, http_headers).await?;
                     },
+                    SessionCommand::NewFilters(new_filters) => {
+                        filter_dict.replace(new_filters);
+                    },
                     SessionCommand::Shutdown => {
                         session.lock().await.shutdown().await?;
                     },
@@ -142,7 +148,7 @@ async fn manage_session(
             _ = tokio::time::delay_for(tokio::time::Duration::from_secs(1)) => {
                 let (delta, new_tree) = {
                     let mut session = session.lock().await;
-                    let delta = session.get_torrents_status_diff::<Torrent>(None).await?;
+                    let delta = session.get_torrents_status_diff::<Torrent>(filter_dict.as_ref()).await?;
                     let new_tree = session.get_filter_tree(false, &[]).await?;
                     (delta, new_tree)
                 };
@@ -208,18 +214,19 @@ async fn main() -> deluge_rpc::Result<()> {
     let auth_level = session.login(&user, &pass).await?;
     assert!(auth_level >= AuthLevel::Normal);
     
+    let (command_send, command_recv) = mpsc::channel(50);
+    let (shutdown, _) = broadcast::channel(1);
+
     let (filter_updates, torrent_updates, update_send) = {
         let f = mpsc::channel(50);
         let t = mpsc::channel(50);
         let u = UpdateSenders {
             filters: f.0,
             torrents: t.0,
+            session: command_send.clone(),
         };
         (f.1, t.1, u)
     };
-
-    let (command_send, command_recv) = mpsc::channel(50);
-    let (shutdown, _) = broadcast::channel(1);
 
     let torrents = {
         TorrentsView::new(update_send.clone(), torrent_updates)
