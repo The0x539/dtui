@@ -71,8 +71,8 @@ fn draw_cell(printer: &Printer, tor: &Torrent, col: Column) {
                 .with_label(move |_, _| status_msg.to_owned())
                 .draw(printer);
         },
-        Column::Size => printer.print((0, 0), &fmt_bytes(tor.total_size, "B")),
-        Column::Speed => printer.print((0, 0), &fmt_bytes(tor.upload_payload_rate, "B/s")),
+        Column::Size => printer.print((0, 0), &fmt_bytes(tor.total_size, "")),
+        Column::Speed => printer.print((0, 0), &fmt_bytes(tor.upload_payload_rate, "/s")),
     };
 }
 

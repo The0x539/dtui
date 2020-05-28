@@ -1,14 +1,11 @@
-use human_format::{Formatter, Scales};
+use bytesize::ByteSize;
 
 pub fn read_file(path: &str) -> String {
     std::fs::read_to_string(path).unwrap()
 }
 
-pub fn fmt_bytes(amt: u64, units: &str) -> String {
-    Formatter::new()
-        .with_scales(Scales::Binary())
-        .with_units(units)
-        .format(amt as f64)
+pub fn fmt_bytes(amt: u64, suffix: &str) -> String {
+    ByteSize(amt).to_string_as(true) + suffix
 }
 
 pub fn digit_width(mut n: u64) -> usize {
