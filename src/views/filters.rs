@@ -1,7 +1,7 @@
 use cursive::traits::*;
 use cursive::Printer;
 use fnv::FnvHashMap;
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use cursive::event::{Event, EventResult, MouseEvent, MouseButton};
 use cursive::vec::Vec2;
 use tokio::sync::mpsc;
@@ -16,120 +16,56 @@ use crate::UpdateSenders;
 
 #[derive(Debug)]
 pub enum Update {
-    UpdateMatches(HashMap<(FilterKey, String), i64>),
+    ReplaceTree(FnvHashMap<FilterKey, Vec<(String, u64)>>),
 }
 
-#[derive(Clone)]
-struct Filter {
-    key: FilterKey,
-    value: String,
-    hits: u64,
+struct Category {
+    filters: Vec<(String, u64)>,
+    collapsed: bool,
 }
 
-impl Filter {
-    fn width(&self) -> usize {
-        4 + self.value.len() + 1 + digit_width(self.hits)
-    }
-}
-
-#[derive(Clone)]
 enum Row {
-    CollapsedParent {
-        key: FilterKey,
-        children: Vec<Filter>,
-    },
-    ExpandedParent {
-        key: FilterKey,
-        n_children: usize,
-    },
-    Child(Filter),
-}
-
-impl Row {
-    fn width(&self) -> usize {
-        match self {
-            Self::CollapsedParent { key, children } => {
-                children
-                    .iter()
-                    .map(Filter::width)
-                    .max()
-                    .unwrap_or(0)
-                    .max(2 + key.as_str().len())
-            },
-            Self::ExpandedParent { key, .. } => {
-                2 + key.as_str().len()
-            },
-            Self::Child(filter) => {
-                filter.width()
-            },
-        }
-    }
-
-    fn get_filter(&self) -> &Filter {
-        match self {
-            Self::Child(filter) => filter,
-            _ => panic!("Expected this row to be a child"),
-        }
-    }
-
-    fn get_filter_mut(&mut self) -> &mut Filter {
-        match self {
-            Self::Child(filter) => filter,
-            _ => panic!("Expected this row to be a child"),
-        }
-    }
-
-    fn into_filter(self) -> Filter {
-        match self {
-            Self::Child(filter) => filter,
-            _ => panic!("Expected this row to be a child"),
-        }
-    }
+    Parent(FilterKey),
+    Child(FilterKey, usize),
 }
 
 pub(crate) struct FiltersView {
     active_filters: FilterDict,
-    rows: Vec<Row>,
+    categories: BTreeMap<FilterKey, Category>,
     update_send: UpdateSenders,
     update_recv: mpsc::Receiver<Update>,
 }
 
 impl FiltersView {
     pub(crate) fn new(
-        filter_tree: FnvHashMap<FilterKey, Vec<String>>,
         update_send: UpdateSenders,
         update_recv: mpsc::Receiver<Update>,
     ) -> Self {
-        let mut categories = Vec::with_capacity(filter_tree.len());
-
-        for (key, values) in filter_tree.into_iter() {
-            let mut filters = values
-                .into_iter()
-                .map(|value| Filter { key, value, hits: 0 })
-                .collect::<Vec<Filter>>();
-            filters.sort_by(|a, b| a.value.cmp(&b.value));
-            categories.push((key, filters));
-        }
-
-        categories.sort_unstable_by_key(|c| c.0);
-
-        let rows = categories
-            .into_iter()
-            .flat_map(|(key, filters)| {
-                let parent = Row::ExpandedParent {
-                    key,
-                    n_children: filters.len(),
-                };
-                let children = filters.into_iter().map(Row::Child);
-                std::iter::once(parent).chain(children)
-            })
-            .collect();
-
         Self {
             active_filters: FilterDict::default(),
-            rows,
+            categories: BTreeMap::new(),
             update_send,
             update_recv,
+        }
+    }
+
+    fn is_collapsed(&self, key: FilterKey) -> bool {
+        if let Some(category) = self.categories.get(&key) {
+            category.collapsed
+        } else {
+            false
+        }
+    }
+
+    fn replace_tree(&mut self, filter_tree: FnvHashMap<FilterKey, Vec<(String, u64)>>) {
+        self.categories = filter_tree.into_iter()
+            .map(|(key, filters)| (key, Category { filters, collapsed: self.is_collapsed(key) }))
+            .collect();
+        if let Some(owners) = self.categories.get_mut(&FilterKey::Owner) {
+            let no_owner = (String::new(), 0);
+            if !owners.filters.contains(&no_owner) {
+                owners.filters.insert(0, no_owner);
+            }
         }
     }
 
@@ -154,98 +90,60 @@ impl FiltersView {
             .expect("couldn't send new filters");
     }
 
-    fn get_filter_idx(&mut self, the_key: FilterKey, val: String) -> usize {
-        let mut y = 0;
-        while y < self.rows.len() {
-            let range = match &mut self.rows[y] {
-                Row::CollapsedParent { key, ref mut children } => {
-                    if *key != the_key {
-                        y += 1;
-                        continue;
-                    }
-                    let idx = match children.binary_search_by_key(&val.as_str(), |f| f.value.as_str()) {
-                        Ok(i) => i,
-                        Err(i) => {
-                            let filter = Filter { key: *key, value: val, hits: 0 };
-                            children.insert(i, filter);
-                            i
-                        },
-                    };
-                    return idx;
-                },
-                Row::ExpandedParent { key, n_children: n } => {
-                    if *key != the_key {
-                        y += 1 + *n;
-                        continue;
-                    }
-                    // This is the only case in which this match block neither returns nor continues.
-                    y+1..=y+*n
-                },
-                Row::Child(_) => panic!("Expected a parent in this position"),
-            };
+    fn get_row(&self, mut y: usize) -> Option<Row> {
+        for (key, category) in self.categories.iter() {
+            if y == 0 {
+                return Some(Row::Parent(*key));
+            } else {
+                y -= 1;
+            }
 
-            let idx = match self.rows[range].binary_search_by_key(&val.as_str(), |r| r.get_filter().value.as_str()) {
-                Ok(i) => y+1 + i,
-                Err(i) => {
-                    let filter = Filter { key: the_key, value: val, hits: 0 };
-                    self.rows.insert(y+1+i, Row::Child(filter));
-                    match &mut self.rows[y] {
-                        Row::ExpandedParent { n_children, .. } => *n_children += 1,
-                        _ => unreachable!(),
-                    }
-                    y+1 + i
-                },
-            };
-            return idx;
+            if category.collapsed {
+                continue;
+            } else if y < category.filters.len() {
+                return Some(Row::Child(*key, y));
+            } else {
+                y -= category.filters.len();
+            }
         }
-
-        // TODO: Result/Option
-        panic!("key not found: {}", the_key);
+        None
     }
 
-    fn update_filter(&mut self, key: FilterKey, val: String, incr: i64) {
-        let idx = self.get_filter_idx(key, val);
-        let filter = self.rows[idx].get_filter_mut();
-        // TODO: fail better if decrementing past zero.
-        // Probably switch to usize for hit count.
-        if incr < 0 {
-            filter.hits -= -incr as u64;
-        } else {
-            filter.hits += incr as u64;
-        }
-    }
-    
     fn click(&mut self, y: usize) {
-        self.rows[y] = match self.rows[y].clone() {
-            Row::CollapsedParent { key, children } => {
-                let n_children = children.len();
-                self.rows.splice(y+1..y+1, children.into_iter().map(Row::Child));
-                Row::ExpandedParent { key, n_children }
+        match self.get_row(y) {
+            Some(Row::Parent(key)) => {
+                let x = &mut self.categories.get_mut(&key).unwrap().collapsed;
+                *x = !*x;
             },
-            Row::ExpandedParent { key, n_children } => {
-                let children = self.rows.splice(y+1..=y+n_children, std::iter::empty())
-                    .map(Row::into_filter)
-                    .collect();
-                Row::CollapsedParent { key, children }
-            },
-            Row::Child(filter) => {
-                self.active_filters.insert(filter.key, filter.value.clone());
+            Some(Row::Child(key, idx)) => {
+                let filter = self.categories[&key].filters[idx].0.clone();
+                self.active_filters.insert(key, filter);
                 self.update_filters();
-                Row::Child(filter)
             },
+            None => (),
         }
     }
 
     fn content_width(&self) -> usize {
-        self.rows
-            .iter()
-            .map(Row::width)
-            .max()
-            .unwrap_or(1)
+        let mut w = 0;
+        for (key, category) in self.categories.iter() {
+            w = w.max(2 + key.as_str().len());
+            for (filter, hits) in category.filters.iter() {
+                w = w.max(3 + filter.len() + 1 + digit_width(*hits));
+            }
+        }
+        w
     }
 
     fn content_height(&self) -> usize {
-        self.rows.len()
+        let mut h = 0;
+        for (_, category) in self.categories.iter() {
+            h += 1;
+            if !category.collapsed {
+                h += category.filters.len();
+            }
+        }
+        h
     }
 }
 
@@ -258,10 +156,8 @@ impl Refreshable for FiltersView {
 
     fn perform_update(&mut self, update: Update) {
         match update {
-            Update::UpdateMatches(changes) => {
-                for ((key, val), incr) in changes.into_iter() {
-                    self.update_filter(key, val, incr);
-                }
+            Update::ReplaceTree(changes) => {
+                self.replace_tree(changes);
             }
         }
     }
@@ -269,31 +165,33 @@ impl Refreshable for FiltersView {
 
 impl ScrollInner for FiltersView {
     fn draw_row(&self, printer: &Printer, y: usize) {
-        if y >= self.rows.len() { return; }
-
-        match &self.rows[y] {
-            Row::CollapsedParent { key, .. } => {
-                printer.print((0, 0), &format!("▸ {}", key));
+        match self.get_row(y) {
+            Some(Row::Parent(key)) => {
+                let c = if self.categories[&key].collapsed {
+                    '▸'
+                } else {
+                    '▾'
+                };
+                printer.print((0, 0), &format!("{} {}", c, key));
             },
-            Row::ExpandedParent { key, .. } => {
-                printer.print((0, 0), &format!("▾ {}", key));
-            },
-            Row::Child(Filter { key, value, hits }) => {
-                let bullet = if self.active_filters.get(&key) == Some(value) {
+            Some(Row::Child(key, idx)) => {
+                let (filter, hits) = &self.categories[&key].filters[idx];
+                let c = if self.active_filters.get(&key) == Some(filter) {
                     '●'
                 } else {
                     '◌'
                 };
-                let value = match (key, value.as_str()) {
+                let filter = match (key, filter.as_str()) {
                     (FilterKey::Owner, "") => "All",
                     (FilterKey::Tracker, "") => "No Tracker",
                     (FilterKey::Label, "") => "No Label",
-                    (_, v) => v,
+                    (_, s) => s,
                 };
-                let nspaces = printer.size.x - (3 + value.len() + digit_width(*hits));
+                let nspaces = printer.size.x - (3 + filter.len() + digit_width(*hits));
                 let spaces = " ".repeat(nspaces);
-                printer.print((0, 0), &format!(" {} {}{}{}", bullet, value, spaces, hits));
+                printer.print((0, 0), &format!(" {} {}{}{}", c, filter, spaces, hits));
             },
+            None => (),
         }
     }
 }

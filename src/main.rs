@@ -142,6 +142,11 @@ async fn manage_session(
                     .send(TorrentsUpdate::Delta(delta))
                     .await
                     .expect("update channel closed");
+                let new_tree = session.get_filter_tree(false, &[]).await?;
+                updates.filters
+                    .send(FiltersUpdate::ReplaceTree(new_tree))
+                    .await
+                    .expect("update channel closed");
             }
             _ = shutdown.recv() => return Ok(session),
         }
@@ -211,19 +216,7 @@ async fn main() -> deluge_rpc::Result<()> {
             .with_name("torrents")
     };
     let filters = {
-        fn discard_hits(filters: Vec<(String, u64)>) -> Vec<String> {
-            filters.into_iter()
-                .map(|(val, _hits)| val)
-                .collect::<Vec<String>>()
-        }
-
-        let tree = session.get_filter_tree(true, &[])
-            .await?
-            .into_iter()
-            .map(|(key, vals)| (key, discard_hits(vals)))
-            .collect();
-
-        FiltersView::new(tree, update_send.clone(), filter_updates)
+        FiltersView::new(update_send.clone(), filter_updates)
             .with_name("filters")
             .into_scroll_wrapper()
     };

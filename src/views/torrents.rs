@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use cursive::traits::*;
 use deluge_rpc::*;
 use crate::Torrent;
@@ -13,8 +12,6 @@ use cursive::views::ProgressBar;
 use fnv::FnvHashMap;
 
 use super::refresh::Refreshable;
-
-use crate::views::filters::Update as FiltersUpdate;
 
 use crate::util::fmt_bytes;
 
@@ -32,6 +29,7 @@ pub(crate) struct TorrentsView {
     columns: Vec<(Column, usize)>,
     scrollbase: ScrollBase,
     update_recv: mpsc::Receiver<Update>,
+    #[allow(unused)]
     update_send: UpdateSenders,
 }
 
@@ -137,37 +135,9 @@ impl TorrentsView {
         self.rows.remove(idx);
     }
 
-    fn get_deltas(tor: &Torrent) -> Vec<(FilterKey, &str)> {
-        let mut ret = vec![
-            (FilterKey::State,   tor.state.as_str()),
-            (FilterKey::Owner,   tor.owner.as_str()),
-            (FilterKey::Tracker, tor.tracker_host.as_str()),
-            (FilterKey::Label,   tor.label.as_str()),
-
-            (FilterKey::State,   "All"),
-            (FilterKey::Tracker, "All"),
-            (FilterKey::Label,   "All"),
-        ];
-
-        if tor.is_active() {
-            ret.push((FilterKey::State, "Active"));
-        }
-
-        if tor.has_tracker_error() {
-            ret.push((FilterKey::Tracker, "Error"));
-        }
-
-        ret
-    }
-
     fn add_torrents(&mut self, torrents: Vec<(InfoHash, Torrent)>) {
-        let mut delta = HashMap::new();
         for (hash, tor) in torrents.into_iter() {
             debug_assert!(!self.torrents.contains_key(&hash));
-
-            for (key, val) in Self::get_deltas(&tor).into_iter() {
-                *delta.entry((key, val.to_owned())).or_insert(0) += 1;
-            }
 
             self.torrents.insert(hash, tor);
 
@@ -181,20 +151,10 @@ impl TorrentsView {
                 self.insert_row(idx, hash);
             }
         }
-
-        self.update_send
-            .filters
-            .try_send(FiltersUpdate::UpdateMatches(delta))
-            .expect("couldn't send filter delta");
     }
 
     fn remove_torrent(&mut self, hash: InfoHash) {
         let tor = self.torrents.remove(&hash).expect("Tried to remove nonexistent torrent");
-
-        let mut delta = HashMap::new();
-        for (key, val) in Self::get_deltas(&tor).into_iter() {
-            delta.insert((key, val.to_owned()), -1);
-        }
 
         if tor.matches_filters(&self.filters) {
             let val = &tor.name;
@@ -203,77 +163,19 @@ impl TorrentsView {
         }
 
         self.torrents.remove(&hash);
-        self.update_send
-            .filters
-            .try_send(FiltersUpdate::UpdateMatches(delta))
-            .expect("couldn't send filter delta");
     }
 
     fn apply_delta(&mut self, delta: FnvHashMap<InfoHash, <Torrent as Query>::Diff>) {
-        let mut filter_updates = HashMap::new();
-        macro_rules! incr {
-            ($key:ident[$val:expr] $oper:tt 1) => {
-                let key = (FilterKey::$key, String::from($val));
-                *filter_updates.entry(key).or_insert(0) $oper 1;
-            }
-        }
-
-        macro_rules! mv {
-            ($key:ident[$old:expr => $new:expr]) => {
-                incr!($key[$old] -= 1);
-                incr!($key[$new] += 1);
-            }
-        }
-
-        macro_rules! mv_str {
-            ($key:ident, $old:expr, $new:expr) => {
-                if let Some(new_val) = $new.take() {
-                    if new_val != $old {
-                        mv!($key[$old => new_val.clone()]);
-                        $old = new_val;
-                    }
-                }
-            }
-        }
-
         let mut new_torrents = Vec::new();
 
-        for (hash, mut diff) in delta {
+        for (hash, diff) in delta {
             if diff == Default::default() {
                 continue;
             } else if let Some(mut torrent) = self.torrents.remove(&hash) {
-
+                
                 let did_match = torrent.matches_filters(&self.filters);
-                let was_active = torrent.is_active();
-                let had_error = torrent.has_tracker_error();
-
-                if let Some(new_state) = diff.state.take() {
-                    if new_state != torrent.state {
-                        mv!(State[torrent.state.as_str() => new_state.as_str()]);
-                        torrent.state = new_state;
-                    }
-                }
-                mv_str!(Owner, torrent.owner, diff.owner);
-                mv_str!(Label, torrent.label, diff.label);
-                mv_str!(Tracker, torrent.tracker_host, diff.tracker_host);
-
                 torrent.update(diff);
-
                 let does_match = torrent.matches_filters(&self.filters);
-                let is_active = torrent.is_active();
-                let has_error = torrent.has_tracker_error();
-
-                if is_active && !was_active {
-                    incr!(State["Active"] += 1);
-                } else if was_active && !is_active {
-                    incr!(State["Active"] -= 1);
-                }
-
-                if has_error && !had_error {
-                    incr!(Tracker["Error"] += 1);
-                } else if had_error && !has_error {
-                    incr!(Tracker["Error"] -= 1);
-                }
 
                 if did_match != does_match {
                     let val = &torrent.name;
@@ -311,14 +213,6 @@ impl TorrentsView {
         }
 
         self.add_torrents(new_torrents);
-
-        if !filter_updates.is_empty() {
-            filter_updates.shrink_to_fit();
-            self.update_send
-                .filters
-                .try_send(FiltersUpdate::UpdateMatches(filter_updates))
-                .expect("couldn't send filter delta");
-        }
     }
 
     fn draw_header(&self, printer: &Printer) {
