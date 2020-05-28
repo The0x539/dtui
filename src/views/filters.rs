@@ -50,18 +50,21 @@ impl FiltersView {
         }
     }
 
-    fn is_collapsed(&self, key: FilterKey) -> bool {
-        if let Some(category) = self.categories.get(&key) {
-            category.collapsed
-        } else {
-            false
-        }
-    }
+    fn replace_tree(&mut self, mut new_tree: FnvHashMap<FilterKey, Vec<(String, u64)>>) {
+        let pruned_keys = self.categories
+            .keys()
+            .filter(|key| !new_tree.contains_key(key))
+            .copied()
+            .collect::<Vec<FilterKey>>();
 
-    fn replace_tree(&mut self, filter_tree: FnvHashMap<FilterKey, Vec<(String, u64)>>) {
-        self.categories = filter_tree.into_iter()
-            .map(|(key, filters)| (key, Category { filters, collapsed: self.is_collapsed(key) }))
-            .collect();
+        for key in pruned_keys.into_iter() {
+            self.categories.remove(&key);
+        }
+
+        for (key, category) in self.categories.iter_mut() {
+            category.filters = new_tree.remove(key).unwrap();
+        }
+
         if let Some(owners) = self.categories.get_mut(&FilterKey::Owner) {
             let no_owner = (String::new(), 0);
             if !owners.filters.contains(&no_owner) {
