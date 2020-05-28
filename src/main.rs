@@ -8,7 +8,6 @@ use cursive::direction::Orientation;
 use cursive::menu::MenuTree;
 use cursive_tabs::TabPanel;
 use cursive::theme;
-use tokio::task::JoinHandle;
 use std::sync::Arc;
 
 pub mod views;
@@ -24,8 +23,6 @@ use views::{
 };
 
 pub mod util;
-
-pub(crate) type CmdFuture = JoinHandle<mpsc::Sender<SessionCommand>>;
 
 #[derive(Debug)]
 pub enum SessionCommand {
@@ -43,8 +40,6 @@ pub(crate) struct UpdateSenders {
     pub filters: mpsc::Sender<FiltersUpdate>,
     pub torrents: mpsc::Sender<TorrentsUpdate>,
     pub session_updates: mpsc::Sender<SessionUpdate>,
-    #[allow(unused)]
-    pub session_commands: mpsc::Sender<SessionCommand>,
 }
 
 #[derive(Clone, Debug, serde::Deserialize, Query)]
@@ -157,62 +152,32 @@ async fn manage_updates(
     }
 }
 
-
-async fn manage_commands(
-    session: Arc<Session>,
-    mut commands: mpsc::Receiver<SessionCommand>,
-    mut shutdown: broadcast::Receiver<()>,
-) -> deluge_rpc::Result<()> {
-    loop {
-        tokio::select! {
-            command = commands.recv() => {
-                match command.expect("command channel closed") {
-                    SessionCommand::AddTorrentUrl(url) => {
-                        let options = TorrentOptions::default();
-                        let http_headers = None;
-                        session.add_torrent_url(&url, &options, http_headers).await?;
-                    },
-                    SessionCommand::Shutdown => {
-                        session.shutdown().await?;
-                    },
-                }
-            }
-            _ = shutdown.recv() => return Ok(()),
-        }
-    }
-}
-
 mod menu {
     use cursive::Cursive;
     use cursive::views::{EditView, Dialog};
     use cursive::traits::*;
     use futures::executor::block_on;
-    use super::SessionCommand;
-    use super::CmdFuture;
-
-    fn send_cmd(siv: &mut Cursive, cmd: SessionCommand) {
-        siv.with_user_data(|fut: &mut Option<CmdFuture>| {
-            let mut chan = block_on(fut.take().unwrap()).unwrap();
-            fut.replace(tokio::spawn(async move {
-                chan.send(cmd)
-                    .await
-                    .expect("Couldn't send command to session thread");
-                chan
-            }));
-        });
-    }
+    use std::sync::Arc;
+    use deluge_rpc::Session;
+    use deluge_rpc::TorrentOptions;
 
     pub fn add_torrent(siv: &mut Cursive) {
         let edit_view = EditView::new()
             .on_submit(|siv, text| {
-                let cmd = SessionCommand::AddTorrentUrl(text.to_string());
-                send_cmd(siv, cmd);
+                let options = TorrentOptions::default();
+                let http_headers = None;
+                let session: Arc<Session> = siv.take_user_data().unwrap();
+                let f = session.add_torrent_url(text, &options, http_headers);
+                block_on(f).unwrap();
+                siv.set_user_data(session);
             });
         siv.add_layer(Dialog::around(edit_view).min_width(80));
     }
 
     pub fn quit_and_shutdown_daemon(siv: &mut Cursive) {
-        send_cmd(siv, SessionCommand::Shutdown);
+        let session: Arc<Session> = siv.take_user_data().unwrap();
+        let f = session.shutdown();
+        block_on(f).unwrap();
         siv.quit();
     }
 }
@@ -227,7 +192,6 @@ async fn main() -> deluge_rpc::Result<()> {
     let auth_level = session.login(&user, &pass).await?;
     assert!(auth_level >= AuthLevel::Normal);
     
-    let (command_send, command_recv) = mpsc::channel(50);
     let (shutdown, _) = broadcast::channel(1);
 
     let (filter_updates, torrent_updates, session_updates, update_send) = {
@@ -238,7 +202,6 @@ async fn main() -> deluge_rpc::Result<()> {
             filters: f.0,
             torrents: t.0,
             session_updates: s.0,
-            session_commands: command_send.clone(),
         };
         (f.1, t.1, s.1, u)
     };
@@ -281,7 +244,6 @@ async fn main() -> deluge_rpc::Result<()> {
 
     let session = Arc::new(session);
 
-    let command_thread = tokio::spawn(manage_commands(session.clone(), command_recv, shutdown.subscribe()));
     let update_thread = tokio::spawn(manage_updates(session.clone(), update_send.clone(), session_updates, shutdown.subscribe()));
     let event_thread = tokio::spawn(manage_events(session.clone(), update_send.clone(), shutdown.subscribe()));
 
@@ -310,7 +272,6 @@ async fn main() -> deluge_rpc::Result<()> {
     });
     siv.set_autorefresh(true);
     siv.set_autohide_menu(false);
-    siv.set_user_data(command_send);
     siv.set_theme(theme);
 
     siv.add_global_callback('q', Cursive::quit);
@@ -335,7 +296,6 @@ async fn main() -> deluge_rpc::Result<()> {
 
     shutdown.send(()).unwrap();
 
-    command_thread.await.unwrap()?;
     update_thread.await.unwrap()?;
     event_thread.await.unwrap()?;
         
