@@ -77,22 +77,24 @@ fn draw_cell(printer: &Printer, tor: &Torrent, col: Column) {
 
 impl TorrentsView {
     pub(crate) fn new(
-        torrents: FnvHashMap<InfoHash, Torrent>,
         update_send: UpdateSenders,
         update_recv: mpsc::Receiver<Update>,
     ) -> Self {
-        let rows: Vec<InfoHash> = torrents.keys().copied().collect();
         let columns = vec![
             (Column::Name, 30),
             (Column::State, 15),
             (Column::Size, 15),
             (Column::Speed, 15),
         ];
-        let scrollbase = ScrollBase { content_height: rows.len(), ..Default::default() };
-        let filters = Default::default();
-        let mut obj = Self { torrents, rows, columns, scrollbase, filters, update_send, update_recv };
-        obj.sort();
-        obj
+        Self {
+            torrents: FnvHashMap::default(),
+            rows: Vec::new(),
+            columns,
+            scrollbase: ScrollBase::default(),
+            filters: FnvHashMap::default(),
+            update_send,
+            update_recv,
+        }
     }
 
     fn sort(&mut self) {

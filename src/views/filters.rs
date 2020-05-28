@@ -97,7 +97,7 @@ pub(crate) struct FiltersView {
 
 impl FiltersView {
     pub(crate) fn new(
-        filter_tree: FnvHashMap<FilterKey, Vec<(String, u64)>>,
+        filter_tree: FnvHashMap<FilterKey, Vec<String>>,
         update_send: UpdateSenders,
         update_recv: mpsc::Receiver<Update>,
     ) -> Self {
@@ -106,7 +106,7 @@ impl FiltersView {
         for (key, values) in filter_tree.into_iter() {
             let mut filters = values
                 .into_iter()
-                .map(|(value, _hits)| Filter { key, value, hits: 0 })
+                .map(|value| Filter { key, value, hits: 0 })
                 .collect::<Vec<Filter>>();
             filters.sort_by(|a, b| a.value.cmp(&b.value));
             categories.push((key, filters));

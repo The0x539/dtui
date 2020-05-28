@@ -198,11 +198,22 @@ async fn main() -> deluge_rpc::Result<()> {
     let shutdown = Arc::new(Notify::new());
 
     let torrents = {
-        TorrentsView::new(Default::default(), update_send.clone(), torrent_updates)
+        TorrentsView::new(update_send.clone(), torrent_updates)
             .with_name("torrents")
     };
     let filters = {
-        let tree = session.get_filter_tree(true, &[]).await?;
+        fn discard_hits(filters: Vec<(String, u64)>) -> Vec<String> {
+            filters.into_iter()
+                .map(|(val, _hits)| val)
+                .collect::<Vec<String>>()
+        }
+
+        let tree = session.get_filter_tree(true, &[])
+            .await?
+            .into_iter()
+            .map(|(key, vals)| (key, discard_hits(vals)))
+            .collect();
+
         FiltersView::new(tree, update_send.clone(), filter_updates)
             .with_name("filters")
             .into_scroll_wrapper()
