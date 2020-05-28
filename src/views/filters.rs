@@ -69,8 +69,6 @@ impl FiltersView {
             self.categories.insert(key, Category { filters, collapsed: false });
         }
 
-        assert!(new_tree.is_empty());
-
         if let Some(owners) = self.categories.get_mut(&FilterKey::Owner) {
             let no_owner = (String::new(), 0);
             if !owners.filters.contains(&no_owner) {
