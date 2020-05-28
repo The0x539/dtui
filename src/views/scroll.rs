@@ -36,10 +36,12 @@ impl<V: ScrollInner> ViewWrapper for ScrollWrapper<V> {
     cursive::wrap_impl!(self.inner: V);
 
     fn wrap_required_size(&mut self, req: Vec2) -> Vec2 {
-        self.scrollbase.view_height = req.y;
+        let sb = &mut self.scrollbase;
+
+        sb.view_height = req.y;
         let inner_req = self.inner.required_size(req);
-        self.scrollbase.content_height = inner_req.y;
-        let additional_width = self.scrollbase.scrollable() as usize;
+        sb.content_height = inner_req.y;
+        let additional_width = 1 + sb.right_padding;
         (inner_req.x + additional_width, req.y).into()
     }
 
@@ -47,7 +49,11 @@ impl<V: ScrollInner> ViewWrapper for ScrollWrapper<V> {
         let sb = &mut self.scrollbase;
 
         sb.view_height = size.y;
-        let additional_width = sb.scrollable() as usize;
+        let additional_width = if sb.scrollable() {
+            1 + sb.right_padding
+        } else {
+            sb.right_padding
+        };
         self.inner.layout((size.x - additional_width, sb.content_height).into());
         self.width = size.x;
 
@@ -57,7 +63,14 @@ impl<V: ScrollInner> ViewWrapper for ScrollWrapper<V> {
     }
 
     fn wrap_draw(&self, printer: &Printer) {
-        self.scrollbase.draw(printer, |p, r| self.inner.draw_row(p, r));
+        let sb = &self.scrollbase;
+
+        let padding = if sb.scrollable() {
+            (0, 0) // If scrollable, the scrollbase does it for us
+        } else {
+            (sb.right_padding, 0)
+        };
+        sb.draw(&printer.shrinked(padding), |p, r| self.inner.draw_row(p, r));
     }
 
     fn wrap_on_event(&mut self, event: Event) -> EventResult {
