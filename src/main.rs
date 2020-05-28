@@ -1,5 +1,5 @@
 use deluge_rpc::*;
-use tokio::sync::{mpsc, Notify};
+use tokio::sync::{broadcast, mpsc, Notify};
 use cursive::event::Event;
 use cursive::Cursive;
 use cursive::traits::*;
@@ -93,15 +93,39 @@ impl Torrent {
     }
 }
 
+async fn manage_events(
+    mut events: broadcast::Receiver<deluge_rpc::Event>,
+    mut updates: UpdateSenders,
+    shutdown: Arc<Notify>,
+) {
+    loop {
+        tokio::select! {
+            event = events.recv() => {
+                match event.expect("event channel closed") {
+                    deluge_rpc::Event::TorrentRemoved(hash) => {
+                        updates.torrents
+                            .send(TorrentsUpdate::TorrentRemoved(hash))
+                            .await
+                            .expect("update channel closed");
+                    },
+                    e => panic!("Received unexpected event: {:?}", e),
+                }
+            },
+            _ = shutdown.notified() => return,
+        }
+    }
+}
+
 async fn manage_session(
     mut session: Session,
     mut updates: UpdateSenders,
     mut commands: mpsc::Receiver<SessionCommand>,
     shutdown: Arc<Notify>,
 ) -> deluge_rpc::Result<Session> {
-    let mut events = session.subscribe_events();
+    let events = session.subscribe_events();
     let interested = deluge_rpc::events![TorrentRemoved];
     session.set_event_interest(&interested).await?;
+    tokio::spawn(manage_events(events, updates.clone(), shutdown.clone()));
     loop {
         tokio::select! {
             command = commands.recv() => {
@@ -114,17 +138,6 @@ async fn manage_session(
                     SessionCommand::Shutdown => {
                         session.shutdown().await?;
                     },
-                }
-            }
-            event = events.recv() => {
-                match event.expect("event channel closed") {
-                    deluge_rpc::Event::TorrentRemoved(hash) => {
-                        updates.torrents
-                            .send(TorrentsUpdate::TorrentRemoved(hash))
-                            .await
-                            .expect("update channel closed");
-                    },
-                    e => panic!("Received unexpected event: {:?}", e),
                 }
             }
             _ = tokio::time::delay_for(tokio::time::Duration::from_secs(1)) => {
