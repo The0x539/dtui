@@ -10,7 +10,6 @@ use tokio::sync::mpsc;
 use crate::UpdateSenders;
 use cursive::utils::Counter;
 use cursive::views::ProgressBar;
-use futures::executor::block_on;
 use fnv::FnvHashMap;
 
 use super::refresh::Refreshable;
@@ -181,10 +180,10 @@ impl TorrentsView {
             }
         }
 
-        let f = self.update_send
+        self.update_send
             .filters
-            .send(FiltersUpdate::UpdateMatches(delta));
-        block_on(f).expect("updates channel closed");
+            .try_send(FiltersUpdate::UpdateMatches(delta))
+            .expect("couldn't send filter delta");
     }
 
     fn remove_torrent(&mut self, hash: InfoHash) {
@@ -202,10 +201,10 @@ impl TorrentsView {
         }
 
         self.torrents.remove(&hash);
-        let f = self.update_send
+        self.update_send
             .filters
-            .send(FiltersUpdate::UpdateMatches(delta));
-        block_on(f).expect("updates channel closed");
+            .try_send(FiltersUpdate::UpdateMatches(delta))
+            .expect("couldn't send filter delta");
     }
 
     fn apply_delta(&mut self, delta: FnvHashMap<InfoHash, <Torrent as Query>::Diff>) {
@@ -313,10 +312,10 @@ impl TorrentsView {
 
         if !filter_updates.is_empty() {
             filter_updates.shrink_to_fit();
-            let f = self.update_send
+            self.update_send
                 .filters
-                .send(FiltersUpdate::UpdateMatches(filter_updates));
-            block_on(f).expect("updates channel closed");
+                .try_send(FiltersUpdate::UpdateMatches(filter_updates))
+                .expect("couldn't send filter delta");
         }
     }
 

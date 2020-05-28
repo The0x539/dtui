@@ -6,7 +6,6 @@ use cursive::event::{Event, EventResult, MouseEvent, MouseButton};
 use cursive::vec::Vec2;
 use tokio::sync::mpsc;
 use deluge_rpc::{FilterKey, FilterDict};
-use futures::executor::block_on;
 
 use super::scroll::ScrollInner;
 use super::refresh::Refreshable;
@@ -149,8 +148,10 @@ impl FiltersView {
     
     fn update_filters(&mut self) {
         let cmd = TorrentsUpdate::NewFilters(self.active_filters());
-        let f = self.update_send.torrents.send(cmd);
-        block_on(f).expect("update channel closed");
+        self.update_send
+            .torrents
+            .try_send(cmd)
+            .expect("couldn't send new filters");
     }
 
     fn get_filter_idx(&mut self, the_key: FilterKey, val: String) -> usize {
