@@ -62,8 +62,10 @@ fn draw_cell(printer: &Printer, tor: &Torrent, col: Column) {
                 TorrentState::Error => "ERROR",
                 TorrentState::Queued => "QUEUE",
             };
+            let mut buf = ryu::Buffer::new();
+            let progress = buf.format_finite(tor.progress);
             // TODO: draw my own damn progress bar
-            let status_msg = format!("{} {:.2}%", status, tor.progress);
+            let status_msg = format!("{} {}%", status, progress);
             ProgressBar::new()
                 .with_value(Counter::new(tor.progress as usize))
                 .with_label(move |_, _| status_msg.to_owned())

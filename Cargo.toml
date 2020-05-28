@@ -15,6 +15,7 @@ cursive-tabs = "*"
 cursive_buffered_backend = "0.3.3"
 futures = "*"
 fnv = "1.0.7"
+ryu = "1.0.4"
 
 [patch.crates-io]
 webpki = { path = "./experiment/webpki" }
