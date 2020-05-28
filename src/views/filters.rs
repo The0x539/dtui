@@ -54,10 +54,10 @@ impl Row {
                     .map(Filter::width)
                     .max()
                     .unwrap_or(0)
-                    .max(2 + Into::<&'static str>::into(*key).len())
+                    .max(2 + key.as_str().len())
             },
             Self::ExpandedParent { key, .. } => {
-                2 + Into::<&'static str>::into(*key).len()
+                2 + key.as_str().len()
             },
             Self::Child(filter) => {
                 filter.width()
@@ -136,13 +136,13 @@ impl FiltersView {
     fn active_filters(&self) -> FilterDict {
         self.active_filters
             .iter()
-            .filter(|(key, val)| match (key, val.as_ref()) {
+            .filter(|(key, val)| match (key, val.as_str()) {
                 (FilterKey::Owner, "") => false,
                 (FilterKey::Owner, "All") => true,
                 (_, "All") => false,
                 _ => true,
             })
-            .map(|(key, val)| (*key, val.clone()))
+            .map(|(k, v)| (*k, v.clone()))
             .collect()
     }
     

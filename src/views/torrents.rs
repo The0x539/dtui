@@ -135,7 +135,7 @@ impl TorrentsView {
 
     fn get_deltas(tor: &Torrent) -> Vec<(FilterKey, &str)> {
         let mut ret = vec![
-            (FilterKey::State,   tor.state.into()),
+            (FilterKey::State,   tor.state.as_str()),
             (FilterKey::Owner,   tor.owner.as_str()),
             (FilterKey::Tracker, tor.tracker_host.as_str()),
             (FilterKey::Label,   tor.label.as_str()),
@@ -209,36 +209,52 @@ impl TorrentsView {
         let mut filter_updates = HashMap::new();
         macro_rules! incr {
             ($key:ident[$val:expr] $oper:tt 1) => {
-                let key = FilterKey::$key;
-                let val = $val.to_string();
-                *filter_updates.entry((key, val)).or_insert(0) $oper 1;
+                let key = (FilterKey::$key, String::from($val));
+                *filter_updates.entry(key).or_insert(0) $oper 1;
             }
         }
 
         macro_rules! mv {
+            ($key:ident[$old:expr => $new:expr]) => {
+                incr!($key[$old] -= 1);
+                incr!($key[$new] += 1);
+            }
+        }
+
+        macro_rules! mv_str {
             ($key:ident, $old:expr, $new:expr) => {
-                if $new.is_some() && $new.as_ref() != Some(&$old) {
-                    incr!($key[$old] -= 1);
-                    incr!($key[$new.as_ref().unwrap()] += 1);
+                if let Some(new_val) = $new.take() {
+                    if new_val != $old {
+                        mv!($key[$old => new_val.clone()]);
+                        $old = new_val;
+                    }
                 }
             }
         }
 
         let mut new_torrents = Vec::new();
 
-        for (hash, diff) in delta {
+        for (hash, mut diff) in delta {
             if diff == Default::default() {
                 continue;
-            } else if let Some(torrent) = self.torrents.get_mut(&hash) {
-                mv!(State, torrent.state, diff.state);
-                mv!(Owner, torrent.owner, diff.owner);
-                mv!(Tracker, torrent.tracker_host, diff.tracker_host);
-                mv!(Label, torrent.label, diff.label);
+            } else if let Some(mut torrent) = self.torrents.remove(&hash) {
 
                 let did_match = torrent.matches_filters(&self.filters);
                 let was_active = torrent.is_active();
                 let had_error = torrent.has_tracker_error();
+
+                if let Some(new_state) = diff.state.take() {
+                    if new_state != torrent.state {
+                        mv!(State[torrent.state.as_str() => new_state.as_str()]);
+                        torrent.state = new_state;
+                    }
+                }
+                mv_str!(Owner, torrent.owner, diff.owner);
+                mv_str!(Label, torrent.label, diff.label);
+                mv_str!(Tracker, torrent.tracker_host, diff.tracker_host);
+
                 torrent.update(diff);
+
                 let does_match = torrent.matches_filters(&self.filters);
                 let is_active = torrent.is_active();
                 let has_error = torrent.has_tracker_error();

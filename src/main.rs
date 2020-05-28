@@ -74,7 +74,7 @@ impl Torrent {
                     return false;
                 }
 
-                FilterKey::State   => self.state.into(),
+                FilterKey::State   => self.state.as_str(),
                 FilterKey::Owner   => self.owner.as_str(),
                 FilterKey::Label   => self.label.as_str(),
                 FilterKey::Tracker => self.tracker_host.as_str(),
