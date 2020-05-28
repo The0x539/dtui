@@ -1,5 +1,5 @@
 use deluge_rpc::*;
-use tokio::sync::{broadcast, mpsc, Barrier};
+use tokio::sync::{broadcast, mpsc};
 use cursive::event::Event;
 use cursive::Cursive;
 use cursive::traits::*;
@@ -7,7 +7,6 @@ use cursive::views::{LinearLayout, TextView, Panel};
 use cursive::direction::Orientation;
 use cursive::menu::MenuTree;
 use cursive_tabs::TabPanel;
-use std::sync::Arc;
 use tokio::task::JoinHandle;
 
 pub mod views;
@@ -96,7 +95,7 @@ impl Torrent {
 async fn manage_events(
     mut events: broadcast::Receiver<deluge_rpc::Event>,
     mut updates: UpdateSenders,
-    shutdown: Arc<Barrier>,
+    mut shutdown: broadcast::Receiver<()>,
 ) {
     loop {
         tokio::select! {
@@ -111,7 +110,7 @@ async fn manage_events(
                     e => panic!("Received unexpected event: {:?}", e),
                 }
             },
-            _ = shutdown.wait() => return,
+            _ = shutdown.recv() => return,
         }
     }
 }
@@ -120,12 +119,13 @@ async fn manage_session(
     mut session: Session,
     mut updates: UpdateSenders,
     mut commands: mpsc::Receiver<SessionCommand>,
-    shutdown: Arc<Barrier>,
+    mut shutdown: broadcast::Receiver<()>,
+    shutdown2: broadcast::Receiver<()>,
 ) -> deluge_rpc::Result<Session> {
     let events = session.subscribe_events();
     let interested = deluge_rpc::events![TorrentRemoved];
     session.set_event_interest(&interested).await?;
-    tokio::spawn(manage_events(events, updates.clone(), shutdown.clone()));
+    tokio::spawn(manage_events(events, updates.clone(), shutdown2));
     loop {
         tokio::select! {
             command = commands.recv() => {
@@ -147,7 +147,7 @@ async fn manage_session(
                     .await
                     .expect("update channel closed");
             }
-            _ = shutdown.wait() => return Ok(session),
+            _ = shutdown.recv() => return Ok(session),
         }
     }
 }
@@ -207,8 +207,7 @@ async fn main() -> deluge_rpc::Result<()> {
     };
 
     let (command_send, command_recv) = mpsc::channel(50);
-
-    let shutdown = Arc::new(Barrier::new(3));
+    let (shutdown, _) = broadcast::channel(1);
 
     let torrents = {
         TorrentsView::new(update_send.clone(), torrent_updates)
@@ -258,7 +257,7 @@ async fn main() -> deluge_rpc::Result<()> {
         .child(torrent_tabs)
         .child(status_bar);
 
-    let session_thread = tokio::spawn(manage_session(session, update_send, command_recv, shutdown.clone()));
+    let session_thread = tokio::spawn(manage_session(session, update_send, command_recv, shutdown.subscribe(), shutdown.subscribe()));
 
     let mut siv = cursive::Cursive::new(|| {
         cursive::backend::crossterm::Backend::init()
@@ -268,7 +267,7 @@ async fn main() -> deluge_rpc::Result<()> {
     });
     siv.set_autorefresh(true);
     siv.set_autohide_menu(false);
-    siv.set_user_data(Some(tokio::spawn(async { command_send })));
+    siv.set_user_data(command_send);
 
     siv.add_global_callback('q', Cursive::quit);
     siv.add_global_callback(Event::Refresh, |s| {
@@ -290,7 +289,7 @@ async fn main() -> deluge_rpc::Result<()> {
     
     siv.run();
 
-    shutdown.wait().await;
+    shutdown.send(()).unwrap();
 
     session_thread.await.unwrap()?.disconnect().await.map_err(|(_stream, err)| err)?;
 
