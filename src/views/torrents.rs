@@ -11,6 +11,7 @@ use crate::UpdateSenders;
 use cursive::utils::Counter;
 use cursive::views::ProgressBar;
 use futures::executor::block_on;
+use fnv::FnvHashMap;
 
 use super::refresh::Refreshable;
 
@@ -21,12 +22,12 @@ use crate::util::fmt_bytes;
 #[derive(Debug)]
 pub(crate) enum Update {
     NewFilters(FilterDict),
-    Delta(HashMap<InfoHash, <Torrent as Query>::Diff>),
+    Delta(FnvHashMap<InfoHash, <Torrent as Query>::Diff>),
     TorrentRemoved(InfoHash),
 }
 
 pub(crate) struct TorrentsView {
-    torrents: HashMap<InfoHash, Torrent>,
+    torrents: FnvHashMap<InfoHash, Torrent>,
     filters: FilterDict,
     rows: Vec<InfoHash>,
     columns: Vec<(Column, usize)>,
@@ -76,7 +77,7 @@ fn draw_cell(printer: &Printer, tor: &Torrent, col: Column) {
 
 impl TorrentsView {
     pub(crate) fn new(
-        torrents: HashMap<InfoHash, Torrent>,
+        torrents: FnvHashMap<InfoHash, Torrent>,
         update_send: UpdateSenders,
         update_recv: mpsc::Receiver<Update>,
     ) -> Self {
@@ -205,7 +206,7 @@ impl TorrentsView {
         block_on(f).expect("updates channel closed");
     }
 
-    fn apply_delta(&mut self, delta: HashMap<InfoHash, <Torrent as Query>::Diff>) {
+    fn apply_delta(&mut self, delta: FnvHashMap<InfoHash, <Torrent as Query>::Diff>) {
         let mut filter_updates = HashMap::new();
         macro_rules! incr {
             ($key:ident[$val:expr] $oper:tt 1) => {

@@ -322,12 +322,13 @@ dependencies = [
 
 [[package]]
 name = "deluge-rpc"
-version = "0.5.3"
+version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "592ab9ede00f4f30ca9a45f766cabf65cb6388da56e76a8fbdb1383913557fcd"
+checksum = "db52708510cb0ea054464d9864403fb2cdc1574c25c19968fffb2abaee1fc094"
 dependencies = [
  "deluge-rpc-macro",
  "enum-kinds",
+ "fnv",
  "hex",
  "lazy-regex",
  "lazy_static",
@@ -378,6 +379,7 @@ dependencies = [
  "cursive-tabs",
  "cursive_buffered_backend",
  "deluge-rpc",
+ "fnv",
  "futures",
  "human_format",
  "serde",

@@ -8,12 +8,13 @@ edition = "2018"
 serde = "*"
 tokio = "*"
 cursive = { version = "0.14.1", default-features = false, features = ["crossterm-backend"] }
-deluge-rpc = "0.5.3"
+deluge-rpc = "0.6.0"
 serde_yaml = "*"
 human_format = "*"
 cursive-tabs = "*"
 cursive_buffered_backend = "0.3.3"
 futures = "*"
+fnv = "1.0.7"
 
 [patch.crates-io]
 webpki = { path = "./experiment/webpki" }

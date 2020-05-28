@@ -1,5 +1,6 @@
 use cursive::traits::*;
 use cursive::Printer;
+use fnv::FnvHashMap;
 use std::collections::HashMap;
 use cursive::event::{Event, EventResult, MouseEvent, MouseButton};
 use cursive::vec::Vec2;
@@ -96,7 +97,7 @@ pub(crate) struct FiltersView {
 
 impl FiltersView {
     pub(crate) fn new(
-        filter_tree: HashMap<FilterKey, Vec<(String, u64)>>,
+        filter_tree: FnvHashMap<FilterKey, Vec<(String, u64)>>,
         update_send: UpdateSenders,
         update_recv: mpsc::Receiver<Update>,
     ) -> Self {
@@ -126,7 +127,7 @@ impl FiltersView {
             .collect();
 
         Self {
-            active_filters: FilterDict::new(),
+            active_filters: FilterDict::default(),
             rows,
             update_send,
             update_recv,
