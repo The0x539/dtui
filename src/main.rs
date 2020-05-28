@@ -138,16 +138,34 @@ async fn manage_updates(
                 }
             },
             _ = tokio::time::delay_for(tokio::time::Duration::from_secs(1)) => {
-                let (delta, new_tree) = tokio::try_join!(
-                    session.get_torrents_status_diff::<Torrent>(filter_dict.as_ref()),
-                    session.get_filter_tree(false, &[]),
+                let torrent_updates = &mut update_send.torrents;
+                let filter_updates = &mut update_send.filters;
+                tokio::try_join!(
+                    async {
+                        let delta = session
+                            .get_torrents_status_diff::<Torrent>(filter_dict.as_ref())
+                            .await?;
+
+                        torrent_updates
+                            .send(TorrentsUpdate::Delta(delta))
+                            .await
+                            .expect("torrents update channel closed");
+
+                        deluge_rpc::Result::Ok(())
+                    },
+                    async {
+                        let new_tree = session
+                            .get_filter_tree(false, &[])
+                            .await?;
+
+                        filter_updates
+                            .send(FiltersUpdate::ReplaceTree(new_tree))
+                            .await
+                            .expect("filters update channel closed");
+
+                        deluge_rpc::Result::Ok(())
+                    },
                 )?;
-                let (a, b) = tokio::join!(
-                    update_send.torrents.send(TorrentsUpdate::Delta(delta)),
-                    update_send.filters.send(FiltersUpdate::ReplaceTree(new_tree)),
-                );
-                a.expect("torrents update channel closed");
-                b.expect("filters update channel closed");
             }
             _ = shutdown.recv() => return Ok(()),
         }
