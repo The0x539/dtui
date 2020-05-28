@@ -24,11 +24,6 @@ use views::{
 
 pub mod util;
 
-fn read_file(path: &str) -> String {
-    std::fs::read_to_string(path).unwrap()
-}
-
-
 pub(crate) type CmdFuture = JoinHandle<mpsc::Sender<SessionCommand>>;
 
 #[derive(Debug)]
@@ -190,10 +185,11 @@ mod menu {
 
 #[tokio::main]
 async fn main() -> deluge_rpc::Result<()> {
-    let mut session = Session::connect(read_file("./experiment/endpoint")).await?;
+    let endpoint = util::read_file("./experiment/endpoint");
+    let mut session = Session::connect(endpoint).await?;
 
-    let user = read_file("./experiment/username");
-    let pass = read_file("./experiment/password");
+    let user = util::read_file("./experiment/username");
+    let pass = util::read_file("./experiment/password");
     let auth_level = session.login(&user, &pass).await?;
     assert!(auth_level >= AuthLevel::Normal);
     

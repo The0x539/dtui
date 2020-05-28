@@ -1,5 +1,9 @@
 use human_format::{Formatter, Scales};
 
+pub fn read_file(path: &str) -> String {
+    std::fs::read_to_string(path).unwrap()
+}
+
 pub fn fmt_bytes(amt: u64, units: &str) -> String {
     Formatter::new()
         .with_scales(Scales::Binary())
