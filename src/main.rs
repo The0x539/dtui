@@ -7,7 +7,6 @@ use cursive::views::{LinearLayout, TextView, Panel};
 use cursive::direction::Orientation;
 use cursive::menu::MenuTree;
 use cursive_tabs::TabPanel;
-use cursive::theme;
 use std::sync::Arc;
 
 pub mod views;
@@ -23,6 +22,8 @@ use views::{
 };
 
 pub mod util;
+
+mod themes;
 
 #[derive(Debug)]
 pub enum SessionCommand {
@@ -247,23 +248,6 @@ async fn main() -> deluge_rpc::Result<()> {
     let update_thread = tokio::spawn(manage_updates(session.clone(), update_send.clone(), session_updates, shutdown.subscribe()));
     let event_thread = tokio::spawn(manage_events(session.clone(), update_send.clone(), shutdown.subscribe()));
 
-    let theme = {
-        use theme::{Theme, PaletteColor::*, Color::Rgb};
-        let mut palette = theme::Palette::default();
-
-        palette[View] = Rgb(0x28, 0x2A, 0x36);
-        palette[Primary] = Rgb(0xF8, 0xF8, 0xF2);
-        palette[Secondary] = Rgb(0x62, 0x72, 0xA4);
-        palette[Tertiary] = Rgb(0x44, 0x47, 0x5A);
-        palette[Shadow] = Rgb(0x21, 0x22, 0x2C);
-        palette[TitlePrimary] = palette[Primary];
-        palette[TitleSecondary] = palette[Secondary];
-        palette[Highlight] = Rgb(0x8B, 0xE9, 0xFD);
-        palette[HighlightInactive] = palette[Tertiary];
-
-        Theme { palette, ..Theme::default() }
-    };
-
     let mut siv = cursive::Cursive::new(|| {
         cursive::backend::crossterm::Backend::init()
             .map(cursive_buffered_backend::BufferedBackend::new)
@@ -272,7 +256,7 @@ async fn main() -> deluge_rpc::Result<()> {
     });
     siv.set_autorefresh(true);
     siv.set_autohide_menu(false);
-    siv.set_theme(theme);
+    siv.set_theme(themes::dracula());
 
     siv.add_global_callback('q', Cursive::quit);
     siv.add_global_callback(Event::Refresh, |s| {
