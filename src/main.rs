@@ -9,6 +9,8 @@ use cursive::menu::MenuTree;
 use cursive_tabs::TabPanel;
 use cursive::theme;
 use tokio::task::JoinHandle;
+use std::sync::Arc;
+use tokio::sync::Mutex;
 
 pub mod views;
 use views::{
@@ -122,6 +124,7 @@ async fn manage_session(
     let interested = deluge_rpc::events![TorrentRemoved];
     session.set_event_interest(&interested).await?;
     tokio::spawn(manage_events(events, updates.clone(), shutdown2));
+    let session = Arc::new(Mutex::new(session));
     loop {
         tokio::select! {
             command = commands.recv() => {
@@ -129,26 +132,33 @@ async fn manage_session(
                     SessionCommand::AddTorrentUrl(url) => {
                         let options = TorrentOptions::default();
                         let http_headers = None;
-                        session.add_torrent_url(&url, &options, http_headers).await?;
+                        session.lock().await.add_torrent_url(&url, &options, http_headers).await?;
                     },
                     SessionCommand::Shutdown => {
-                        session.shutdown().await?;
+                        session.lock().await.shutdown().await?;
                     },
                 }
             }
             _ = tokio::time::delay_for(tokio::time::Duration::from_secs(1)) => {
-                let delta = session.get_torrents_status_diff::<Torrent>(None).await?;
+                let (delta, new_tree) = {
+                    let mut session = session.lock().await;
+                    let delta = session.get_torrents_status_diff::<Torrent>(None).await?;
+                    let new_tree = session.get_filter_tree(false, &[]).await?;
+                    (delta, new_tree)
+                };
                 updates.torrents
                     .send(TorrentsUpdate::Delta(delta))
                     .await
                     .expect("update channel closed");
-                let new_tree = session.get_filter_tree(false, &[]).await?;
                 updates.filters
                     .send(FiltersUpdate::ReplaceTree(new_tree))
                     .await
                     .expect("update channel closed");
             }
-            _ = shutdown.recv() => return Ok(session),
+            _ = shutdown.recv() => {
+                let session = Arc::try_unwrap(session).unwrap().into_inner();
+                return Ok(session);
+            }
         }
     }
 }
