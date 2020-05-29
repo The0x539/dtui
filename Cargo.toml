@@ -8,7 +8,7 @@ edition = "2018"
 serde = "*"
 tokio = "*"
 cursive = { version = "0.14.1", default-features = false, features = ["crossterm-backend"] }
-deluge-rpc = "0.7.0"
+deluge-rpc.path = "../deluge-rpc"
 serde_yaml = "*"
 bytesize = "1.0.1"
 cursive-tabs = "*"
@@ -16,6 +16,8 @@ cursive_buffered_backend = "0.3.3"
 futures = "*"
 fnv = "1.0.7"
 ryu = "1.0.4"
+dashmap = "4.0.0-rc4"
 
 [patch.crates-io]
 webpki = { path = "./experiment/webpki" }
+deluge-rpc-macro = { path = "../deluge-rpc/experiment/deluge-rpc-macro" }

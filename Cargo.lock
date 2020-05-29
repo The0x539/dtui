@@ -327,10 +327,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "dashmap"
+version = "4.0.0-rc4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "88556510a9c781884fd2ef3f4d39c8813e04c9e1068377877e2bb8678a6ed427"
+dependencies = [
+ "once_cell",
+]
+
+[[package]]
 name = "deluge-rpc"
 version = "0.7.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8b4e55f41639a510909c8f4294405ffe1a33135330c6109ea0c3ee2f581bade8"
 dependencies = [
  "deluge-rpc-macro",
  "enum-kinds",
@@ -352,8 +359,6 @@ dependencies = [
 [[package]]
 name = "deluge-rpc-macro"
 version = "0.6.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bf66e71f7ef10775015790c5a9dfda21f7fb5b2ccbda2b6b1cb6608bc202655d"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -385,6 +390,7 @@ dependencies = [
  "cursive",
  "cursive-tabs",
  "cursive_buffered_backend",
+ "dashmap",
  "deluge-rpc",
  "fnv",
  "futures",

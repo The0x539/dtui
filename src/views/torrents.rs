@@ -5,33 +5,15 @@ use cursive::Printer;
 use cursive::vec::Vec2;
 use cursive::event::{Event, EventResult, MouseEvent, MouseButton};
 use cursive::view::ScrollBase;
-use tokio::sync::mpsc;
-use crate::UpdateSenders;
+use tokio::sync::{broadcast, watch};
+use std::sync::Arc;
 use cursive::utils::Counter;
 use cursive::views::ProgressBar;
+use dashmap::DashMap;
+use tokio::task::JoinHandle;
 use fnv::FnvHashMap;
 
-use super::refresh::Refreshable;
-
 use crate::util::fmt_bytes;
-
-#[derive(Debug)]
-pub(crate) enum Update {
-    NewFilters(FilterDict),
-    Delta(FnvHashMap<InfoHash, <Torrent as Query>::Diff>),
-    TorrentRemoved(InfoHash),
-}
-
-pub(crate) struct TorrentsView {
-    torrents: FnvHashMap<InfoHash, Torrent>,
-    filters: FilterDict,
-    rows: Vec<InfoHash>,
-    columns: Vec<(Column, usize)>,
-    scrollbase: ScrollBase,
-    update_recv: mpsc::Receiver<Update>,
-    #[allow(unused)]
-    update_send: UpdateSenders,
-}
 
 #[derive(Clone, Copy)]
 enum Column { Name, State, Size, Speed }
@@ -74,129 +56,94 @@ fn draw_cell(printer: &Printer, tor: &Torrent, col: Column) {
     };
 }
 
-impl TorrentsView {
-    pub(crate) fn new(
-        update_send: UpdateSenders,
-        update_recv: mpsc::Receiver<Update>,
-    ) -> Self {
-        let columns = vec![
-            (Column::Name, 30),
-            (Column::State, 15),
-            (Column::Size, 15),
-            (Column::Speed, 15),
-        ];
-        Self {
-            torrents: FnvHashMap::default(),
+pub(crate) struct TorrentsView {
+    torrents: Arc<DashMap<InfoHash, Torrent>>,
+    rows_recv: watch::Receiver<Vec<InfoHash>>,
+    columns: Vec<(Column, usize)>,
+    scrollbase: ScrollBase,
+    thread: JoinHandle<deluge_rpc::Result<()>>,
+}
+
+struct TorrentsViewThread {
+    session: Arc<Session>,
+    torrents: Arc<DashMap<InfoHash, Torrent>>,
+    filters_recv: watch::Receiver<FilterDict>,
+    events_recv: broadcast::Receiver<deluge_rpc::Event>,
+    rows: Vec<InfoHash>,
+    rows_send: watch::Sender<Vec<InfoHash>>,
+    shutdown: broadcast::Receiver<()>,
+}
+
+impl TorrentsViewThread {
+    fn new(
+        session: Arc<Session>,
+        torrents: Arc<DashMap<InfoHash, Torrent>>,
+        filters_recv: watch::Receiver<FilterDict>,
+        shutdown: broadcast::Receiver<()>,
+    ) -> (Self, watch::Receiver<Vec<InfoHash>>) {
+        let events_recv = session.subscribe_events();
+        let (rows_send, rows_recv) = watch::channel(Vec::new());
+        let obj = Self {
+            session,
+            torrents,
+            filters_recv,
+            events_recv,
             rows: Vec::new(),
-            columns,
-            scrollbase: ScrollBase::default(),
-            filters: FnvHashMap::default(),
-            update_send,
-            update_recv,
-        }
+            rows_send,
+            shutdown,
+        };
+        (obj, rows_recv)
     }
 
-    fn sort(&mut self) {
-        // TODO: choose column and direction
-        let rows = &mut self.rows;
-        let torrents = &self.torrents;
-        rows.sort_by_key(|h| &torrents[h].name);
-    }
-
-    fn replace_filters(&mut self, filters: FilterDict) {
-        self.rows = self.torrents
-            .iter()
-            .filter_map(|(k, v)| if v.matches_filters(&filters) { Some(k) } else { None })
-            .copied()
-            .collect();
-        self.sort();
-
-        self.filters = filters;
-
-        self.scrollbase.content_height = self.rows.len();
-        self.scrollbase.start_line = 0;
-    }
-
-    fn insert_row(&mut self, idx: usize, hash: InfoHash) {
-        debug_assert!(self.torrents.contains_key(&hash));
-        debug_assert!(self.torrents[&hash].matches_filters(&self.filters));
-        self.scrollbase.content_height += 1;
-        if idx < self.scrollbase.start_line {
-            self.scrollbase.start_line += 1;
-        }
-        self.rows.insert(idx, hash);
-    }
-
-    fn remove_row(&mut self, idx: usize) {
-        self.scrollbase.content_height -= 1;
-        if idx < self.scrollbase.start_line {
-            self.scrollbase.start_line -= 1;
-        }
-        self.rows.remove(idx);
-    }
-
-    fn add_torrents(&mut self, torrents: Vec<(InfoHash, Torrent)>) {
-        for (hash, tor) in torrents.into_iter() {
-            debug_assert!(!self.torrents.contains_key(&hash));
-
-            self.torrents.insert(hash, tor);
-
-            let tor = &self.torrents[&hash];
-            if tor.matches_filters(&self.filters) {
-                let val = &tor.name;
-                let idx = match self.rows.binary_search_by_key(&val, |h| &self.torrents[h].name) {
-                    Ok(i) => i, // Found something with the same name. No big deal.
-                    Err(i) => i,
-                };
-                self.insert_row(idx, hash);
+    async fn run(mut self) -> deluge_rpc::Result<()> {
+        self.session.set_event_interest(&deluge_rpc::events![TorrentRemoved]).await?;
+        loop {
+            tokio::select! {
+                event = self.events_recv.recv() => {
+                    match event.unwrap() {
+                        deluge_rpc::Event::TorrentRemoved(hash) => {
+                            self.remove_torrent(hash);
+                        },
+                        _ => (),
+                    }
+                },
+                _ = self.shutdown.recv() => return Ok(()),
+                _ = tokio::time::delay_for(tokio::time::Duration::from_secs(5)) => (),
             }
+            let filter_dict = self.filters_recv.borrow().clone();
+            let delta = self.session.get_torrents_status_diff::<Torrent>(Some(&filter_dict)).await?;
+            self.apply_delta(delta)
         }
-    }
-
-    fn remove_torrent(&mut self, hash: InfoHash) {
-        let tor = self.torrents.remove(&hash).expect("Tried to remove nonexistent torrent");
-
-        if tor.matches_filters(&self.filters) {
-            let val = &tor.name;
-            let idx = self.rows.binary_search_by_key(&val, |h| &self.torrents[h].name).unwrap();
-            self.remove_row(idx);
-        }
-
-        self.torrents.remove(&hash);
     }
 
     fn apply_delta(&mut self, delta: FnvHashMap<InfoHash, <Torrent as Query>::Diff>) {
         let mut new_torrents = Vec::new();
+        let mut toggled_rows = Vec::new();
 
-        for (hash, diff) in delta {
+        for (hash, diff) in delta.into_iter() {
             if diff == Default::default() {
                 continue;
-            } else if let Some(mut torrent) = self.torrents.remove(&hash) {
-                
-                let did_match = torrent.matches_filters(&self.filters);
-                torrent.update(diff);
-                let does_match = torrent.matches_filters(&self.filters);
+            } else if self.torrents.contains_key(&hash) {
+                let filters = self.filters_recv.borrow();
+                let toggled_rows = &mut toggled_rows;
+                self.torrents.update(&hash, |_, torrent| {
+                    let mut torrent = torrent.clone();
 
-                if did_match != does_match {
-                    let val = &torrent.name;
-                    match self.rows.binary_search_by_key(&val, |h| &self.torrents[h].name) {
-                        Ok(idx) => {
-                            debug_assert!(did_match && !does_match);
-                            self.remove_row(idx);
-                        },
-                        Err(idx) => {
-                            debug_assert!(does_match && !did_match);
-                            self.insert_row(idx, hash);
-                        },
+                    let did_match = torrent.matches_filters(&filters);
+                    torrent.update(diff.clone()); // WHY DO I NEED TO CLONE HERE
+                    let does_match = torrent.matches_filters(&filters);
+
+                    if did_match != does_match {
+                        toggled_rows.push(hash);
                     }
-                }
 
-                self.torrents.insert(hash, torrent);
+                    torrent
+                });
             } else {
                 // New torrent, so should have all the fields
                 // TODO: add a realize() method or something to derived Diffs
                 let new_torrent = Torrent {
-                    hash: diff.hash.unwrap(),
+                    hash: diff.hash.unwrap_or(hash),
                     name: diff.name.unwrap(),
                     state: diff.state.unwrap(),
                     total_size: diff.total_size.unwrap(),
@@ -212,7 +159,75 @@ impl TorrentsView {
             }
         }
 
+        for hash in toggled_rows.into_iter() {
+            let val = self.torrents.get(&hash).unwrap().name.clone();
+            match self.rows.binary_search_by(|b| self.torrents.get(b).unwrap().name.cmp(&val)) {
+                Ok(idx) => {
+                    self.rows.remove(idx);
+                },
+                Err(idx) => {
+                    self.rows.insert(idx, hash);
+                },
+            }
+        }
+
         self.add_torrents(new_torrents);
+
+        self.rows_send.broadcast(self.rows.clone()).unwrap();
+    }
+    
+    fn add_torrents(&mut self, torrents: Vec<(InfoHash, Torrent)>) {
+        for (hash, torrent) in torrents.into_iter() {
+            let guard = self.torrents.insert_and_get(hash, torrent);
+            let val = guard.value().name.clone();
+
+            let idx = match self.rows.binary_search_by(|b| self.torrents.get(b).unwrap().name.cmp(&val)) {
+                Ok(i) => i, // Found something with the same name. No big deal.
+                Err(i) => i,
+            };
+            self.rows.insert(idx, hash);
+        }
+    }
+
+    fn remove_torrent(&mut self, hash: InfoHash) {
+        let guard = self.torrents
+            .remove_take(&hash)
+            .expect("Tried to remove nonexistent torrent");
+
+        let tor = guard.value();
+
+        if tor.matches_filters(&self.filters_recv.borrow()) {
+            let val = &tor.name;
+            let idx = self.rows.binary_search_by(|b| self.torrents.get(b).unwrap().name.cmp(&val)).unwrap();
+            self.rows.remove(idx);
+        }
+
+        self.torrents.remove(&hash);
+    }
+}
+
+impl TorrentsView {
+    pub(crate) fn new(
+        session: Arc<Session>,
+        filters_recv: watch::Receiver<FilterDict>,
+        shutdown: broadcast::Receiver<()>,
+    ) -> Self {
+        let columns = vec![
+            (Column::Name, 30),
+            (Column::State, 15),
+            (Column::Size, 15),
+            (Column::Speed, 15),
+        ];
+        let torrents = Arc::new(DashMap::new());
+        let (thread_obj, rows_recv) = TorrentsViewThread::new(session.clone(), torrents.clone(), filters_recv, shutdown);
+        let thread = tokio::spawn(thread_obj.run());
+        Self {
+            torrents,
+            columns,
+            rows_recv,
+            thread,
+            scrollbase: ScrollBase::default(),
+        }
     }
 
     fn draw_header(&self, printer: &Printer) {
@@ -223,8 +238,7 @@ impl TorrentsView {
         }
     }
 
-    fn draw_row(&self, printer: &Printer, i: usize) {
-        let torrent = &self.torrents[&self.rows[i]];
+    fn draw_row(&self, printer: &Printer, torrent: &Torrent) {
         let mut x = 0;
         for (column, width) in &self.columns {
             draw_cell(&printer.offset((x, 0)).cropped((*width, 1)), torrent, *column);
@@ -234,22 +248,6 @@ impl TorrentsView {
 
     pub fn width(&self) -> usize {
         self.columns.iter().map(|(_, w)| w+1).sum::<usize>()
-    }
-}
-
-impl Refreshable for TorrentsView {
-    type Update = Update;
-
-    fn get_receiver(&mut self) -> &mut mpsc::Receiver<Update> {
-        &mut self.update_recv
-    }
-
-    fn perform_update(&mut self, update: Update) {
-        match update {
-            Update::Delta(delta) => self.apply_delta(delta),
-            Update::NewFilters(filters) => self.replace_filters(filters),
-            Update::TorrentRemoved(hash) => self.remove_torrent(hash),
-        }
     }
 }
 
@@ -270,7 +268,11 @@ impl View for TorrentsView {
         }
         printer.print((0, 1), "╶");
         self.draw_header(printer);
-        self.scrollbase.draw(&printer.offset((0, 2)), |p, i| self.draw_row(p, i));
+        let rows = self.rows_recv.borrow();
+        self.scrollbase.draw(&printer.offset((0, 2)), |p, i| {
+            let hash = &rows[i];
+            self.draw_row(p, self.torrents.get(hash).unwrap().value());
+        });
     }
 
     fn required_size(&mut self, constraint: Vec2) -> Vec2 {
@@ -280,6 +282,10 @@ impl View for TorrentsView {
     fn layout(&mut self, constraint: Vec2) {
         self.columns[0].1 = constraint.x - 49;
         self.scrollbase.view_height = constraint.y - 2;
+        // TODO: fix this obvious race condition
+        // what if a row gets inserted between layout and draw
+        // we need a lock of some sort
+        self.scrollbase.content_height = self.rows_recv.borrow().len();
     }
 
     fn take_focus(&mut self, _: cursive::direction::Direction) -> bool { true }

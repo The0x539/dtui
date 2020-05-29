@@ -1,5 +1,5 @@
 use deluge_rpc::*;
-use tokio::sync::{broadcast, mpsc};
+use tokio::sync::{broadcast, mpsc, watch};
 use cursive::event::Event;
 use cursive::Cursive;
 use cursive::traits::*;
@@ -18,7 +18,6 @@ use views::{
     refresh::Refreshable,
 
     filters::Update as FiltersUpdate,
-    torrents::Update as TorrentsUpdate,
 };
 
 pub mod util;
@@ -34,7 +33,6 @@ pub enum SessionUpdate {
 #[derive(Clone, Debug)]
 pub(crate) struct UpdateSenders {
     pub filters: mpsc::Sender<FiltersUpdate>,
-    pub torrents: mpsc::Sender<TorrentsUpdate>,
     pub session_updates: mpsc::Sender<SessionUpdate>,
 }
 
@@ -88,32 +86,6 @@ impl Torrent {
     }
 }
 
-async fn manage_events(
-    session: Arc<Session>,
-    mut update_send: UpdateSenders,
-    mut shutdown: broadcast::Receiver<()>,
-) -> deluge_rpc::Result<()> {
-    let mut events = session.subscribe_events();
-    let interested = deluge_rpc::events![TorrentRemoved];
-    session.set_event_interest(&interested).await?;
-    loop {
-        tokio::select! {
-            event = events.recv() => {
-                match event.expect("event channel closed") {
-                    deluge_rpc::Event::TorrentRemoved(hash) => {
-                        update_send.torrents
-                            .send(TorrentsUpdate::TorrentRemoved(hash))
-                            .await
-                            .expect("update channel closed");
-                    },
-                    e => panic!("Received unexpected event: {:?}", e),
-                }
-            },
-            _ = shutdown.recv() => return Ok(()),
-        }
-    }
-}
-
 async fn manage_updates(
     session: Arc<Session>,
     mut update_send: UpdateSenders,
@@ -132,21 +104,8 @@ async fn manage_updates(
                 }
             },
             _ = tokio::time::delay_for(tokio::time::Duration::from_secs(1)) => {
-                let torrent_updates = &mut update_send.torrents;
                 let filter_updates = &mut update_send.filters;
                 tokio::try_join!(
-                    async {
-                        let delta = session
-                            .get_torrents_status_diff::<Torrent>(filter_dict.as_ref())
-                            .await?;
-
-                        torrent_updates
-                            .send(TorrentsUpdate::Delta(delta))
-                            .await
-                            .expect("torrents update channel closed");
-
-                        deluge_rpc::Result::Ok(())
-                    },
                     async {
                         let new_tree = session
                             .get_filter_tree(false, &[])
@@ -175,24 +134,25 @@ async fn main() -> deluge_rpc::Result<()> {
     let pass = util::read_file("./experiment/password");
     let auth_level = session.login(&user, &pass).await?;
     assert!(auth_level >= AuthLevel::Normal);
+
+    let session = Arc::new(session);
     
     let (shutdown, _) = broadcast::channel(1);
 
-    let (filter_updates, torrent_updates, session_updates, update_send) = {
+    let (filter_updates, session_updates, update_send) = {
         let f = mpsc::channel(50);
-        let t = mpsc::channel(50);
         let s = mpsc::channel(50);
         let u = UpdateSenders {
             filters: f.0,
-            torrents: t.0,
             session_updates: s.0,
         };
-        (f.1, t.1, s.1, u)
+        (f.1, s.1, u)
     };
 
+    let (filters_send, filters_recv) = watch::channel(FilterDict::default());
+
     let torrents = {
-        TorrentsView::new(update_send.clone(), torrent_updates)
-            .with_name("torrents")
+        TorrentsView::new(session.clone(), filters_recv, shutdown.subscribe()).with_name("torrents")
     };
     let filters = {
         FiltersView::new(update_send.clone(), filter_updates)
@@ -226,10 +186,7 @@ async fn main() -> deluge_rpc::Result<()> {
         .child(torrent_tabs)
         .child(status_bar);
 
-    let session = Arc::new(session);
-
     let update_thread = tokio::spawn(manage_updates(session.clone(), update_send.clone(), session_updates, shutdown.subscribe()));
-    let event_thread = tokio::spawn(manage_events(session.clone(), update_send.clone(), shutdown.subscribe()));
 
     let mut siv = cursive::Cursive::new(|| {
         cursive::backend::crossterm::Backend::init()
@@ -243,7 +200,6 @@ async fn main() -> deluge_rpc::Result<()> {
 
     siv.add_global_callback('q', Cursive::quit);
     siv.add_global_callback(Event::Refresh, |s| {
-        s.call_on_name::<TorrentsView, _, _>("torrents", Refreshable::refresh);
         s.call_on_name::<FiltersView, _, _>("filters", Refreshable::refresh);
     });
 
@@ -264,8 +220,7 @@ async fn main() -> deluge_rpc::Result<()> {
     shutdown.send(()).unwrap();
 
     update_thread.await.unwrap()?;
-    event_thread.await.unwrap()?;
-        
+
     let session = Arc::try_unwrap(session).unwrap();
     
     session.disconnect().await.map_err(|(_stream, err)| err)?;

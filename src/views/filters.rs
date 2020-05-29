@@ -10,7 +10,6 @@ use deluge_rpc::{FilterKey, FilterDict};
 use super::scroll::ScrollInner;
 use super::refresh::Refreshable;
 
-use crate::views::torrents::Update as TorrentsUpdate;
 use crate::SessionUpdate;
 use crate::util::digit_width;
 use crate::UpdateSenders;
@@ -92,12 +91,6 @@ impl FiltersView {
     
     fn update_filters(&mut self) {
         let filters = self.active_filters();
-
-        let update = TorrentsUpdate::NewFilters(filters.clone());
-        self.update_send
-            .torrents
-            .try_send(update)
-            .expect("couldn't send new filters to torrents view");
 
         let cmd = SessionUpdate::NewFilters(filters);
         self.update_send
