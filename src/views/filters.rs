@@ -1,28 +1,25 @@
 use cursive::traits::*;
 use cursive::Printer;
 use fnv::FnvHashMap;
-use std::collections::BTreeMap;
 use cursive::event::{Event, EventResult, MouseEvent, MouseButton};
 use cursive::vec::Vec2;
-use tokio::sync::mpsc;
-use deluge_rpc::{FilterKey, FilterDict};
+use tokio::sync::{broadcast, watch};
+use std::collections::BTreeMap;
+use deluge_rpc::{FilterKey, FilterDict, Session};
+use tokio::task::JoinHandle;
+use std::sync::{Arc, RwLock};
 
 use super::scroll::ScrollInner;
-use super::refresh::Refreshable;
 
-use crate::SessionUpdate;
 use crate::util::digit_width;
-use crate::UpdateSenders;
 
 #[derive(Debug)]
-pub enum Update {
-    ReplaceTree(FnvHashMap<FilterKey, Vec<(String, u64)>>),
-}
-
 struct Category {
     filters: Vec<(String, u64)>,
     collapsed: bool,
 }
+
+type Categories = BTreeMap<FilterKey, Category>;
 
 enum Row {
     Parent(FilterKey),
@@ -30,53 +27,95 @@ enum Row {
 }
 
 pub(crate) struct FiltersView {
+    // TODO: figure out how to remove filters that vanish.
     active_filters: FilterDict,
-    categories: BTreeMap<FilterKey, Category>,
-    update_send: UpdateSenders,
-    update_recv: mpsc::Receiver<Update>,
+    categories: Arc<RwLock<Categories>>,
+    filters_send: watch::Sender<FilterDict>,
+    thread: JoinHandle<deluge_rpc::Result<()>>,
 }
 
-impl FiltersView {
-    pub(crate) fn new(
-        update_send: UpdateSenders,
-        update_recv: mpsc::Receiver<Update>,
+struct FiltersViewThread {
+    session: Arc<Session>,
+    categories: Arc<RwLock<Categories>>,
+    shutdown: broadcast::Receiver<()>,
+}
+
+impl FiltersViewThread {
+    fn new(
+        session: Arc<Session>,
+        categories: Arc<RwLock<Categories>>,
+        shutdown: broadcast::Receiver<()>,
     ) -> Self {
         Self {
-            active_filters: FilterDict::default(),
-            categories: BTreeMap::new(),
-            update_send,
-            update_recv,
+            session,
+            categories,
+            shutdown,
+        }
+    }
+
+    async fn run(mut self) -> deluge_rpc::Result<()> {
+        loop {
+            tokio::select! {
+                _ = self.shutdown.recv() => return Ok(()),
+                new_tree = self.session.get_filter_tree(false, &[]) => {
+                    self.replace_tree(new_tree?);
+                }
+            }
+            tokio::select! {
+                _ = self.shutdown.recv() => return Ok(()),
+                _ = tokio::time::delay_for(tokio::time::Duration::from_secs(5)) => (),
+            }
         }
     }
 
     fn replace_tree(&mut self, mut new_tree: FnvHashMap<FilterKey, Vec<(String, u64)>>) {
-        let pruned_keys = self.categories
+        let mut categories = self.categories.write().unwrap();
+
+        let pruned_keys = categories
             .keys()
             .filter(|key| !new_tree.contains_key(key))
             .copied()
             .collect::<Vec<FilterKey>>();
 
         for key in pruned_keys.into_iter() {
-            self.categories.remove(&key);
+            categories.remove(&key);
         }
 
-        for (key, category) in self.categories.iter_mut() {
+        for (key, category) in categories.iter_mut() {
             category.filters = new_tree.remove(key).unwrap();
         }
 
         for (key, filters) in new_tree.into_iter() {
-            self.categories.insert(key, Category { filters, collapsed: false });
+            categories.insert(key, Category { filters, collapsed: false });
         }
 
-        if let Some(owners) = self.categories.get_mut(&FilterKey::Owner) {
+        if let Some(owners) = categories.get_mut(&FilterKey::Owner) {
             let no_owner = (String::new(), 0);
             if !owners.filters.contains(&no_owner) {
                 owners.filters.insert(0, no_owner);
             }
         }
     }
+}
 
-    fn active_filters(&self) -> FilterDict {
+impl FiltersView {
+    pub(crate) fn new(
+        session: Arc<Session>,
+        filters_send: watch::Sender<FilterDict>,
+        shutdown: broadcast::Receiver<()>,
+    ) -> Self {
+        let categories = Arc::new(RwLock::new(Categories::new()));
+        let thread_obj = FiltersViewThread::new(session, categories.clone(), shutdown);
+        let thread = tokio::spawn(thread_obj.run());
+        Self {
+            active_filters: FilterDict::default(),
+            categories,
+            filters_send,
+            thread,
+        }
+    }
+
+    fn get_active_filters(&self) -> FilterDict {
         self.active_filters
             .iter()
             .filter(|(key, val)| match (key, val.as_str()) {
@@ -88,19 +127,9 @@ impl FiltersView {
             .map(|(k, v)| (*k, v.clone()))
             .collect()
     }
-    
-    fn update_filters(&mut self) {
-        let filters = self.active_filters();
 
-        let cmd = SessionUpdate::NewFilters(filters);
-        self.update_send
-            .session_updates
-            .try_send(cmd)
-            .expect("couldn't send new filters to session thread");
-    }
-
-    fn get_row(&self, mut y: usize) -> Option<Row> {
-        for (key, category) in self.categories.iter() {
+    fn get_row(categories: &Categories, mut y: usize) -> Option<Row> {
+        for (key, category) in categories.iter() {
             if y == 0 {
                 return Some(Row::Parent(*key));
             } else {
@@ -119,23 +148,28 @@ impl FiltersView {
     }
 
     fn click(&mut self, y: usize) {
-        match self.get_row(y) {
+        let mut categories = self.categories.write().unwrap();
+
+        match Self::get_row(&categories, y) {
             Some(Row::Parent(key)) => {
-                let x = &mut self.categories.get_mut(&key).unwrap().collapsed;
+                let x = &mut categories.get_mut(&key).unwrap().collapsed;
                 *x = !*x;
             },
             Some(Row::Child(key, idx)) => {
-                let filter = self.categories[&key].filters[idx].0.clone();
+                let filter = categories[&key].filters[idx].0.clone();
                 self.active_filters.insert(key, filter);
-                self.update_filters();
+                let new_dict = self.get_active_filters();
+                self.filters_send
+                    .broadcast(new_dict)
+                    .expect("Couldn't send new view filters");
             },
             None => (),
         }
     }
 
-    fn content_width(&self) -> usize {
+    fn content_width(categories: &Categories) -> usize {
         let mut w = 0;
-        for (key, category) in self.categories.iter() {
+        for (key, category) in categories.iter() {
             w = w.max(2 + key.as_str().len());
             for (filter, hits) in category.filters.iter() {
                 w = w.max(3 + filter.len() + 1 + digit_width(*hits));
@@ -144,9 +178,9 @@ impl FiltersView {
         w
     }
 
-    fn content_height(&self) -> usize {
+    fn content_height(categories: &Categories) -> usize {
         let mut h = 0;
-        for (_, category) in self.categories.iter() {
+        for (_, category) in categories.iter() {
             h += 1;
             if !category.collapsed {
                 h += category.filters.len();
@@ -156,27 +190,13 @@ impl FiltersView {
     }
 }
 
-impl Refreshable for FiltersView {
-    type Update = Update;
-
-    fn get_receiver(&mut self) -> &mut mpsc::Receiver<Update> {
-        &mut self.update_recv
-    }
-
-    fn perform_update(&mut self, update: Update) {
-        match update {
-            Update::ReplaceTree(changes) => {
-                self.replace_tree(changes);
-            }
-        }
-    }
-}
-
 impl ScrollInner for FiltersView {
     fn draw_row(&self, printer: &Printer, y: usize) {
-        match self.get_row(y) {
+        let categories = self.categories.read().unwrap();
+
+        match Self::get_row(&categories, y) {
             Some(Row::Parent(key)) => {
-                let c = if self.categories[&key].collapsed {
+                let c = if categories[&key].collapsed {
                     '▸'
                 } else {
                     '▾'
@@ -184,7 +204,7 @@ impl ScrollInner for FiltersView {
                 printer.print((0, 0), &format!("{} {}", c, key));
             },
             Some(Row::Child(key, idx)) => {
-                let (filter, hits) = &self.categories[&key].filters[idx];
+                let (filter, hits) = &categories[&key].filters[idx];
                 let c = if self.active_filters.get(&key) == Some(filter) {
                     '●'
                 } else {
@@ -196,7 +216,7 @@ impl ScrollInner for FiltersView {
                     (FilterKey::Label, "") => "No Label",
                     (_, s) => s,
                 };
-                let nspaces = printer.size.x - (3 + filter.len() + digit_width(*hits));
+                let nspaces = printer.size.x.saturating_sub(3 + filter.len() + digit_width(*hits));
                 let spaces = " ".repeat(nspaces);
                 printer.print((0, 0), &format!(" {} {}{}{}", c, filter, spaces, hits));
             },
@@ -217,7 +237,8 @@ impl View for FiltersView {
     }
 
     fn required_size(&mut self, _: Vec2) -> Vec2 {
-        (self.content_width(), self.content_height()).into()
+        let categories = self.categories.read().unwrap();
+        (Self::content_width(&categories), Self::content_height(&categories)).into()
     }
 
     fn take_focus(&mut self, _: cursive::direction::Direction) -> bool { true }

@@ -67,6 +67,7 @@ pub(crate) struct TorrentsView {
 struct TorrentsViewThread {
     session: Arc<Session>,
     torrents: Arc<DashMap<InfoHash, Torrent>>,
+    filters: FilterDict,
     filters_recv: watch::Receiver<FilterDict>,
     events_recv: broadcast::Receiver<deluge_rpc::Event>,
     rows: Vec<InfoHash>,
@@ -83,9 +84,11 @@ impl TorrentsViewThread {
     ) -> (Self, watch::Receiver<Vec<InfoHash>>) {
         let events_recv = session.subscribe_events();
         let (rows_send, rows_recv) = watch::channel(Vec::new());
+        let filters = filters_recv.borrow().clone();
         let obj = Self {
             session,
             torrents,
+            filters,
             filters_recv,
             events_recv,
             rows: Vec::new(),
@@ -107,11 +110,13 @@ impl TorrentsViewThread {
                         _ => (),
                     }
                 },
+                new_filters = self.filters_recv.recv() => {
+                    self.filters = new_filters.unwrap();
+                },
                 _ = self.shutdown.recv() => return Ok(()),
                 _ = tokio::time::delay_for(tokio::time::Duration::from_secs(5)) => (),
             }
-            let filter_dict = self.filters_recv.borrow().clone();
-            let delta = self.session.get_torrents_status_diff::<Torrent>(Some(&filter_dict)).await?;
+            let delta = self.session.get_torrents_status_diff::<Torrent>(Some(&self.filters)).await?;
             self.apply_delta(delta)
         }
     }
@@ -124,14 +129,13 @@ impl TorrentsViewThread {
             if diff == Default::default() {
                 continue;
             } else if self.torrents.contains_key(&hash) {
-                let filters = self.filters_recv.borrow();
                 let toggled_rows = &mut toggled_rows;
                 self.torrents.update(&hash, |_, torrent| {
                     let mut torrent = torrent.clone();
 
-                    let did_match = torrent.matches_filters(&filters);
+                    let did_match = torrent.matches_filters(&self.filters);
                     torrent.update(diff.clone()); // WHY DO I NEED TO CLONE HERE
-                    let does_match = torrent.matches_filters(&filters);
+                    let does_match = torrent.matches_filters(&self.filters);
 
                     if did_match != does_match {
                         toggled_rows.push(hash);
@@ -196,7 +200,7 @@ impl TorrentsViewThread {
 
         let tor = guard.value();
 
-        if tor.matches_filters(&self.filters_recv.borrow()) {
+        if tor.matches_filters(&self.filters) {
             let val = &tor.name;
             let idx = self.rows.binary_search_by(|b| self.torrents.get(b).unwrap().name.cmp(&val)).unwrap();
             self.rows.remove(idx);

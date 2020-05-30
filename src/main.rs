@@ -1,6 +1,5 @@
 use deluge_rpc::*;
-use tokio::sync::{broadcast, mpsc, watch};
-use cursive::event::Event;
+use tokio::sync::{broadcast, watch};
 use cursive::Cursive;
 use cursive::traits::*;
 use cursive::views::{LinearLayout, TextView, Panel};
@@ -15,26 +14,12 @@ use views::{
     torrents::TorrentsView,
 
     scroll::ScrollInner,
-    refresh::Refreshable,
-
-    filters::Update as FiltersUpdate,
 };
 
 pub mod util;
 
 mod themes;
 mod menu;
-
-#[derive(Debug)]
-pub enum SessionUpdate {
-    NewFilters(FilterDict),
-}
-
-#[derive(Clone, Debug)]
-pub(crate) struct UpdateSenders {
-    pub filters: mpsc::Sender<FiltersUpdate>,
-    pub session_updates: mpsc::Sender<SessionUpdate>,
-}
 
 #[derive(Clone, Debug, serde::Deserialize, Query)]
 struct Torrent {
@@ -86,45 +71,6 @@ impl Torrent {
     }
 }
 
-async fn manage_updates(
-    session: Arc<Session>,
-    mut update_send: UpdateSenders,
-    mut update_recv: mpsc::Receiver<SessionUpdate>,
-    mut shutdown: broadcast::Receiver<()>,
-) -> deluge_rpc::Result<()> {
-    let mut filter_dict = None;
-    // TODO: something smarter than this
-    loop {
-        tokio::select! {
-            update = update_recv.recv() => {
-                match update.expect("update channel closed") {
-                    SessionUpdate::NewFilters(new_filters) => {
-                        filter_dict.replace(new_filters);
-                    }
-                }
-            },
-            _ = tokio::time::delay_for(tokio::time::Duration::from_secs(1)) => {
-                let filter_updates = &mut update_send.filters;
-                tokio::try_join!(
-                    async {
-                        let new_tree = session
-                            .get_filter_tree(false, &[])
-                            .await?;
-
-                        filter_updates
-                            .send(FiltersUpdate::ReplaceTree(new_tree))
-                            .await
-                            .expect("filters update channel closed");
-
-                        deluge_rpc::Result::Ok(())
-                    },
-                )?;
-            }
-            _ = shutdown.recv() => return Ok(()),
-        }
-    }
-}
-
 #[tokio::main]
 async fn main() -> deluge_rpc::Result<()> {
     let endpoint = util::read_file("./experiment/endpoint");
@@ -139,23 +85,14 @@ async fn main() -> deluge_rpc::Result<()> {
     
     let (shutdown, _) = broadcast::channel(1);
 
-    let (filter_updates, session_updates, update_send) = {
-        let f = mpsc::channel(50);
-        let s = mpsc::channel(50);
-        let u = UpdateSenders {
-            filters: f.0,
-            session_updates: s.0,
-        };
-        (f.1, s.1, u)
-    };
-
     let (filters_send, filters_recv) = watch::channel(FilterDict::default());
 
     let torrents = {
-        TorrentsView::new(session.clone(), filters_recv, shutdown.subscribe()).with_name("torrents")
+        TorrentsView::new(session.clone(), filters_recv.clone(), shutdown.subscribe())
+            .with_name("torrents")
     };
     let filters = {
-        FiltersView::new(update_send.clone(), filter_updates)
+        FiltersView::new(session.clone(), filters_send, shutdown.subscribe())
             .with_name("filters")
             .into_scroll_wrapper()
     };
@@ -186,22 +123,17 @@ async fn main() -> deluge_rpc::Result<()> {
         .child(torrent_tabs)
         .child(status_bar);
 
-    let update_thread = tokio::spawn(manage_updates(session.clone(), update_send.clone(), session_updates, shutdown.subscribe()));
-
     let mut siv = cursive::Cursive::new(|| {
         cursive::backend::crossterm::Backend::init()
             .map(cursive_buffered_backend::BufferedBackend::new)
             .map(Box::new)
             .unwrap()
     });
-    siv.set_autorefresh(true);
+    siv.set_fps(1);
     siv.set_autohide_menu(false);
     siv.set_theme(themes::dracula());
 
     siv.add_global_callback('q', Cursive::quit);
-    siv.add_global_callback(Event::Refresh, |s| {
-        s.call_on_name::<FiltersView, _, _>("filters", Refreshable::refresh);
-    });
 
     siv.menubar()
         .add_subtree("File",
@@ -219,7 +151,7 @@ async fn main() -> deluge_rpc::Result<()> {
 
     shutdown.send(()).unwrap();
 
-    update_thread.await.unwrap()?;
+    // TODO: wait on the views' threads
 
     let session = Arc::try_unwrap(session).unwrap();
     
