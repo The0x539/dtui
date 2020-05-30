@@ -12,6 +12,7 @@ pub mod views;
 use views::{
     filters::FiltersView,
     torrents::TorrentsView,
+    statusbar::StatusBarView,
 
     scroll::ScrollInner,
 };
@@ -97,6 +98,10 @@ async fn main() -> deluge_rpc::Result<()> {
             .with_name("filters")
             .into_scroll_wrapper()
     };
+    let status_bar = {
+        StatusBarView::new(session.clone(), shutdown.clone())
+            .with_name("status")
+    };
 
     let status_tab = TextView::new("Torrent status (todo)");
     let details_tab = TextView::new("Torrent details (todo)");
@@ -112,8 +117,6 @@ async fn main() -> deluge_rpc::Result<()> {
         .with_tab("Files", files_tab)
         .with_tab("Peers", peers_tab)
         .with_tab("Trackers", trackers_tab);
-
-    let status_bar = TextView::new("Status bar (todo)");
 
     let torrents_ui = LinearLayout::new(Orientation::Horizontal)
         .child(Panel::new(filters).title("Filters"))
@@ -151,11 +154,24 @@ async fn main() -> deluge_rpc::Result<()> {
     siv.run();
 
     std::mem::drop(shutdown_write_handle);
+
     let torrents_thread = siv.call_on_name("torrents", TorrentsView::take_thread).unwrap();
     let filters_thread = siv.call_on_name("filters", FiltersView::take_thread).unwrap();
-    let (torrents_result, filters_result) = tokio::try_join!(torrents_thread, filters_thread).unwrap();
+    let statusbar_thread = siv.call_on_name("status", StatusBarView::take_thread).unwrap();
+
+    let (
+        torrents_result,
+        filters_result,
+        statusbar_result,
+    ) = tokio::try_join!(
+        torrents_thread,
+        filters_thread,
+        statusbar_thread,
+    ).unwrap();
+
     torrents_result?;
     filters_result?;
+    statusbar_result?;
 
     let session = Arc::try_unwrap(session).unwrap();
     
