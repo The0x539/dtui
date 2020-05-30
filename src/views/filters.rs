@@ -8,6 +8,7 @@ use std::collections::BTreeMap;
 use deluge_rpc::{FilterKey, FilterDict, Session};
 use tokio::task::JoinHandle;
 use std::sync::{Arc, RwLock};
+use tokio::time;
 
 use super::scroll::ScrollInner;
 
@@ -47,17 +48,22 @@ impl FiltersViewThread {
         Self { session, categories }
     }
 
+    async fn do_update(&mut self) -> deluge_rpc::Result<()> {
+        let now = time::Instant::now();
+
+        let new_tree = self.session.get_filter_tree(false, &[]).await?;
+        self.replace_tree(new_tree);
+
+        time::delay_until(now + time::Duration::from_secs(3)).await;
+
+        Ok(())
+    }
+
     async fn run(mut self, shutdown: Arc<AsyncRwLock<()>>) -> deluge_rpc::Result<()> {
         loop {
             tokio::select! {
+                r = self.do_update() => r?,
                 _ = shutdown.read() => return Ok(()),
-                new_tree = self.session.get_filter_tree(false, &[]) => {
-                    self.replace_tree(new_tree?);
-                }
-            }
-            tokio::select! {
-                _ = shutdown.read() => return Ok(()),
-                _ = tokio::time::delay_for(tokio::time::Duration::from_secs(5)) => (),
             }
         }
     }
