@@ -12,6 +12,7 @@ use cursive::views::ProgressBar;
 use dashmap::DashMap;
 use tokio::task::JoinHandle;
 use fnv::FnvHashMap;
+use tokio::time;
 
 use crate::util::fmt_bytes;
 
@@ -95,29 +96,33 @@ impl TorrentsViewThread {
         (obj, rows_recv)
     }
 
+    async fn do_update(&mut self) -> deluge_rpc::Result<()> {
+        let now = time::Instant::now();
+
+        if let Ok(new_filters) = time::timeout_at(now, self.filters_recv.recv()).await {
+            self.replace_filters(new_filters.unwrap());
+        }
+
+        if let Ok(event) = time::timeout_at(now, self.events_recv.recv()).await {
+            match event.unwrap() {
+                deluge_rpc::Event::TorrentRemoved(hash) => self.remove_torrent(hash),
+                _ => (),
+            }
+        }
+
+        let delta = self.session.get_torrents_status_diff::<Torrent>(Some(&self.filters)).await?;
+        self.apply_delta(delta);
+
+        time::delay_until(now + time::Duration::from_secs(1)).await;
+
+        Ok(())
+    }
+
     async fn run(mut self, shutdown: Arc<AsyncRwLock<()>>) -> deluge_rpc::Result<()> {
         self.session.set_event_interest(&deluge_rpc::events![TorrentRemoved]).await?;
         loop {
-            use tokio::time::{delay_for, Duration};
             tokio::select! {
-                event = self.events_recv.recv() => match event.unwrap() {
-                    deluge_rpc::Event::TorrentRemoved(hash) => {
-                        self.remove_torrent(hash);
-                    },
-                    _ => (),
-                },
-                _ = shutdown.read() => return Ok(()),
-                _ = tokio::time::delay_for(tokio::time::Duration::from_secs(5)) => (),
-            }
-            tokio::select! {
-                new_filters = self.filters_recv.recv() => self.update_filters(new_filters.unwrap()),
-                _ = shutdown.read() => return Ok(()),
-                _ = delay_for(Duration::from_secs(1)) => (),
-            }
-            tokio::select! {
-                delta = self.session.get_torrents_status_diff::<Torrent>(Some(&self.filters)) => {
-                    self.apply_delta(delta?);
-                },
+                r = self.do_update() => r?,
                 _ = shutdown.read() => return Ok(()),
             }
         }
@@ -182,7 +187,7 @@ impl TorrentsViewThread {
         self.rows_send.broadcast(self.rows.clone()).unwrap();
     }
 
-    fn update_filters(&mut self, new_filters: FilterDict) {
+    fn replace_filters(&mut self, new_filters: FilterDict) {
         self.filters = new_filters;
         // TODO: update rows
     }
