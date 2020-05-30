@@ -5,7 +5,7 @@ use cursive::Printer;
 use cursive::vec::Vec2;
 use cursive::event::{Event, EventResult, MouseEvent, MouseButton};
 use cursive::view::ScrollBase;
-use tokio::sync::{broadcast, watch};
+use tokio::sync::{RwLock as AsyncRwLock, broadcast, watch};
 use std::sync::Arc;
 use cursive::utils::Counter;
 use cursive::views::ProgressBar;
@@ -72,7 +72,6 @@ struct TorrentsViewThread {
     events_recv: broadcast::Receiver<deluge_rpc::Event>,
     rows: Vec<InfoHash>,
     rows_send: watch::Sender<Vec<InfoHash>>,
-    shutdown: broadcast::Receiver<()>,
 }
 
 impl TorrentsViewThread {
@@ -80,7 +79,6 @@ impl TorrentsViewThread {
         session: Arc<Session>,
         torrents: Arc<DashMap<InfoHash, Torrent>>,
         filters_recv: watch::Receiver<FilterDict>,
-        shutdown: broadcast::Receiver<()>,
     ) -> (Self, watch::Receiver<Vec<InfoHash>>) {
         let events_recv = session.subscribe_events();
         let (rows_send, rows_recv) = watch::channel(Vec::new());
@@ -93,31 +91,35 @@ impl TorrentsViewThread {
             events_recv,
             rows: Vec::new(),
             rows_send,
-            shutdown,
         };
         (obj, rows_recv)
     }
 
-    async fn run(mut self) -> deluge_rpc::Result<()> {
+    async fn run(mut self, shutdown: Arc<AsyncRwLock<()>>) -> deluge_rpc::Result<()> {
         self.session.set_event_interest(&deluge_rpc::events![TorrentRemoved]).await?;
         loop {
+            use tokio::time::{delay_for, Duration};
             tokio::select! {
-                event = self.events_recv.recv() => {
-                    match event.unwrap() {
-                        deluge_rpc::Event::TorrentRemoved(hash) => {
-                            self.remove_torrent(hash);
-                        },
-                        _ => (),
-                    }
+                event = self.events_recv.recv() => match event.unwrap() {
+                    deluge_rpc::Event::TorrentRemoved(hash) => {
+                        self.remove_torrent(hash);
+                    },
+                    _ => (),
                 },
-                new_filters = self.filters_recv.recv() => {
-                    self.filters = new_filters.unwrap();
-                },
-                _ = self.shutdown.recv() => return Ok(()),
+                _ = shutdown.read() => return Ok(()),
                 _ = tokio::time::delay_for(tokio::time::Duration::from_secs(5)) => (),
             }
-            let delta = self.session.get_torrents_status_diff::<Torrent>(Some(&self.filters)).await?;
-            self.apply_delta(delta)
+            tokio::select! {
+                new_filters = self.filters_recv.recv() => self.update_filters(new_filters.unwrap()),
+                _ = shutdown.read() => return Ok(()),
+                _ = delay_for(Duration::from_secs(1)) => (),
+            }
+            tokio::select! {
+                delta = self.session.get_torrents_status_diff::<Torrent>(Some(&self.filters)) => {
+                    self.apply_delta(delta?);
+                },
+                _ = shutdown.read() => return Ok(()),
+            }
         }
     }
 
@@ -179,6 +181,11 @@ impl TorrentsViewThread {
 
         self.rows_send.broadcast(self.rows.clone()).unwrap();
     }
+
+    fn update_filters(&mut self, new_filters: FilterDict) {
+        self.filters = new_filters;
+        // TODO: update rows
+    }
     
     fn add_torrents(&mut self, torrents: Vec<(InfoHash, Torrent)>) {
         for (hash, torrent) in torrents.into_iter() {
@@ -214,7 +221,7 @@ impl TorrentsView {
     pub(crate) fn new(
         session: Arc<Session>,
         filters_recv: watch::Receiver<FilterDict>,
-        shutdown: broadcast::Receiver<()>,
+        shutdown: Arc<AsyncRwLock<()>>,
     ) -> Self {
         let columns = vec![
             (Column::Name, 30),
@@ -223,8 +230,8 @@ impl TorrentsView {
             (Column::Speed, 15),
         ];
         let torrents = Arc::new(DashMap::new());
-        let (thread_obj, rows_recv) = TorrentsViewThread::new(session.clone(), torrents.clone(), filters_recv, shutdown);
-        let thread = tokio::spawn(thread_obj.run());
+        let (thread_obj, rows_recv) = TorrentsViewThread::new(session.clone(), torrents.clone(), filters_recv);
+        let thread = tokio::spawn(thread_obj.run(shutdown));
         Self {
             torrents,
             columns,

@@ -1,5 +1,5 @@
 use deluge_rpc::*;
-use tokio::sync::{broadcast, watch};
+use tokio::sync::{RwLock as AsyncRwLock, watch};
 use cursive::Cursive;
 use cursive::traits::*;
 use cursive::views::{LinearLayout, TextView, Panel};
@@ -83,16 +83,17 @@ async fn main() -> deluge_rpc::Result<()> {
 
     let session = Arc::new(session);
     
-    let (shutdown, _) = broadcast::channel(1);
+    let shutdown = Arc::new(AsyncRwLock::new(()));
+    let shutdown_write_handle = shutdown.write().await;
 
     let (filters_send, filters_recv) = watch::channel(FilterDict::default());
 
     let torrents = {
-        TorrentsView::new(session.clone(), filters_recv.clone(), shutdown.subscribe())
+        TorrentsView::new(session.clone(), filters_recv.clone(), shutdown.clone())
             .with_name("torrents")
     };
     let filters = {
-        FiltersView::new(session.clone(), filters_send, shutdown.subscribe())
+        FiltersView::new(session.clone(), filters_send, shutdown.clone())
             .with_name("filters")
             .into_scroll_wrapper()
     };
@@ -149,8 +150,7 @@ async fn main() -> deluge_rpc::Result<()> {
     
     siv.run();
 
-    shutdown.send(()).unwrap();
-
+    std::mem::drop(shutdown_write_handle);
     let torrents_thread = siv.call_on_name("torrents", TorrentsView::take_thread).unwrap();
     let filters_thread = siv.call_on_name("filters", FiltersView::take_thread).unwrap();
     let (torrents_result, filters_result) = tokio::try_join!(torrents_thread, filters_thread).unwrap();

@@ -3,7 +3,7 @@ use cursive::Printer;
 use fnv::FnvHashMap;
 use cursive::event::{Event, EventResult, MouseEvent, MouseButton};
 use cursive::vec::Vec2;
-use tokio::sync::{broadcast, watch};
+use tokio::sync::{RwLock as AsyncRwLock, watch};
 use std::collections::BTreeMap;
 use deluge_rpc::{FilterKey, FilterDict, Session};
 use tokio::task::JoinHandle;
@@ -37,32 +37,26 @@ pub(crate) struct FiltersView {
 struct FiltersViewThread {
     session: Arc<Session>,
     categories: Arc<RwLock<Categories>>,
-    shutdown: broadcast::Receiver<()>,
 }
 
 impl FiltersViewThread {
     fn new(
         session: Arc<Session>,
         categories: Arc<RwLock<Categories>>,
-        shutdown: broadcast::Receiver<()>,
     ) -> Self {
-        Self {
-            session,
-            categories,
-            shutdown,
-        }
+        Self { session, categories }
     }
 
-    async fn run(mut self) -> deluge_rpc::Result<()> {
+    async fn run(mut self, shutdown: Arc<AsyncRwLock<()>>) -> deluge_rpc::Result<()> {
         loop {
             tokio::select! {
-                _ = self.shutdown.recv() => return Ok(()),
+                _ = shutdown.read() => return Ok(()),
                 new_tree = self.session.get_filter_tree(false, &[]) => {
                     self.replace_tree(new_tree?);
                 }
             }
             tokio::select! {
-                _ = self.shutdown.recv() => return Ok(()),
+                _ = shutdown.read() => return Ok(()),
                 _ = tokio::time::delay_for(tokio::time::Duration::from_secs(5)) => (),
             }
         }
@@ -102,11 +96,11 @@ impl FiltersView {
     pub(crate) fn new(
         session: Arc<Session>,
         filters_send: watch::Sender<FilterDict>,
-        shutdown: broadcast::Receiver<()>,
+        shutdown: Arc<AsyncRwLock<()>>,
     ) -> Self {
         let categories = Arc::new(RwLock::new(Categories::new()));
-        let thread_obj = FiltersViewThread::new(session, categories.clone(), shutdown);
-        let thread = tokio::spawn(thread_obj.run());
+        let thread_obj = FiltersViewThread::new(session, categories.clone());
+        let thread = tokio::spawn(thread_obj.run(shutdown));
         Self {
             active_filters: FilterDict::default(),
             categories,
