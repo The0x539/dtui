@@ -253,6 +253,12 @@ impl TorrentsView {
     pub fn width(&self) -> usize {
         self.columns.iter().map(|(_, w)| w+1).sum::<usize>()
     }
+
+    pub fn take_thread(&mut self) -> JoinHandle<deluge_rpc::Result<()>> {
+        let dummy_fut = async { Ok(()) };
+        let replacement = tokio::spawn(dummy_fut);
+        std::mem::replace(&mut self.thread, replacement)
+    }
 }
 
 impl View for TorrentsView {

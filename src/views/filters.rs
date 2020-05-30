@@ -188,6 +188,12 @@ impl FiltersView {
         }
         h
     }
+
+    pub fn take_thread(&mut self) -> JoinHandle<deluge_rpc::Result<()>> {
+        let dummy_fut = async { Ok(()) };
+        let replacement = tokio::spawn(dummy_fut);
+        std::mem::replace(&mut self.thread, replacement)
+    }
 }
 
 impl ScrollInner for FiltersView {

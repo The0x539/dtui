@@ -151,7 +151,11 @@ async fn main() -> deluge_rpc::Result<()> {
 
     shutdown.send(()).unwrap();
 
-    // TODO: wait on the views' threads
+    let torrents_thread = siv.call_on_name("torrents", TorrentsView::take_thread).unwrap();
+    let filters_thread = siv.call_on_name("filters", FiltersView::take_thread).unwrap();
+    let (torrents_result, filters_result) = tokio::try_join!(torrents_thread, filters_thread).unwrap();
+    torrents_result?;
+    filters_result?;
 
     let session = Arc::try_unwrap(session).unwrap();
     
