@@ -1,3 +1,5 @@
+#![feature(vec_remove_item)]
+
 use deluge_rpc::*;
 use tokio::sync::{RwLock as AsyncRwLock, watch};
 use cursive::Cursive;

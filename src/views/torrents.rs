@@ -56,9 +56,14 @@ fn draw_cell(printer: &Printer, tor: &Torrent, col: Column) {
     };
 }
 
+#[derive(Debug, Default, Clone)]
+struct ViewData {
+    rows: Vec<InfoHash>,
+    torrents: FnvHashMap<InfoHash, Torrent>,
+}
+
 pub(crate) struct TorrentsView {
-    torrents: Arc<RwLock<FnvHashMap<InfoHash, Torrent>>>,
-    rows_recv: watch::Receiver<Vec<InfoHash>>,
+    data: Arc<RwLock<ViewData>>,
     columns: Vec<(Column, usize)>,
     scrollbase: ScrollBase,
     thread: JoinHandle<deluge_rpc::Result<()>>,
@@ -66,33 +71,29 @@ pub(crate) struct TorrentsView {
 
 struct TorrentsViewThread {
     session: Arc<Session>,
-    torrents: Arc<RwLock<FnvHashMap<InfoHash, Torrent>>>,
+    data: Arc<RwLock<ViewData>>,
     filters: FilterDict,
     filters_recv: watch::Receiver<FilterDict>,
     events_recv: broadcast::Receiver<deluge_rpc::Event>,
-    rows: Vec<InfoHash>,
-    rows_send: watch::Sender<Vec<InfoHash>>,
+    missed_torrents: Vec<InfoHash>,
 }
 
 impl TorrentsViewThread {
     fn new(
         session: Arc<Session>,
-        torrents: Arc<RwLock<FnvHashMap<InfoHash, Torrent>>>,
+        data: Arc<RwLock<ViewData>>,
         filters_recv: watch::Receiver<FilterDict>,
-    ) -> (Self, watch::Receiver<Vec<InfoHash>>) {
+    ) -> Self {
         let events_recv = session.subscribe_events();
-        let (rows_send, rows_recv) = watch::channel(Vec::new());
         let filters = filters_recv.borrow().clone();
-        let obj = Self {
+        Self {
             session,
-            torrents,
+            data,
             filters,
             filters_recv,
             events_recv,
-            rows: Vec::new(),
-            rows_send,
-        };
-        (obj, rows_recv)
+            missed_torrents: Vec::new(),
+        }
     }
 
     async fn do_update(&mut self) -> deluge_rpc::Result<()> {
@@ -104,7 +105,12 @@ impl TorrentsViewThread {
 
         if let Ok(event) = time::timeout_at(now, self.events_recv.recv()).await {
             match event.unwrap() {
-                deluge_rpc::Event::TorrentRemoved(hash) => self.remove_torrent(hash),
+                deluge_rpc::Event::TorrentAdded(hash, _from_state) => {
+                    self.add_torrent_by_hash(hash).await?;
+                },
+                deluge_rpc::Event::TorrentRemoved(hash) => {
+                    self.remove_torrent(hash);
+                },
                 _ => (),
             }
         }
@@ -112,13 +118,24 @@ impl TorrentsViewThread {
         let delta = self.session.get_torrents_status_diff::<Torrent>(Some(&self.filters)).await?;
         self.apply_delta(delta);
 
+        while let Some(hash) = self.missed_torrents.pop() {
+            self.add_torrent_by_hash(hash).await?;
+        }
+
         time::delay_until(now + time::Duration::from_secs(1)).await;
 
         Ok(())
     }
 
     async fn run(mut self, shutdown: Arc<AsyncRwLock<()>>) -> deluge_rpc::Result<()> {
-        self.session.set_event_interest(&deluge_rpc::events![TorrentRemoved]).await?;
+        self.session.set_event_interest(&deluge_rpc::events![TorrentAdded, TorrentRemoved]).await?;
+
+        let initial_torrents = self.session.get_torrents_status::<Torrent>(None).await?;
+        // TODO: do this more efficiently
+        for (hash, torrent) in initial_torrents.into_iter() {
+            self.add_torrent(hash, torrent);
+        }
+
         loop {
             tokio::select! {
                 r = self.do_update() => r?,
@@ -128,15 +145,14 @@ impl TorrentsViewThread {
     }
 
     fn apply_delta(&mut self, delta: FnvHashMap<InfoHash, <Torrent as Query>::Diff>) {
-        let mut new_torrents = Vec::new();
         let mut toggled_rows = Vec::new();
 
-        let mut torrents = self.torrents.write().unwrap();
+        let mut data = self.data.write().unwrap();
 
         for (hash, diff) in delta.into_iter() {
             if diff == Default::default() {
                 continue;
-            } else if let Some(torrent) = torrents.get_mut(&hash) {
+            } else if let Some(torrent) = data.torrents.get_mut(&hash) {
                 let did_match = torrent.matches_filters(&self.filters);
                 torrent.update(diff);
                 let does_match = torrent.matches_filters(&self.filters);
@@ -145,52 +161,30 @@ impl TorrentsViewThread {
                     toggled_rows.push(hash);
                 }
             } else {
-                // New torrent, so should have all the fields
-                // TODO: add a realize() method or something to derived Diffs
-                let new_torrent = Torrent {
-                    hash: diff.hash.unwrap_or(hash),
-                    name: diff.name.unwrap(),
-                    state: diff.state.unwrap(),
-                    total_size: diff.total_size.unwrap(),
-                    progress: diff.progress.unwrap(),
-                    upload_payload_rate: diff.upload_payload_rate.unwrap(),
-                    download_payload_rate: diff.download_payload_rate.unwrap(),
-                    label: diff.label.unwrap(),
-                    owner: diff.owner.unwrap(),
-                    tracker_host: diff.tracker_host.unwrap(),
-                    tracker_status: diff.tracker_status.unwrap(),
-                };
-                new_torrents.push((hash, new_torrent));
+                self.missed_torrents.push(hash);
             }
         }
-
-        std::mem::drop(torrents);
 
         for hash in toggled_rows.into_iter() {
-            let torrents = self.torrents.read().unwrap();
+            let val = &data.torrents[&hash].name;
 
-            let val = &torrents[&hash].name;
-
-            match self.rows.binary_search_by(|b| torrents[b].name.cmp(&val)) {
+            match data.rows.binary_search_by(|b| data.torrents[b].name.cmp(&val)) {
                 Ok(idx) => {
-                    self.rows.remove(idx);
+                    data.rows.remove(idx);
                 },
                 Err(idx) => {
-                    self.rows.insert(idx, hash);
+                    data.rows.insert(idx, hash);
                 },
             }
         }
-
-        self.add_torrents(new_torrents);
-
-        self.rows_send.broadcast(self.rows.clone()).unwrap();
     }
 
     fn replace_filters(&mut self, new_filters: FilterDict) {
         self.filters = new_filters;
-        self.rows = self.torrents
-            .read()
-            .unwrap()
+
+        let mut data = self.data.write().unwrap();
+
+        data.rows = data.torrents
             .iter()
             .filter_map(|(hash, torrent)| {
                 if torrent.matches_filters(&self.filters) {
@@ -200,37 +194,47 @@ impl TorrentsViewThread {
                 }
             })
             .collect();
-
-        self.rows_send.broadcast(self.rows.clone()).unwrap();
     }
     
-    fn add_torrents(&mut self, new_torrents: Vec<(InfoHash, Torrent)>) {
-        let mut torrents = self.torrents.write().unwrap();
+    async fn add_torrent_by_hash(&mut self, hash: InfoHash) -> deluge_rpc::Result<()> {
+        let new_torrent = self.session.get_torrent_status::<Torrent>(hash).await?;
+        self.add_torrent(hash, new_torrent);
+        Ok(())
+    }
 
-        for (hash, torrent) in new_torrents.into_iter() {
-            torrents.insert(hash, torrent);
-            let val = &torrents[&hash].name;
+    fn add_torrent(&mut self, hash: InfoHash, torrent: Torrent) {
+        let mut data = self.data.write().unwrap();
 
-            let idx = match self.rows.binary_search_by(|b| torrents[b].name.cmp(&val)) {
+        if data.torrents.insert(hash, torrent).is_some() {
+            // It was already in our hash table, so all we did just now was an update.
+            // Since we just updated an existing torrent, don't add it to the rows.
+            // TODO: check whether the update changed the torrent's visibility.
+            return;
+        }
+
+        if data.torrents[&hash].matches_filters(&self.filters) {
+            let val = &data.torrents[&hash].name;
+
+            let idx = match data.rows.binary_search_by(|b| data.torrents[b].name.cmp(&val)) {
                 Ok(i) => i, // Found something with the same name. No big deal.
                 Err(i) => i,
             };
-            self.rows.insert(idx, hash);
+
+            data.rows.insert(idx, hash);
         }
     }
 
     fn remove_torrent(&mut self, hash: InfoHash) {
-        let torrents = self.torrents.read().unwrap();
-        let tor = &torrents[&hash];
+        let mut data = self.data.write().unwrap();
+        let tor = &data.torrents[&hash];
 
         if tor.matches_filters(&self.filters) {
-            let val = &tor.name;
-            let idx = self.rows.binary_search_by(|b| torrents[b].name.cmp(&val)).unwrap();
-            self.rows.remove(idx);
-            self.rows_send.broadcast(self.rows.clone()).unwrap();
+            data.rows
+                .remove_item(&hash)
+                .expect("infohash not found in rows despite torrent matching filters");
         }
 
-        self.torrents.write().unwrap().remove(&hash);
+        data.torrents.remove(&hash);
     }
 }
 
@@ -246,13 +250,12 @@ impl TorrentsView {
             (Column::Size, 15),
             (Column::Speed, 15),
         ];
-        let torrents = Arc::new(RwLock::new(FnvHashMap::default()));
-        let (thread_obj, rows_recv) = TorrentsViewThread::new(session.clone(), torrents.clone(), filters_recv);
+        let data = Arc::new(RwLock::new(ViewData::default()));
+        let thread_obj = TorrentsViewThread::new(session.clone(), data.clone(), filters_recv);
         let thread = tokio::spawn(thread_obj.run(shutdown));
         Self {
-            torrents,
+            data,
             columns,
-            rows_recv,
             thread,
             scrollbase: ScrollBase::default(),
         }
@@ -302,11 +305,13 @@ impl View for TorrentsView {
         }
         printer.print((0, 1), "╶");
         self.draw_header(printer);
-        let rows = self.rows_recv.borrow();
-        let torrents = self.torrents.read().unwrap();
+
+        let data = self.data.read().unwrap();
+
         self.scrollbase.draw(&printer.offset((0, 2)), |p, i| {
-            let hash = &rows[i];
-            self.draw_row(p, &torrents[&hash]);
+            if let Some(hash) = data.rows.get(i) {
+                self.draw_row(p, &data.torrents[&hash]);
+            }
         });
     }
 
@@ -317,10 +322,7 @@ impl View for TorrentsView {
     fn layout(&mut self, constraint: Vec2) {
         self.columns[0].1 = constraint.x - 49;
         self.scrollbase.view_height = constraint.y - 2;
-        // TODO: fix this obvious race condition
-        // what if a row gets inserted between layout and draw
-        // we need a lock of some sort
-        self.scrollbase.content_height = self.rows_recv.borrow().len();
+        self.scrollbase.content_height = self.data.read().unwrap().rows.len();
     }
 
     fn take_focus(&mut self, _: cursive::direction::Direction) -> bool { true }
