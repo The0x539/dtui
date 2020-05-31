@@ -347,14 +347,6 @@ impl TorrentsView {
         }
     }
 
-    fn draw_header(&self, printer: &Printer) {
-        let mut x = 0;
-        for (column, width) in &self.columns {
-            printer.offset((x, 0)).cropped((*width, 1)).print((0, 0), column.as_ref());
-            x += width + 1;
-        }
-    }
-
     fn draw_row(&self, printer: &Printer, torrent: &Torrent) {
         let mut x = 0;
         for (column, width) in &self.columns {
@@ -377,8 +369,10 @@ impl TorrentsView {
 impl View for TorrentsView {
     fn draw(&self, printer: &Printer) {
         let Vec2 { x: w, y: h } = printer.size;
+
         let mut x = 0;
-        for (_column, width) in &self.columns {
+        for (column, width) in &self.columns {
+            printer.cropped((x+width, 1)).print((x, 0), column.as_ref());
             printer.print_hline((x, 1), *width, "─");
             x += width;
             if x == w - 1 {
@@ -390,7 +384,6 @@ impl View for TorrentsView {
             x += 1;
         }
         printer.print((0, 1), "╶");
-        self.draw_header(printer);
 
         let data = self.data.read().unwrap();
 
