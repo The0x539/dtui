@@ -189,7 +189,18 @@ impl TorrentsViewThread {
 
     fn replace_filters(&mut self, new_filters: FilterDict) {
         self.filters = new_filters;
-        // TODO: update rows
+        self.rows = self.torrents
+            .iter()
+            .filter_map(|guard| {
+                if guard.value().matches_filters(&self.filters) {
+                    Some(*guard.key())
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        self.rows_send.broadcast(self.rows.clone()).unwrap();
     }
     
     fn add_torrents(&mut self, torrents: Vec<(InfoHash, Torrent)>) {
