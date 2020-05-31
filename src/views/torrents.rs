@@ -168,10 +168,18 @@ impl TorrentsViewThread {
 
     fn apply_delta(&mut self, delta: FnvHashMap<InfoHash, <Torrent as Query>::Diff>) {
         let mut toggled_rows = Vec::new();
+        let mut should_sort = false;
 
         let mut data = self.data.write().unwrap();
 
         for (hash, diff) in delta.into_iter() {
+            let sorting_changed = match data.sort_column {
+                Column::Name => diff.name.is_some(),
+                Column::State => diff.state.is_some(),
+                Column::Size => diff.total_size.is_some(),
+                Column::Speed => diff.upload_payload_rate.is_some(),
+            };
+
             if diff == Default::default() {
                 continue;
             } else if let Some(torrent) = data.torrents.get_mut(&hash) {
@@ -182,6 +190,8 @@ impl TorrentsViewThread {
                 if did_match != does_match {
                     toggled_rows.push(hash);
                 }
+
+                should_sort |= does_match && sorting_changed;
             } else {
                 self.missed_torrents.push(hash);
             }
@@ -189,6 +199,10 @@ impl TorrentsViewThread {
 
         for hash in toggled_rows.into_iter() {
             data.toggle_visibility(hash);
+        }
+
+        if should_sort {
+            data.sort_stable();
         }
     }
 
