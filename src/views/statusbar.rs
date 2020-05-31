@@ -9,7 +9,7 @@ use tokio::sync::RwLock as AsyncRwLock;
 use std::sync::{Arc, RwLock};
 use std::fmt::{Display, Formatter, self};
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Default, Debug, Clone, Copy)]
 struct StatusBarData {
     num_peers: u64,
     max_peers: Option<u64>,
@@ -19,7 +19,7 @@ struct StatusBarData {
     max_upload_rate: Option<f64>,
     protocol_traffic: (f64, f64),
     free_space: u64,
-    ip: IpAddr,
+    ip: Option<IpAddr>,
     dht_nodes: u64,
 }
 
@@ -66,7 +66,7 @@ impl Display for StatusBarData {
         if let Some(ip) = self.ip {
             write!(f, " IP: {} ", ip)?;
         } else {
-            write!(f, " IP: N/A ", ip)?;
+            write!(f, " IP: N/A ")?;
         }
 
         write!(f, " DHT: {}", self.dht_nodes)?;
@@ -103,7 +103,7 @@ impl StatusBarViewThread {
 
         let mut data = self.data.write().unwrap();
 
-        data.ip = ip;
+        data.ip = Some(ip);
         data.free_space = space;
 
         data.num_peers = status.num_peers_connected;
@@ -139,8 +139,7 @@ impl StatusBarViewThread {
 
 impl StatusBarView {
     pub fn new(session: Arc<Session>, shutdown: Arc<AsyncRwLock<()>>) -> Self {
-        let data_ = unsafe { std::mem::zeroed() };
-        let data = Arc::new(RwLock::new(data_));
+        let data = Arc::new(RwLock::new(StatusBarData::default()));
         let thread_obj = StatusBarViewThread::new(session, data.clone());
         let thread = tokio::spawn(thread_obj.run(shutdown));
         Self { data, thread }
