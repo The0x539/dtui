@@ -68,7 +68,7 @@ struct ViewData {
     torrents: FnvHashMap<InfoHash, Torrent>,
     // TODO: make this a Column
     sort_column: Column,
-    reverse: bool,
+    descending_sort: bool,
 }
 
 impl ViewData {
@@ -76,7 +76,7 @@ impl ViewData {
         let (ta, tb) = (&self.torrents[a], &self.torrents[b]);
 
         let mut ord = match self.sort_column {
-            Column::Name => ta.name.cmp(&tb.name),
+            Column::Name => ta.name.cmp(&tb.name).reverse(),
             Column::State => ta.state.cmp(&tb.state),
             Column::Size => ta.total_size.cmp(&tb.total_size),
             Column::Speed => ta.upload_payload_rate.cmp(&tb.upload_payload_rate),
@@ -86,7 +86,7 @@ impl ViewData {
         // Arbitrary, but consistent and domain-appropriate.
         ord = ord.then(a.cmp(b));
 
-        if self.reverse { ord = ord.reverse(); }
+        if self.descending_sort { ord = ord.reverse(); }
 
         ord
     }
@@ -122,11 +122,11 @@ impl ViewData {
 
     fn click_column(&mut self, column: Column) {
         if column == self.sort_column {
-            self.reverse = !self.reverse;
+            self.descending_sort = !self.descending_sort;
             self.rows.reverse();
         } else {
             self.sort_column = column;
-            self.reverse = false;
+            self.descending_sort = true;
             self.sort_stable();
         }
     }
@@ -323,7 +323,13 @@ impl TorrentsView {
             (Column::Size, 15),
             (Column::Speed, 15),
         ];
-        let data = Arc::new(RwLock::new(ViewData::default()));
+        let data = {
+            let data = ViewData {
+                descending_sort: true,
+                ..ViewData::default()
+            };
+            Arc::new(RwLock::new(data))
+        };
         let thread_obj = TorrentsViewThread::new(session.clone(), data.clone(), filters_recv);
         let thread = tokio::spawn(thread_obj.run(shutdown));
         Self {
@@ -377,7 +383,7 @@ impl View for TorrentsView {
             let mut name = String::from(column.as_ref());
 
             if *column == data.sort_column {
-                name.push_str(if data.reverse { " ^" } else { " v" });
+                name.push_str(if data.descending_sort { " v" } else { " ^" });
             }
 
             printer.cropped((x+width, 1)).print((x, 0), &name);
