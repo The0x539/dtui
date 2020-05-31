@@ -18,7 +18,6 @@ ryu = "1.0.4"
 async-trait = "0.1.31"
 
 [patch.crates-io]
-webpki = { path = "./experiment/webpki" }
 deluge-rpc-macro = { path = "../deluge-rpc/experiment/deluge-rpc-macro" }
 
 [profile.dev]
