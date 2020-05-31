@@ -138,6 +138,7 @@ async fn main() -> deluge_rpc::Result<()> {
     siv.set_autorefresh(true);
     siv.set_autohide_menu(false);
     siv.set_theme(themes::dracula());
+    siv.set_user_data(session.clone());
 
     siv.add_global_callback('q', Cursive::quit);
 
@@ -156,6 +157,8 @@ async fn main() -> deluge_rpc::Result<()> {
     siv.run();
 
     std::mem::drop(shutdown_write_handle);
+
+    siv.take_user_data::<Arc<Session>>().unwrap();
 
     let torrents_thread = siv.call_on_name("torrents", TorrentsView::take_thread).unwrap();
     let filters_thread = siv.call_on_name("filters", FiltersView::take_thread).unwrap();
