@@ -12,6 +12,8 @@ use cursive::views::ProgressBar;
 use tokio::task::JoinHandle;
 use fnv::FnvHashMap;
 use tokio::time;
+use async_trait::async_trait;
+use super::thread::ViewThread;
 
 use crate::util::fmt_bytes;
 
@@ -93,54 +95,6 @@ impl TorrentsViewThread {
             filters_recv,
             events_recv,
             missed_torrents: Vec::new(),
-        }
-    }
-
-    async fn do_update(&mut self) -> deluge_rpc::Result<()> {
-        let now = time::Instant::now();
-
-        if let Ok(new_filters) = time::timeout_at(now, self.filters_recv.recv()).await {
-            self.replace_filters(new_filters.unwrap());
-        }
-
-        if let Ok(event) = time::timeout_at(now, self.events_recv.recv()).await {
-            match event.unwrap() {
-                deluge_rpc::Event::TorrentAdded(hash, _from_state) => {
-                    self.add_torrent_by_hash(hash).await?;
-                },
-                deluge_rpc::Event::TorrentRemoved(hash) => {
-                    self.remove_torrent(hash);
-                },
-                _ => (),
-            }
-        }
-
-        let delta = self.session.get_torrents_status_diff::<Torrent>(Some(&self.filters)).await?;
-        self.apply_delta(delta);
-
-        while let Some(hash) = self.missed_torrents.pop() {
-            self.add_torrent_by_hash(hash).await?;
-        }
-
-        time::delay_until(now + time::Duration::from_secs(1)).await;
-
-        Ok(())
-    }
-
-    async fn run(mut self, shutdown: Arc<AsyncRwLock<()>>) -> deluge_rpc::Result<()> {
-        self.session.set_event_interest(&deluge_rpc::events![TorrentAdded, TorrentRemoved]).await?;
-
-        let initial_torrents = self.session.get_torrents_status::<Torrent>(None).await?;
-        // TODO: do this more efficiently
-        for (hash, torrent) in initial_torrents.into_iter() {
-            self.add_torrent(hash, torrent);
-        }
-
-        loop {
-            tokio::select! {
-                r = self.do_update() => r?,
-                _ = shutdown.read() => return Ok(()),
-            }
         }
     }
 
@@ -229,6 +183,52 @@ impl TorrentsViewThread {
         }
 
         data.torrents.remove(&hash);
+    }
+}
+
+#[async_trait]
+impl ViewThread for TorrentsViewThread {
+    async fn init(&mut self) -> deluge_rpc::Result<()> {
+        self.session.set_event_interest(&deluge_rpc::events![TorrentAdded, TorrentRemoved]).await?;
+
+        let initial_torrents = self.session.get_torrents_status::<Torrent>(None).await?;
+        // TODO: do this more efficiently
+        for (hash, torrent) in initial_torrents.into_iter() {
+            self.add_torrent(hash, torrent);
+        }
+
+        Ok(())
+    }
+
+    async fn do_update(&mut self) -> deluge_rpc::Result<()> {
+        let now = time::Instant::now();
+
+        if let Ok(new_filters) = time::timeout_at(now, self.filters_recv.recv()).await {
+            self.replace_filters(new_filters.unwrap());
+        }
+
+        if let Ok(event) = time::timeout_at(now, self.events_recv.recv()).await {
+            match event.unwrap() {
+                deluge_rpc::Event::TorrentAdded(hash, _from_state) => {
+                    self.add_torrent_by_hash(hash).await?;
+                },
+                deluge_rpc::Event::TorrentRemoved(hash) => {
+                    self.remove_torrent(hash);
+                },
+                _ => (),
+            }
+        }
+
+        let delta = self.session.get_torrents_status_diff::<Torrent>(Some(&self.filters)).await?;
+        self.apply_delta(delta);
+
+        while let Some(hash) = self.missed_torrents.pop() {
+            self.add_torrent_by_hash(hash).await?;
+        }
+
+        time::delay_until(now + time::Duration::from_secs(1)).await;
+
+        Ok(())
     }
 }
 
