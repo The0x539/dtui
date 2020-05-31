@@ -353,8 +353,11 @@ impl View for TorrentsView {
 
     fn layout(&mut self, constraint: Vec2) {
         self.columns[0].1 = constraint.x - 49;
-        self.scrollbase.view_height = constraint.y - 2;
-        self.scrollbase.content_height = self.data.read().unwrap().rows.len();
+
+        let sb = &mut self.scrollbase;
+        sb.view_height = constraint.y - 2;
+        sb.content_height = self.data.read().unwrap().rows.len();
+        sb.start_line = sb.start_line.min(sb.content_height.saturating_sub(sb.view_height));
     }
 
     fn take_focus(&mut self, _: cursive::direction::Direction) -> bool { true }
@@ -372,6 +375,7 @@ impl View for TorrentsView {
                 },
                 MouseEvent::Press(MouseButton::Left)=> {
                     let mut pos = position.saturating_sub(offset);
+
                     pos.y = pos.y.saturating_sub(2);
                     if self.scrollbase.content_height > self.scrollbase.view_height {
                         self.scrollbase.start_drag(pos, self.width());
