@@ -62,6 +62,47 @@ fn draw_cell(printer: &Printer, tor: &Torrent, col: Column) {
 struct ViewData {
     rows: Vec<InfoHash>,
     torrents: FnvHashMap<InfoHash, Torrent>,
+    // TODO: make this a Column
+    sort_column: (),
+    reverse: bool,
+}
+
+impl ViewData {
+    fn compare_rows(&self, a: &InfoHash, b: &InfoHash) -> std::cmp::Ordering {
+        let mut ord = match self.sort_column {
+            () => self.torrents[a].name.cmp(&self.torrents[b].name),
+        };
+
+        // If the field used for comparison is identical, fall back to comparing infohashes
+        // Arbitrary, but consistent and domain-appropriate.
+        ord = ord.then(a.cmp(b));
+
+        if self.reverse { ord = ord.reverse(); }
+
+        ord
+    }
+
+    fn binary_search(&self, hash: &InfoHash) -> std::result::Result<usize, usize> {
+        self.rows.binary_search_by(|hash2| self.compare_rows(hash2, hash))
+    }
+
+    fn sort_unstable(&mut self) {
+        // TODO: use take_mut crate?
+        let mut rows = std::mem::replace(&mut self.rows, Vec::new());
+        rows.sort_unstable_by(|a, b| self.compare_rows(a, b));
+        self.rows = rows;
+    }
+
+    fn toggle_visibility(&mut self, hash: InfoHash) {
+        match self.binary_search(&hash) {
+            Ok(idx) => {
+                self.rows.remove(idx);
+            },
+            Err(idx) => {
+                self.rows.insert(idx, hash);
+            },
+        }
+    }
 }
 
 pub(crate) struct TorrentsView {
@@ -120,20 +161,7 @@ impl TorrentsViewThread {
         }
 
         for hash in toggled_rows.into_iter() {
-            Self::toggle_visibility(&mut data, hash);
-        }
-    }
-
-    fn toggle_visibility(data: &mut ViewData, hash: InfoHash) {
-        let val = &data.torrents[&hash].name;
-
-        match data.rows.binary_search_by(|b| data.torrents[b].name.cmp(&val)) {
-            Ok(idx) => {
-                data.rows.remove(idx);
-            },
-            Err(idx) => {
-                data.rows.insert(idx, hash);
-            },
+            data.toggle_visibility(hash);
         }
     }
 
@@ -146,8 +174,10 @@ impl TorrentsViewThread {
             .iter()
             .filter_map(|(hash, torrent)| torrent.matches_filters(&self.filters).then_some(*hash))
             .collect();
+
+        data.sort_unstable();
     }
-    
+
     async fn add_torrent_by_hash(&mut self, hash: InfoHash) -> deluge_rpc::Result<()> {
         let new_torrent = self.session.get_torrent_status::<Torrent>(hash).await?;
         self.add_torrent(hash, new_torrent);
@@ -165,19 +195,16 @@ impl TorrentsViewThread {
             let does_match = data.torrents[&hash].matches_filters(&self.filters);
 
             if did_match != does_match {
-                Self::toggle_visibility(&mut data, hash);
+                data.toggle_visibility(hash);
             }
 
             return;
         }
 
         if data.torrents[&hash].matches_filters(&self.filters) {
-            let val = &data.torrents[&hash].name;
-
-            let idx = match data.rows.binary_search_by(|b| data.torrents[b].name.cmp(&val)) {
-                Ok(i) => i, // Found something with the same name. No big deal.
-                Err(i) => i,
-            };
+            let idx = data
+                .binary_search(&hash)
+                .expect_err("rows vec contained infohash, but torrents hashmap didn't");
 
             data.rows.insert(idx, hash);
         }
