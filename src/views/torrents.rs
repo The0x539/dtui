@@ -370,9 +370,17 @@ impl View for TorrentsView {
     fn draw(&self, printer: &Printer) {
         let Vec2 { x: w, y: h } = printer.size;
 
+        let data = self.data.read().unwrap();
+
         let mut x = 0;
         for (column, width) in &self.columns {
-            printer.cropped((x+width, 1)).print((x, 0), column.as_ref());
+            let mut name = String::from(column.as_ref());
+
+            if *column == data.sort_column {
+                name.push_str(if data.reverse { " ^" } else { " v" });
+            }
+
+            printer.cropped((x+width, 1)).print((x, 0), &name);
             printer.print_hline((x, 1), *width, "─");
             x += width;
             if x == w - 1 {
@@ -384,8 +392,6 @@ impl View for TorrentsView {
             x += 1;
         }
         printer.print((0, 1), "╶");
-
-        let data = self.data.read().unwrap();
 
         self.scrollbase.draw(&printer.offset((0, 2)), |p, i| {
             if let Some(hash) = data.rows.get(i) {
