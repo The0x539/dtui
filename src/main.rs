@@ -142,6 +142,7 @@ async fn main() -> deluge_rpc::Result<()> {
     siv.set_user_data(session.clone());
 
     siv.add_global_callback('q', Cursive::quit);
+    siv.add_global_callback(cursive::event::Event::Refresh, Cursive::clear);
 
     siv.menubar()
         .add_subtree("File",
