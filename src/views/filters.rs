@@ -82,10 +82,6 @@ impl FiltersViewThread {
 
 #[async_trait]
 impl ViewThread for FiltersViewThread {
-    async fn init(&mut self) -> deluge_rpc::Result<()> {
-        Ok(())
-    }
-    
     async fn do_update(&mut self) -> deluge_rpc::Result<()> {
         let now = time::Instant::now();
 

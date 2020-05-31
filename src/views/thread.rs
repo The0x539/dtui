@@ -6,7 +6,9 @@ type Result = deluge_rpc::Result<()>;
 
 #[async_trait]
 pub trait ViewThread: Sized {
-    async fn init(&mut self) -> Result;
+    async fn init(&mut self) -> Result {
+        Ok(())
+    }
 
     async fn do_update(&mut self) -> Result;
 
