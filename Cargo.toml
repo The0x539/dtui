@@ -9,7 +9,6 @@ serde = "*"
 tokio = "*"
 cursive = { version = "0.14.1", default-features = false, features = ["crossterm-backend"] }
 deluge-rpc.path = "../deluge-rpc"
-serde_yaml = "*"
 bytesize = "1.0.1"
 cursive-tabs = "*"
 cursive_buffered_backend = "0.3.3"
