@@ -66,7 +66,6 @@ fn draw_cell(printer: &Printer, tor: &Torrent, col: Column) {
 struct ViewData {
     rows: Vec<InfoHash>,
     torrents: FnvHashMap<InfoHash, Torrent>,
-    // TODO: make this a Column
     sort_column: Column,
     descending_sort: bool,
 }
