@@ -20,3 +20,9 @@ ryu = "1.0.4"
 [patch.crates-io]
 webpki = { path = "./experiment/webpki" }
 deluge-rpc-macro = { path = "../deluge-rpc/experiment/deluge-rpc-macro" }
+
+[profile.dev]
+panic = "abort"
+
+[profile.release]
+panic = "abort"
