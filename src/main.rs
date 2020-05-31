@@ -133,7 +133,7 @@ async fn main() -> deluge_rpc::Result<()> {
             .map(Box::new)
             .unwrap()
     });
-    siv.set_fps(1);
+    siv.set_autorefresh(true);
     siv.set_autohide_menu(false);
     siv.set_theme(themes::dracula());
 
