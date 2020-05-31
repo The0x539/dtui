@@ -17,7 +17,7 @@ use super::thread::ViewThread;
 
 use crate::util::fmt_bytes;
 
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Column { Name, State, Size, Speed }
 impl AsRef<str> for Column {
     fn as_ref(&self) -> &'static str {
@@ -28,6 +28,10 @@ impl AsRef<str> for Column {
             Self::Speed => "Speed",
         }
     }
+}
+
+impl Default for Column {
+    fn default() -> Self { Self::Name }
 }
 
 fn draw_cell(printer: &Printer, tor: &Torrent, col: Column) {
@@ -63,14 +67,19 @@ struct ViewData {
     rows: Vec<InfoHash>,
     torrents: FnvHashMap<InfoHash, Torrent>,
     // TODO: make this a Column
-    sort_column: (),
+    sort_column: Column,
     reverse: bool,
 }
 
 impl ViewData {
     fn compare_rows(&self, a: &InfoHash, b: &InfoHash) -> std::cmp::Ordering {
+        let (ta, tb) = (&self.torrents[a], &self.torrents[b]);
+
         let mut ord = match self.sort_column {
-            () => self.torrents[a].name.cmp(&self.torrents[b].name),
+            Column::Name => ta.name.cmp(&tb.name),
+            Column::State => ta.state.cmp(&tb.state),
+            Column::Size => ta.total_size.cmp(&tb.total_size),
+            Column::Speed => ta.upload_payload_rate.cmp(&tb.upload_payload_rate),
         };
 
         // If the field used for comparison is identical, fall back to comparing infohashes
@@ -93,6 +102,13 @@ impl ViewData {
         self.rows = rows;
     }
 
+    fn sort_stable(&mut self) {
+        // TODO: use take_mut crate?
+        let mut rows = std::mem::replace(&mut self.rows, Vec::new());
+        rows.sort_by(|a, b| self.compare_rows(a, b));
+        self.rows = rows;
+    }
+
     fn toggle_visibility(&mut self, hash: InfoHash) {
         match self.binary_search(&hash) {
             Ok(idx) => {
@@ -101,6 +117,17 @@ impl ViewData {
             Err(idx) => {
                 self.rows.insert(idx, hash);
             },
+        }
+    }
+
+    fn click_column(&mut self, column: Column) {
+        if column == self.sort_column {
+            self.reverse = !self.reverse;
+            self.rows.reverse();
+        } else {
+            self.sort_column = column;
+            self.reverse = false;
+            self.sort_stable();
         }
     }
 }
@@ -293,6 +320,19 @@ impl TorrentsView {
         }
     }
 
+    fn click_header(&mut self, mut x: usize) {
+        for (column, width) in &self.columns {
+            if x < *width {
+                self.data.write().unwrap().click_column(*column);
+                return;
+            } else if x == *width {
+                // a column separator was clicked
+                return;
+            }
+            x -= width + 1
+        }
+    }
+
     fn draw_header(&self, printer: &Printer) {
         let mut x = 0;
         for (column, width) in &self.columns {
@@ -375,6 +415,10 @@ impl View for TorrentsView {
                 },
                 MouseEvent::Press(MouseButton::Left)=> {
                     let mut pos = position.saturating_sub(offset);
+
+                    if pos.y == 0 {
+                        self.click_header(pos.x);
+                    }
 
                     pos.y = pos.y.saturating_sub(2);
                     if self.scrollbase.content_height > self.scrollbase.view_height {
