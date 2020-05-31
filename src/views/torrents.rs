@@ -186,13 +186,7 @@ impl TorrentsViewThread {
 
         data.rows = data.torrents
             .iter()
-            .filter_map(|(hash, torrent)| {
-                if torrent.matches_filters(&self.filters) {
-                    Some(*hash)
-                } else {
-                    None
-                }
-            })
+            .filter_map(|(hash, torrent)| torrent.matches_filters(&self.filters).then_some(*hash))
             .collect();
     }
     

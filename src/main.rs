@@ -1,4 +1,5 @@
 #![feature(vec_remove_item)]
+#![feature(bool_to_option)]
 
 use deluge_rpc::*;
 use tokio::sync::{RwLock as AsyncRwLock, watch};
