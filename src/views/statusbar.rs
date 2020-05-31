@@ -8,6 +8,8 @@ use tokio::task::JoinHandle;
 use tokio::sync::RwLock as AsyncRwLock;
 use std::sync::{Arc, RwLock};
 use std::fmt::{Display, Formatter, self};
+use super::thread::ViewThread;
+use async_trait::async_trait;
 
 #[derive(Default, Debug, Clone, Copy)]
 struct StatusBarData {
@@ -92,6 +94,13 @@ impl StatusBarViewThread {
     ) -> Self {
         Self { session, data }
     }
+}
+
+#[async_trait]
+impl ViewThread for StatusBarViewThread {
+    async fn init(&mut self) -> deluge_rpc::Result<()> {
+        Ok(())
+    }
 
     async fn do_update(&mut self) -> deluge_rpc::Result<()> {
         let (status, config, ip, space) = tokio::try_join!(
@@ -125,15 +134,6 @@ impl StatusBarViewThread {
         data.max_upload_rate = positive!(config.max_upload_speed, f64);
 
         Ok(())
-    }
-
-    async fn run(mut self, shutdown: Arc<AsyncRwLock<()>>) -> deluge_rpc::Result<()> {
-        loop {
-            tokio::select! {
-                r = self.do_update() => r?,
-                _ = shutdown.read() => return Ok(()),
-            }
-        }
     }
 }
 

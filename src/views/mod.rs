@@ -5,3 +5,4 @@ pub(crate) mod statusbar;
 
 // traits
 pub(crate) mod scroll;
+pub(crate) mod thread;
