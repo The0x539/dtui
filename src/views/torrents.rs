@@ -6,10 +6,9 @@ use cursive::vec::Vec2;
 use cursive::event::{Event, EventResult, MouseEvent, MouseButton};
 use cursive::view::ScrollBase;
 use tokio::sync::{RwLock as AsyncRwLock, broadcast, watch};
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 use cursive::utils::Counter;
 use cursive::views::ProgressBar;
-use dashmap::DashMap;
 use tokio::task::JoinHandle;
 use fnv::FnvHashMap;
 use tokio::time;
@@ -58,7 +57,7 @@ fn draw_cell(printer: &Printer, tor: &Torrent, col: Column) {
 }
 
 pub(crate) struct TorrentsView {
-    torrents: Arc<DashMap<InfoHash, Torrent>>,
+    torrents: Arc<RwLock<FnvHashMap<InfoHash, Torrent>>>,
     rows_recv: watch::Receiver<Vec<InfoHash>>,
     columns: Vec<(Column, usize)>,
     scrollbase: ScrollBase,
@@ -67,7 +66,7 @@ pub(crate) struct TorrentsView {
 
 struct TorrentsViewThread {
     session: Arc<Session>,
-    torrents: Arc<DashMap<InfoHash, Torrent>>,
+    torrents: Arc<RwLock<FnvHashMap<InfoHash, Torrent>>>,
     filters: FilterDict,
     filters_recv: watch::Receiver<FilterDict>,
     events_recv: broadcast::Receiver<deluge_rpc::Event>,
@@ -78,7 +77,7 @@ struct TorrentsViewThread {
 impl TorrentsViewThread {
     fn new(
         session: Arc<Session>,
-        torrents: Arc<DashMap<InfoHash, Torrent>>,
+        torrents: Arc<RwLock<FnvHashMap<InfoHash, Torrent>>>,
         filters_recv: watch::Receiver<FilterDict>,
     ) -> (Self, watch::Receiver<Vec<InfoHash>>) {
         let events_recv = session.subscribe_events();
@@ -132,24 +131,19 @@ impl TorrentsViewThread {
         let mut new_torrents = Vec::new();
         let mut toggled_rows = Vec::new();
 
+        let mut torrents = self.torrents.write().unwrap();
+
         for (hash, diff) in delta.into_iter() {
             if diff == Default::default() {
                 continue;
-            } else if self.torrents.contains_key(&hash) {
-                let toggled_rows = &mut toggled_rows;
-                self.torrents.update(&hash, |_, torrent| {
-                    let mut torrent = torrent.clone();
+            } else if let Some(torrent) = torrents.get_mut(&hash) {
+                let did_match = torrent.matches_filters(&self.filters);
+                torrent.update(diff);
+                let does_match = torrent.matches_filters(&self.filters);
 
-                    let did_match = torrent.matches_filters(&self.filters);
-                    torrent.update(diff.clone()); // WHY DO I NEED TO CLONE HERE
-                    let does_match = torrent.matches_filters(&self.filters);
-
-                    if did_match != does_match {
-                        toggled_rows.push(hash);
-                    }
-
-                    torrent
-                });
+                if did_match != does_match {
+                    toggled_rows.push(hash);
+                }
             } else {
                 // New torrent, so should have all the fields
                 // TODO: add a realize() method or something to derived Diffs
@@ -170,9 +164,14 @@ impl TorrentsViewThread {
             }
         }
 
+        std::mem::drop(torrents);
+
         for hash in toggled_rows.into_iter() {
-            let val = self.torrents.get(&hash).unwrap().name.clone();
-            match self.rows.binary_search_by(|b| self.torrents.get(b).unwrap().name.cmp(&val)) {
+            let torrents = self.torrents.read().unwrap();
+
+            let val = &torrents[&hash].name;
+
+            match self.rows.binary_search_by(|b| torrents[b].name.cmp(&val)) {
                 Ok(idx) => {
                     self.rows.remove(idx);
                 },
@@ -190,10 +189,12 @@ impl TorrentsViewThread {
     fn replace_filters(&mut self, new_filters: FilterDict) {
         self.filters = new_filters;
         self.rows = self.torrents
+            .read()
+            .unwrap()
             .iter()
-            .filter_map(|guard| {
-                if guard.value().matches_filters(&self.filters) {
-                    Some(*guard.key())
+            .filter_map(|(hash, torrent)| {
+                if torrent.matches_filters(&self.filters) {
+                    Some(*hash)
                 } else {
                     None
                 }
@@ -203,12 +204,14 @@ impl TorrentsViewThread {
         self.rows_send.broadcast(self.rows.clone()).unwrap();
     }
     
-    fn add_torrents(&mut self, torrents: Vec<(InfoHash, Torrent)>) {
-        for (hash, torrent) in torrents.into_iter() {
-            let guard = self.torrents.insert_and_get(hash, torrent);
-            let val = guard.value().name.clone();
+    fn add_torrents(&mut self, new_torrents: Vec<(InfoHash, Torrent)>) {
+        let mut torrents = self.torrents.write().unwrap();
 
-            let idx = match self.rows.binary_search_by(|b| self.torrents.get(b).unwrap().name.cmp(&val)) {
+        for (hash, torrent) in new_torrents.into_iter() {
+            torrents.insert(hash, torrent);
+            let val = &torrents[&hash].name;
+
+            let idx = match self.rows.binary_search_by(|b| torrents[b].name.cmp(&val)) {
                 Ok(i) => i, // Found something with the same name. No big deal.
                 Err(i) => i,
             };
@@ -217,19 +220,17 @@ impl TorrentsViewThread {
     }
 
     fn remove_torrent(&mut self, hash: InfoHash) {
-        let guard = self.torrents
-            .remove_take(&hash)
-            .expect("Tried to remove nonexistent torrent");
-
-        let tor = guard.value();
+        let torrents = self.torrents.read().unwrap();
+        let tor = &torrents[&hash];
 
         if tor.matches_filters(&self.filters) {
             let val = &tor.name;
-            let idx = self.rows.binary_search_by(|b| self.torrents.get(b).unwrap().name.cmp(&val)).unwrap();
+            let idx = self.rows.binary_search_by(|b| torrents[b].name.cmp(&val)).unwrap();
             self.rows.remove(idx);
+            self.rows_send.broadcast(self.rows.clone()).unwrap();
         }
 
-        self.torrents.remove(&hash);
+        self.torrents.write().unwrap().remove(&hash);
     }
 }
 
@@ -245,7 +246,7 @@ impl TorrentsView {
             (Column::Size, 15),
             (Column::Speed, 15),
         ];
-        let torrents = Arc::new(DashMap::new());
+        let torrents = Arc::new(RwLock::new(FnvHashMap::default()));
         let (thread_obj, rows_recv) = TorrentsViewThread::new(session.clone(), torrents.clone(), filters_recv);
         let thread = tokio::spawn(thread_obj.run(shutdown));
         Self {
@@ -302,9 +303,10 @@ impl View for TorrentsView {
         printer.print((0, 1), "╶");
         self.draw_header(printer);
         let rows = self.rows_recv.borrow();
+        let torrents = self.torrents.read().unwrap();
         self.scrollbase.draw(&printer.offset((0, 2)), |p, i| {
             let hash = &rows[i];
-            self.draw_row(p, self.torrents.get(hash).unwrap().value());
+            self.draw_row(p, &torrents[&hash]);
         });
     }
 

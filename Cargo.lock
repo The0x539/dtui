@@ -327,15 +327,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "dashmap"
-version = "4.0.0-rc4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "88556510a9c781884fd2ef3f4d39c8813e04c9e1068377877e2bb8678a6ed427"
-dependencies = [
- "once_cell",
-]
-
-[[package]]
 name = "deluge-rpc"
 version = "0.7.0"
 dependencies = [
@@ -390,7 +381,6 @@ dependencies = [
  "cursive",
  "cursive-tabs",
  "cursive_buffered_backend",
- "dashmap",
  "deluge-rpc",
  "fnv",
  "futures",
