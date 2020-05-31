@@ -6,7 +6,7 @@ use cursive::vec::Vec2;
 use cursive::event::{Event, EventResult, MouseEvent, MouseButton};
 use cursive::view::ScrollBase;
 use tokio::sync::{RwLock as AsyncRwLock, broadcast, watch};
-use std::sync::{Arc, RwLock, RwLockWriteGuard};
+use std::sync::{Arc, RwLock};
 use cursive::utils::Counter;
 use cursive::views::ProgressBar;
 use tokio::task::JoinHandle;
@@ -124,7 +124,7 @@ impl TorrentsViewThread {
         }
     }
 
-    fn toggle_visibility(data: &mut RwLockWriteGuard<ViewData>, hash: InfoHash) {
+    fn toggle_visibility(data: &mut ViewData, hash: InfoHash) {
         let val = &data.torrents[&hash].name;
 
         match data.rows.binary_search_by(|b| data.torrents[b].name.cmp(&val)) {
