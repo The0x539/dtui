@@ -116,7 +116,7 @@ impl StatusBarViewThread {
 
         macro_rules! positive {
             ($val:expr, $ty:ty) => {
-                if $val > 0.into() { Some($val as $ty) } else { None }
+                ($val > 0.into()).then_some($val as $ty)
             }
         }
 
