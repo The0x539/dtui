@@ -6,7 +6,7 @@ use cursive::vec::Vec2;
 use cursive::event::{Event, EventResult, MouseEvent, MouseButton};
 use cursive::view::ScrollBase;
 use tokio::sync::{RwLock as AsyncRwLock, broadcast, watch};
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, RwLock, RwLockWriteGuard};
 use cursive::utils::Counter;
 use cursive::views::ProgressBar;
 use tokio::task::JoinHandle;
@@ -120,16 +120,20 @@ impl TorrentsViewThread {
         }
 
         for hash in toggled_rows.into_iter() {
-            let val = &data.torrents[&hash].name;
+            Self::toggle_visibility(&mut data, hash);
+        }
+    }
 
-            match data.rows.binary_search_by(|b| data.torrents[b].name.cmp(&val)) {
-                Ok(idx) => {
-                    data.rows.remove(idx);
-                },
-                Err(idx) => {
-                    data.rows.insert(idx, hash);
-                },
-            }
+    fn toggle_visibility(data: &mut RwLockWriteGuard<ViewData>, hash: InfoHash) {
+        let val = &data.torrents[&hash].name;
+
+        match data.rows.binary_search_by(|b| data.torrents[b].name.cmp(&val)) {
+            Ok(idx) => {
+                data.rows.remove(idx);
+            },
+            Err(idx) => {
+                data.rows.insert(idx, hash);
+            },
         }
     }
 
@@ -153,10 +157,17 @@ impl TorrentsViewThread {
     fn add_torrent(&mut self, hash: InfoHash, torrent: Torrent) {
         let mut data = self.data.write().unwrap();
 
-        if data.torrents.insert(hash, torrent).is_some() {
-            // It was already in our hash table, so all we did just now was an update.
-            // Since we just updated an existing torrent, don't add it to the rows.
-            // TODO: check whether the update changed the torrent's visibility.
+        if let Some(old_torrent) = data.torrents.insert(hash, torrent) {
+            // This was actually an update rather than an addition.
+            // Toggle visibility if appropriate, then return.
+
+            let did_match = old_torrent.matches_filters(&self.filters);
+            let does_match = data.torrents[&hash].matches_filters(&self.filters);
+
+            if did_match != does_match {
+                Self::toggle_visibility(&mut data, hash);
+            }
+
             return;
         }
 
