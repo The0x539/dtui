@@ -1,5 +1,6 @@
 #![feature(vec_remove_item)]
 #![feature(bool_to_option)]
+#![feature(option_result_contains)]
 
 use deluge_rpc::*;
 use tokio::sync::{RwLock as AsyncRwLock, watch};
@@ -91,9 +92,10 @@ async fn main() -> deluge_rpc::Result<()> {
     let shutdown_write_handle = shutdown.write().await;
 
     let (filters_send, filters_recv) = watch::channel(FilterDict::default());
+    let (selected_send, _selected_recv) = watch::channel(None);
 
     let torrents = {
-        TorrentsView::new(session.clone(), filters_recv.clone(), shutdown.clone())
+        TorrentsView::new(session.clone(), selected_send, filters_recv.clone(), shutdown.clone())
             .with_name("torrents")
     };
     let filters = {

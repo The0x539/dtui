@@ -135,7 +135,9 @@ pub(crate) struct TorrentsView {
     data: Arc<RwLock<ViewData>>,
     columns: Vec<(Column, usize)>,
     scrollbase: ScrollBase,
+    selected_send: watch::Sender<Option<InfoHash>>,
     thread: JoinHandle<deluge_rpc::Result<()>>,
+    selected: Option<InfoHash>,
 }
 
 struct TorrentsViewThread {
@@ -313,6 +315,7 @@ impl ViewThread for TorrentsViewThread {
 impl TorrentsView {
     pub(crate) fn new(
         session: Arc<Session>,
+        selected_send: watch::Sender<Option<InfoHash>>,
         filters_recv: watch::Receiver<FilterDict>,
         shutdown: Arc<AsyncRwLock<()>>,
     ) -> Self {
@@ -331,9 +334,12 @@ impl TorrentsView {
         };
         let thread_obj = TorrentsViewThread::new(session.clone(), data.clone(), filters_recv);
         let thread = tokio::spawn(thread_obj.run(shutdown));
+        selected_send.broadcast(None).unwrap();
         Self {
             data,
             columns,
+            selected_send,
+            selected: None,
             thread,
             scrollbase: ScrollBase::default(),
         }
@@ -400,7 +406,10 @@ impl View for TorrentsView {
 
         self.scrollbase.draw(&printer.offset((0, 2)), |p, i| {
             if let Some(hash) = data.rows.get(i) {
-                self.draw_row(p, &data.torrents[&hash]);
+                p.with_selection(
+                    self.selected.contains(hash),
+                    |p| self.draw_row(p, &data.torrents[&hash]),
+                );
             }
         });
     }
@@ -439,10 +448,23 @@ impl View for TorrentsView {
                     }
 
                     pos.y = pos.y.saturating_sub(2);
+
                     if self.scrollbase.content_height > self.scrollbase.view_height {
-                        self.scrollbase.start_drag(pos, self.width());
+                        if self.scrollbase.start_drag(pos, self.width()) {
+                            return EventResult::Consumed(None);
+                        }
                     }
-                    EventResult::Consumed(None)
+
+                    if pos.y < self.scrollbase.view_height {
+                        let i = pos.y + self.scrollbase.start_line;
+                        if let Some(hash) = self.data.read().unwrap().rows.get(i) {
+                            self.selected = Some(*hash);
+                            self.selected_send.broadcast(self.selected).unwrap();
+                            return EventResult::Consumed(None);
+                        }
+                    }
+
+                    EventResult::Ignored
                 },
                 MouseEvent::Hold(MouseButton::Left) => {
                     let mut pos = position.saturating_sub(offset);
