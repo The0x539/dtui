@@ -388,6 +388,7 @@ dependencies = [
  "cursive-tabs",
  "cursive_buffered_backend",
  "deluge-rpc",
+ "epochs",
  "fnv",
  "futures",
  "ryu",
@@ -447,6 +448,15 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn",
+]
+
+[[package]]
+name = "epochs"
+version = "0.2.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d090e37951865b603120b504b12104a0b0f5595dbce8084d0c3d33f7220e0764"
+dependencies = [
+ "chrono",
 ]
 
 [[package]]

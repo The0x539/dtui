@@ -9,7 +9,7 @@ use cursive_tabs::TabPanel;
 use tokio::task::{self, JoinHandle};
 use cursive::traits::*;
 use cursive::view::ViewWrapper;
-use crate::util::fmt_bytes;
+use crate::util::{ftime_or_dash, fmt_bytes};
 use std::fmt::Display;
 use cursive::utils::Counter;
 use cursive::views::{
@@ -54,6 +54,12 @@ struct TorrentStatus {
     #[serde(rename = "distributed_copies")]
     availability: f64,
     seed_rank: u64,
+
+    eta: i64,
+    active_time: i64,
+    seeding_time: i64,
+    time_since_transfer: i64,
+    last_seen_complete: i64,
 }
 
 struct StatusData {
@@ -63,11 +69,18 @@ struct StatusData {
     up_speed: TextContent,
     down: TextContent,
     up: TextContent,
+
     seeds: TextContent,
     peers: TextContent,
     ratio: TextContent,
     availability: TextContent,
     seed_rank: TextContent,
+
+    eta: TextContent,
+    active_time: TextContent,
+    seeding_time: TextContent,
+    time_since_transfer: TextContent,
+    last_seen_complete: TextContent,
 }
 
 #[async_trait]
@@ -125,6 +138,16 @@ impl ViewThread for TorrentTabsViewThread {
         s_d.ratio.set_content(ryu_buf.format(status.ratio));
         s_d.availability.set_content(ryu_buf.format(status.availability));
         s_d.seed_rank.set_content(status.seed_rank.to_string());
+
+        s_d.eta.set_content(ftime_or_dash(status.eta));
+        s_d.active_time.set_content(ftime_or_dash(status.active_time));
+        s_d.seeding_time.set_content(ftime_or_dash(status.seeding_time));
+        s_d.time_since_transfer.set_content(ftime_or_dash(status.time_since_transfer));
+        let last_seen_complete = match status.last_seen_complete {
+            0  => String::from("-"),
+            t => epochs::unix(t).unwrap().to_string(),
+        };
+        s_d.last_seen_complete.set_content(last_seen_complete);
 
         let new_selection = self.selected_recv.recv();
         tokio::select! {
@@ -189,6 +212,26 @@ fn status() -> (impl View, StatusData) {
         .child(availability_view)
         .child(seed_rank_view);
 
+    let third_column_labels = LinearLayout::vertical()
+        .child(label("ETA Time:"))
+        .child(label("Active Time:"))
+        .child(label("Seeding Time:"))
+        .child(label("Last Transfer:"))
+        .child(label("Complete Seen:"));
+
+    let (eta, eta_view) = value();
+    let (active_time, active_time_view) = value();
+    let (seeding_time, seeding_time_view) = value();
+    let (time_since_transfer, time_since_transfer_view) = value();
+    let (last_seen_complete, last_seen_complete_value) = value();
+
+    let third_column_values = LinearLayout::vertical()
+        .child(eta_view)
+        .child(active_time_view)
+        .child(seeding_time_view)
+        .child(time_since_transfer_view)
+        .child(last_seen_complete_value);
+
     let status = LinearLayout::horizontal()
         .child(first_column_labels)
         .child(DummyView.fixed_width(1))
@@ -196,7 +239,11 @@ fn status() -> (impl View, StatusData) {
         .child(DummyView.fixed_width(3))
         .child(second_column_labels)
         .child(DummyView.fixed_width(1))
-        .child(second_column_values);
+        .child(second_column_values)
+        .child(DummyView.fixed_width(3))
+        .child(third_column_labels)
+        .child(DummyView.fixed_width(1))
+        .child(third_column_values);
 
     let view = LinearLayout::vertical()
         .child(progress_bar)
@@ -214,6 +261,11 @@ fn status() -> (impl View, StatusData) {
         ratio,
         availability,
         seed_rank,
+        eta,
+        active_time,
+        seeding_time,
+        time_since_transfer,
+        last_seen_complete,
     };
 
     (view, data)
