@@ -9,8 +9,7 @@ use cursive_tabs::TabPanel;
 use tokio::task::{self, JoinHandle};
 use cursive::traits::*;
 use cursive::view::ViewWrapper;
-use crate::util::{ftime_or_dash, fmt_bytes};
-use std::fmt::Display;
+use crate::util;
 use cursive::utils::Counter;
 use cursive::views::{
     TextView,
@@ -81,50 +80,23 @@ impl ViewThread for TorrentTabsViewThread {
 
         let status = self.session.get_torrent_status::<TorrentStatus>(hash).await?;
 
-        fn twovals<T, F: FnMut(T) -> U, U: Display>(mut f: F, a: T, b: T) -> String {
-            format!("{} ({})", f(a), f(b))
-        }
-
-        fn twovals_opt<T, F: FnMut(T) -> U, U: Display>(mut f: F, a: T, b: Option<T>) -> String {
-            match b {
-                Some(b) => twovals(f, a, b),
-                None => f(a).to_string(),
-            }
-        }
-
-        // TODO: figure out a more elegant way of handling all these... kilobyte limits
-        fn kibs(mut v: f64) -> Option<u64> {
-            v *= 1024.0;
-            assert_eq!(v, v.trunc());
-            assert!(v.is_finite());
-            if v <= 0.0 {
-                return None;
-            }
-            assert!(v <= u64::MAX as f64);
-            Some(v as u64)
-        }
-
-        let bytespeed = |v| fmt_bytes(v, "/s");
-        let bytesize = |v| fmt_bytes(v, "");
-        use std::convert::identity;
-
         let s_d = &mut self.status_data;
 
         s_d.progress.set(status.progress as usize);
         s_d.state.broadcast(status.state).unwrap();
 
         s_d.columns[0].set_content([
-            twovals_opt(bytespeed, status.download_payload_rate, kibs(status.max_download_speed)),
-            twovals_opt(bytespeed, status.upload_payload_rate, kibs(status.max_upload_speed)),
-            twovals(bytesize, status.total_downloaded, status.total_payload_download),
-            twovals(bytesize, status.total_uploaded, status.total_payload_upload),
+            util::fmt_speed_pair(status.download_payload_rate, status.max_download_speed),
+            util::fmt_speed_pair(status.upload_payload_rate, status.max_upload_speed),
+            util::fmt_pair(util::fmt_bytes, status.total_downloaded, Some(status.total_payload_download)),
+            util::fmt_pair(util::fmt_bytes, status.total_uploaded, Some(status.total_payload_upload)),
         ].join("\n"));
 
         let mut ryu_buf = ryu::Buffer::new();
 
         s_d.columns[1].set_content([
-            twovals(identity, status.num_seeds, status.total_seeds),
-            twovals(identity, status.num_peers, status.total_peers),
+            util::fmt_pair(|x| x, status.num_seeds, Some(status.total_seeds)),
+            util::fmt_pair(|x| x, status.num_peers, Some(status.total_peers)),
             ryu_buf.format(status.ratio).to_owned(),
             ryu_buf.format(status.availability).to_owned(),
             status.seed_rank.to_string(),
@@ -136,10 +108,10 @@ impl ViewThread for TorrentTabsViewThread {
         };
 
         s_d.columns[2].set_content([
-            ftime_or_dash(status.eta),
-            ftime_or_dash(status.active_time),
-            ftime_or_dash(status.seeding_time),
-            ftime_or_dash(status.time_since_transfer),
+            util::ftime_or_dash(status.eta),
+            util::ftime_or_dash(status.active_time),
+            util::ftime_or_dash(status.seeding_time),
+            util::ftime_or_dash(status.time_since_transfer),
             last_seen_complete,
         ].join("\n"));
 

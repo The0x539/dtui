@@ -1,11 +1,31 @@
 use bytesize::ByteSize;
+use std::fmt::Display;
 
 pub fn read_file(path: &str) -> String {
     std::fs::read_to_string(path).unwrap()
 }
 
-pub fn fmt_bytes(amt: u64, suffix: &str) -> String {
-    ByteSize(amt).to_string_as(true) + suffix
+pub fn fmt_bytes(amt: u64) -> String {
+    ByteSize(amt).to_string_as(true)
+}
+
+pub fn fmt_bytes_limit(amt: f64) -> String {
+    ByteSize((amt * 1024.0) as u64).to_string_as(true).replace(".0", "")
+}
+
+pub fn fmt_speed_pair(val: u64, max: f64) -> String {
+    if max <= 0.0 {
+        fmt_bytes(val) + "/s"
+    } else {
+        format!("{}/s ({}/s)", fmt_bytes(val), fmt_bytes_limit(max))
+    }
+}
+
+pub fn fmt_pair<T, U: Display, F: FnMut(T) -> U>(mut f: F, a: T, b: Option<T>) -> String {
+    match b {
+        Some(b) => format!("{} ({})", f(a), f(b)),
+        None => f(a).to_string(),
+    }
 }
 
 pub fn digit_width(mut n: u64) -> usize {

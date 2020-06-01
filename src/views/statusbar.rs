@@ -1,6 +1,6 @@
 use cursive::traits::*;
 use cursive::Printer;
-use crate::util::fmt_bytes;
+use crate::util;
 use std::net::IpAddr;
 use serde::Deserialize;
 use deluge_rpc::{Session, Query};
@@ -15,11 +15,11 @@ use async_trait::async_trait;
 struct StatusBarData {
     num_peers: u64,
     max_peers: Option<u64>,
-    download_rate: f64,
-    max_download_rate: Option<f64>,
-    upload_rate: f64,
-    max_upload_rate: Option<f64>,
-    protocol_traffic: (f64, f64),
+    download_rate: u64,
+    max_download_rate: f64,
+    upload_rate: u64,
+    max_upload_rate: f64,
+    protocol_traffic: (u64, u64),
     free_space: u64,
     ip: Option<IpAddr>,
     dht_nodes: u64,
@@ -46,24 +46,22 @@ struct ConfigQuery {
 
 impl Display for StatusBarData {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        write!(f, " ⇄ {} ", self.num_peers)?;
+        f.write_str(" ⇄ ")?;
+        f.write_str(&util::fmt_pair(util::fmt_bytes, self.num_peers, self.max_peers))?;
+
         if let Some(max_peers) = self.max_peers {
             write!(f, "({}) ", max_peers)?;
         }
 
-        write!(f, " ↓ {} ", fmt_bytes(self.download_rate as u64, "/s"))?;
-        if let Some(max_download_rate) = self.max_download_rate {
-            write!(f, "({}) ", fmt_bytes(max_download_rate as u64 * 1024, "/s"))?;
-        }
+        f.write_str(" ↓ ")?;
+        f.write_str(&util::fmt_speed_pair(self.download_rate, self.max_download_rate))?;
 
-        write!(f, " ↑ {} ", fmt_bytes(self.upload_rate as u64, "/s"))?;
-        if let Some(max_upload_rate) = self.max_upload_rate {
-            write!(f, "({}) ", fmt_bytes(max_upload_rate as u64 * 1024, "/s"))?;
-        }
+        f.write_str(" ↑ ")?;
+        f.write_str(&util::fmt_speed_pair(self.upload_rate, self.max_upload_rate))?;
 
         write!(f, " ⇵ {}:{} B/s ", self.protocol_traffic.0, self.protocol_traffic.1)?;
 
-        write!(f, " 💾 {} ", fmt_bytes(self.free_space, ""))?;
+        write!(f, " 💾 {} ", util::fmt_bytes(self.free_space))?;
 
         if let Some(ip) = self.ip {
             write!(f, " IP: {} ", ip)?;
@@ -112,22 +110,19 @@ impl ViewThread for StatusBarViewThread {
         data.free_space = space;
 
         data.num_peers = status.num_peers_connected;
-        data.download_rate = status.payload_download_rate;
-        data.upload_rate = status.payload_upload_rate;
+        data.download_rate = status.payload_download_rate as u64;
+        data.upload_rate = status.payload_upload_rate as u64;
         data.dht_nodes = status.dht_nodes;
 
-        data.protocol_traffic.0 = status.download_rate - status.payload_download_rate;
-        data.protocol_traffic.0 = status.upload_rate - status.payload_upload_rate;
+        data.protocol_traffic.0 = (status.download_rate - status.payload_download_rate) as u64;
+        data.protocol_traffic.0 = (status.upload_rate - status.payload_upload_rate) as u64;
 
-        macro_rules! positive {
-            ($val:expr, $ty:ty) => {
-                ($val > 0.into()).then_some($val as $ty)
-            }
-        }
-
-        data.max_peers = positive!(config.max_connections_global, u64);
-        data.max_download_rate = positive!(config.max_download_speed, f64);
-        data.max_upload_rate = positive!(config.max_upload_speed, f64);
+        data.max_peers = match config.max_connections_global {
+            n if n > 0 => Some(n as u64),
+            _ => None
+        };
+        data.max_download_rate = config.max_download_speed;
+        data.max_upload_rate = config.max_upload_speed;
 
         Ok(())
     }
