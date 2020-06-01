@@ -55,28 +55,27 @@ pub fn ftime(mut secs: u64) -> String {
     let weeks = days / 7;
     days %= 7;
 
-    match (years, weeks, days, hours, mins, secs) {
-        (0, 0, 0, 0, 0, s) => format!("{}s", s),
+    let mut units = (None, None);
 
-        (0, 0, 0, 0, m, s) => format!("{}m {}s", m, s),
+    let amounts = [years, weeks, days, hours, mins, secs];
 
-        (0, 0, 0, h, 0, s) => format!("{}h {}s", h, s),
-        (0, 0, 0, h, m, _) => format!("{}h {}m", h, m),
+    for (amount, suffix) in amounts.iter().copied().zip("ywdhms".chars()) {
+        if amount > 0 {
+            if units.0.is_none() {
+                units.0 = Some((amount, suffix));
+            } else if units.1.is_none() {
+                units.1 = Some((amount, suffix));
+            } else {
+                break;
+            }
+        }
+    }
 
-        (0, 0, d, 0, 0, s) => format!("{}d {}s", d, s),
-        (0, 0, d, 0, m, _) => format!("{}d {}m", d, m),
-        (0, 0, d, h, _, _) => format!("{}d {}h", d, h),
-
-        (0, w, 0, 0, 0, s) => format!("{}w {}s", w, s),
-        (0, w, 0, 0, m, _) => format!("{}w {}m", w, m),
-        (0, w, 0, h, _, _) => format!("{}w {}h", w, h),
-        (0, w, d, _, _, _) => format!("{}w {}d", w, d),
-
-        (y, 0, 0, 0, 0, s) => format!("{}y {}s", y, s),
-        (y, 0, 0, 0, m, _) => format!("{}y {}m", y, m),
-        (y, 0, 0, h, _, _) => format!("{}y {}h", y, h),
-        (y, 0, d, _, _, _) => format!("{}y {}d", y, d),
-        (y, w, _, _, _, _) => format!("{}y {}w", y, w),
+    match units {
+        (None, None) => String::from("now"),
+        (Some((amt, sfx)), None) => format!("{}{}", amt, sfx),
+        (Some((amt1, sfx1)), Some((amt2, sfx2))) => format!("{}{} {}{}", amt1, sfx1, amt2, sfx2),
+        (None, Some(_)) => unreachable!(),
     }
 }
 
