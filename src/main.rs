@@ -6,10 +6,9 @@ use deluge_rpc::*;
 use tokio::sync::{RwLock as AsyncRwLock, watch};
 use cursive::Cursive;
 use cursive::traits::*;
-use cursive::views::{LinearLayout, TextView, Panel};
+use cursive::views::{LinearLayout, Panel};
 use cursive::direction::Orientation;
 use cursive::menu::MenuTree;
-use cursive_tabs::TabPanel;
 use std::sync::Arc;
 
 pub mod views;
@@ -17,6 +16,7 @@ use views::{
     filters::FiltersView,
     torrents::TorrentsView,
     statusbar::StatusBarView,
+    tabs::TorrentTabsView,
 
     scroll::ScrollInner,
 };
@@ -92,7 +92,7 @@ async fn main() -> deluge_rpc::Result<()> {
     let shutdown_write_handle = shutdown.write().await;
 
     let (filters_send, filters_recv) = watch::channel(FilterDict::default());
-    let (selected_send, _selected_recv) = watch::channel(None);
+    let (selected_send, selected_recv) = watch::channel(None);
 
     let torrents = {
         TorrentsView::new(session.clone(), selected_send, filters_recv.clone(), shutdown.clone())
@@ -108,24 +108,12 @@ async fn main() -> deluge_rpc::Result<()> {
             .with_name("status")
     };
 
-    let status_tab = TextView::new("Torrent status (todo)");
-    let details_tab = TextView::new("Torrent details (todo)");
-    let options_tab = TextView::new("Torrent options (todo)");
-    let files_tab = TextView::new("Torrent files (todo)");
-    let peers_tab = TextView::new("Torrent peers (todo)");
-    let trackers_tab = TextView::new("Torrent trackers (todo)");
-
-    let torrent_tabs = TabPanel::new()
-        .with_tab("Status", status_tab)
-        .with_tab("Details", details_tab)
-        .with_tab("Options", options_tab)
-        .with_tab("Files", files_tab)
-        .with_tab("Peers", peers_tab)
-        .with_tab("Trackers", trackers_tab);
-
     let torrents_ui = LinearLayout::new(Orientation::Horizontal)
         .child(Panel::new(filters).title("Filters"))
         .child(Panel::new(torrents).title("Torrents"));
+
+    let torrent_tabs = TorrentTabsView::new(session.clone(), selected_recv.clone(), shutdown.clone())
+        .with_name("tabs");
 
     let main_ui = LinearLayout::new(Orientation::Vertical)
         .child(torrents_ui)
@@ -167,20 +155,24 @@ async fn main() -> deluge_rpc::Result<()> {
     let torrents_thread = siv.call_on_name("torrents", TorrentsView::take_thread).unwrap();
     let filters_thread = siv.call_on_name("filters", FiltersView::take_thread).unwrap();
     let statusbar_thread = siv.call_on_name("status", StatusBarView::take_thread).unwrap();
+    let tabs_thread = siv.call_on_name("tabs", TorrentTabsView::take_thread).unwrap();
 
     let (
         torrents_result,
         filters_result,
         statusbar_result,
+        tabs_result,
     ) = tokio::try_join!(
         torrents_thread,
         filters_thread,
         statusbar_thread,
+        tabs_thread,
     ).unwrap();
 
     torrents_result?;
     filters_result?;
     statusbar_result?;
+    tabs_result?;
 
     let session = Arc::try_unwrap(session).unwrap();
     
