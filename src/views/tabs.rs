@@ -65,22 +65,8 @@ struct TorrentStatus {
 struct StatusData {
     state: watch::Sender<TorrentState>,
     progress: Counter,
-    down_speed: TextContent,
-    up_speed: TextContent,
-    down: TextContent,
-    up: TextContent,
 
-    seeds: TextContent,
-    peers: TextContent,
-    ratio: TextContent,
-    availability: TextContent,
-    seed_rank: TextContent,
-
-    eta: TextContent,
-    active_time: TextContent,
-    seeding_time: TextContent,
-    time_since_transfer: TextContent,
-    last_seen_complete: TextContent,
+    columns: [TextContent; 3],
 }
 
 #[async_trait]
@@ -111,7 +97,7 @@ impl ViewThread for TorrentTabsViewThread {
             v *= 1024.0;
             assert_eq!(v, v.trunc());
             assert!(v.is_finite());
-            if v < 0.0 {
+            if v <= 0.0 {
                 return None;
             }
             assert!(v <= u64::MAX as f64);
@@ -124,30 +110,38 @@ impl ViewThread for TorrentTabsViewThread {
 
         let s_d = &mut self.status_data;
 
-        let mut ryu_buf = ryu::Buffer::new();
-
         s_d.progress.set(status.progress as usize);
         s_d.state.broadcast(status.state).unwrap();
-        s_d.down_speed.set_content(twovals_opt(bytespeed, status.download_payload_rate, kibs(status.max_download_speed)));
-        s_d.up_speed.set_content(twovals_opt(bytespeed, status.upload_payload_rate, kibs(status.max_upload_speed)));
-        s_d.down.set_content(twovals(bytesize, status.total_downloaded, status.total_payload_download));
-        s_d.up.set_content(twovals(bytesize, status.total_uploaded, status.total_payload_upload));
 
-        s_d.seeds.set_content(twovals(identity, status.num_seeds, status.total_seeds));
-        s_d.peers.set_content(twovals(identity, status.num_peers, status.total_peers));
-        s_d.ratio.set_content(ryu_buf.format(status.ratio));
-        s_d.availability.set_content(ryu_buf.format(status.availability));
-        s_d.seed_rank.set_content(status.seed_rank.to_string());
+        s_d.columns[0].set_content([
+            twovals_opt(bytespeed, status.download_payload_rate, kibs(status.max_download_speed)),
+            twovals_opt(bytespeed, status.upload_payload_rate, kibs(status.max_upload_speed)),
+            twovals(bytesize, status.total_downloaded, status.total_payload_download),
+            twovals(bytesize, status.total_uploaded, status.total_payload_upload),
+        ].join("\n"));
 
-        s_d.eta.set_content(ftime_or_dash(status.eta));
-        s_d.active_time.set_content(ftime_or_dash(status.active_time));
-        s_d.seeding_time.set_content(ftime_or_dash(status.seeding_time));
-        s_d.time_since_transfer.set_content(ftime_or_dash(status.time_since_transfer));
+        let mut ryu_buf = ryu::Buffer::new();
+
+        s_d.columns[1].set_content([
+            twovals(identity, status.num_seeds, status.total_seeds),
+            twovals(identity, status.num_peers, status.total_peers),
+            ryu_buf.format(status.ratio).to_owned(),
+            ryu_buf.format(status.availability).to_owned(),
+            status.seed_rank.to_string(),
+        ].join("\n"));
+
         let last_seen_complete = match status.last_seen_complete {
-            0  => String::from("-"),
+            0 => String::from("-"),
             t => epochs::unix(t).unwrap().to_string(),
         };
-        s_d.last_seen_complete.set_content(last_seen_complete);
+
+        s_d.columns[2].set_content([
+            ftime_or_dash(status.eta),
+            ftime_or_dash(status.active_time),
+            ftime_or_dash(status.seeding_time),
+            ftime_or_dash(status.time_since_transfer),
+            last_seen_complete,
+        ].join("\n"));
 
         let new_selection = self.selected_recv.recv();
         tokio::select! {
@@ -168,82 +162,49 @@ fn status() -> (impl View, StatusData) {
         .with_label(move |val, (_min, _max)| format!("{} {}%", state_recv.borrow().as_str(), val));
 
 
-    fn label(s: &str) -> TextView {
-        TextView::new(s).effect(cursive::theme::Effect::Bold)
+    fn column(rows: &[&str]) -> (impl View, TextContent) {
+        let labels = TextView::new(rows.join("\n")).effect(cursive::theme::Effect::Bold);
+
+        let content = TextContent::new("");
+        let values = TextView::new_with_content(content.clone()).center();
+
+        let view = LinearLayout::horizontal()
+            .child(labels)
+            .child(DummyView.fixed_width(1))
+            .child(values);
+
+        (view, content)
     }
 
-    fn value() -> (TextContent, TextView) {
-        let c = TextContent::new("");
-        (c.clone(), TextView::new_with_content(c).center())
-    }
+    let (first_column_view, first_column) = column(&[
+        "Down Speed:",
+        "Up Speed:",
+        "Downloaded:",
+        "Uploaded:",
+    ]);
 
-    let first_column_labels = LinearLayout::vertical()
-        .child(label("Down Speed:"))
-        .child(label("Up Speed:"))
-        .child(label("Downloaded:"))
-        .child(label("Uploaded:"));
+    let (second_column_view, second_column) = column(&[
+        "Seeds:",
+        "Peers:",
+        "Share Ratio:",
+        "Availability:",
+        "Seed Rank:",
+    ]);
 
-    let (down_speed, down_speed_view) = value();
-    let (up_speed, up_speed_view) = value();
-    let (down, down_view) = value();
-    let (up, up_view) = value();
-    let first_column_values = LinearLayout::vertical()
-        .child(down_speed_view)
-        .child(up_speed_view)
-        .child(down_view)
-        .child(up_view);
-
-    let second_column_labels = LinearLayout::vertical()
-        .child(label("Seeds:"))
-        .child(label("Peers:"))
-        .child(label("Share Ratio:"))
-        .child(label("Availability:"))
-        .child(label("Seed Rank:"));
-
-    let (seeds, seeds_view) = value();
-    let (peers, peers_view) = value();
-    let (ratio, ratio_view) = value();
-    let (availability, availability_view) = value();
-    let (seed_rank, seed_rank_view) = value();
-    let second_column_values = LinearLayout::vertical()
-        .child(seeds_view)
-        .child(peers_view)
-        .child(ratio_view)
-        .child(availability_view)
-        .child(seed_rank_view);
-
-    let third_column_labels = LinearLayout::vertical()
-        .child(label("ETA Time:"))
-        .child(label("Active Time:"))
-        .child(label("Seeding Time:"))
-        .child(label("Last Transfer:"))
-        .child(label("Complete Seen:"));
-
-    let (eta, eta_view) = value();
-    let (active_time, active_time_view) = value();
-    let (seeding_time, seeding_time_view) = value();
-    let (time_since_transfer, time_since_transfer_view) = value();
-    let (last_seen_complete, last_seen_complete_value) = value();
-
-    let third_column_values = LinearLayout::vertical()
-        .child(eta_view)
-        .child(active_time_view)
-        .child(seeding_time_view)
-        .child(time_since_transfer_view)
-        .child(last_seen_complete_value);
+    let (third_column_view, third_column) = column(&[
+        "ETA Time:",
+        "Active Time:",
+        "Seeding Time:",
+        "Last Transfer:",
+        "Complete Seen:",
+    ]);
 
     let status = LinearLayout::horizontal()
-        .child(first_column_labels)
-        .child(DummyView.fixed_width(1))
-        .child(first_column_values)
+        .child(first_column_view)
         .child(DummyView.fixed_width(3))
-        .child(second_column_labels)
-        .child(DummyView.fixed_width(1))
-        .child(second_column_values)
+        .child(second_column_view)
         .child(DummyView.fixed_width(3))
-        .child(third_column_labels)
-        .child(DummyView.fixed_width(1))
-        .child(third_column_values);
+        .child(third_column_view);
 
     let view = LinearLayout::vertical()
         .child(progress_bar)
@@ -252,20 +213,7 @@ fn status() -> (impl View, StatusData) {
     let data = StatusData {
         state: state_send,
         progress,
-        down_speed,
-        up_speed,
-        down,
-        up,
-        seeds,
-        peers,
-        ratio,
-        availability,
-        seed_rank,
-        eta,
-        active_time,
-        seeding_time,
-        time_since_transfer,
-        last_seen_complete,
+        columns: [first_column, second_column, third_column],
     };
 
     (view, data)
