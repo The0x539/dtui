@@ -63,9 +63,8 @@ pub fn ftime(mut secs: u64) -> String {
         if amount > 0 {
             if units.0.is_none() {
                 units.0 = Some((amount, suffix));
-            } else if units.1.is_none() {
-                units.1 = Some((amount, suffix));
             } else {
+                units.1 = Some((amount, suffix));
                 break;
             }
         }
