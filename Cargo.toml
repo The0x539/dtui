@@ -6,7 +6,7 @@ edition = "2018"
 
 [dependencies]
 serde = "*"
-tokio = "*"
+tokio = { version = "0.2", features = ["time", "dns"] }
 cursive = { version = "0.14.1", default-features = false, features = ["crossterm-backend"] }
 deluge-rpc.path = "../deluge-rpc"
 bytesize = "1.0.1"
