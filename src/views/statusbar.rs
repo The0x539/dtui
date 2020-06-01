@@ -48,16 +48,15 @@ impl Display for StatusBarData {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         f.write_str(" ⇄ ")?;
         f.write_str(&util::fmt_pair(util::fmt_bytes, self.num_peers, self.max_peers))?;
-
-        if let Some(max_peers) = self.max_peers {
-            write!(f, "({}) ", max_peers)?;
-        }
+        f.write_str(" ")?;
 
         f.write_str(" ↓ ")?;
         f.write_str(&util::fmt_speed_pair(self.download_rate, self.max_download_rate))?;
+        f.write_str(" ")?;
 
         f.write_str(" ↑ ")?;
         f.write_str(&util::fmt_speed_pair(self.upload_rate, self.max_upload_rate))?;
+        f.write_str(" ")?;
 
         write!(f, " ⇵ {}:{} B/s ", self.protocol_traffic.0, self.protocol_traffic.1)?;
 
