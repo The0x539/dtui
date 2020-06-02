@@ -1,15 +1,13 @@
 use std::sync::Arc;
-use deluge_rpc::{Session, InfoHash, Query};
+use deluge_rpc::{Session, InfoHash};
 use super::thread::ViewThread;
 use async_trait::async_trait;
 use tokio::sync::{RwLock as AsyncRwLock, watch};
 use tokio::time;
-use serde::Deserialize;
 use cursive_tabs::TabPanel;
 use tokio::task::{self, JoinHandle};
 use cursive::traits::*;
 use cursive::view::ViewWrapper;
-use crate::util;
 use cursive::align::HAlign;
 use cursive::views::{
     TextView,
@@ -46,7 +44,7 @@ struct TorrentTabsViewThread {
     selected_recv: watch::Receiver<Option<InfoHash>>,
     active_tab_recv: watch::Receiver<Tab>,
     status_data: status::StatusData,
-    details_data: DetailsData,
+    details_data: details::DetailsData,
 }
 
 pub(crate) struct TorrentTabsView {
@@ -192,27 +190,85 @@ mod status {
 
 }
 
+mod details {
+    use super::column;
+    use cursive::traits::View;
+    use deluge_rpc::{Query, InfoHash};
+    use serde::Deserialize;
+    use cursive::views::{DummyView, TextContent, LinearLayout, TextView};
+    use cursive::align::HAlign;
+    use crate::util;
 
-#[derive(Debug, Clone, Deserialize, Query)]
-struct TorrentDetails {
-    name: String,
-    download_location: String,
-    total_size: u64,
-    num_files: u64,
-    // Don't need to query for this
-    // hash: InfoHash,
-    creator: String,
-    comment: String,
-    time_added: i64,
-    completed_time: i64,
-    num_pieces: u64,
-    piece_length: u64,
-}
+    #[derive(Debug, Clone, Deserialize, Query)]
+    pub(super) struct TorrentDetails {
+        name: String,
+        download_location: String,
+        total_size: u64,
+        num_files: u64,
+        hash: InfoHash,
+        creator: String,
+        comment: String,
+        time_added: i64,
+        completed_time: i64,
+        num_pieces: u64,
+        piece_length: u64,
+    }
 
-struct DetailsData {
-    top: TextContent,
-    left: TextContent,
-    right: TextContent,
+    pub(super) struct DetailsData {
+        top: TextContent,
+        left: TextContent,
+        right: TextContent,
+    }
+
+    impl DetailsData {
+        pub(super) fn update(&mut self, details: TorrentDetails) {
+        self.top.set_content([
+            details.name,
+            details.download_location,
+        ].join("\n"));
+
+        self.left.set_content([
+            util::fmt_bytes(details.total_size),
+            details.num_files.to_string(),
+            details.hash.to_string(),
+            details.creator,
+            details.comment,
+        ].join("\n"));
+
+        self.right.set_content([
+            util::fdate(details.time_added),
+            util::fdate_or_dash(details.completed_time),
+            format!("{} ({})", details.num_pieces, util::fmt_bytes(details.piece_length).replace(".0", "")),
+        ].join("\n"));
+
+        }
+    }
+
+    pub(super) fn details() -> (impl View, DetailsData) {
+        let (top_view, top) = column(&["Name:", "Download Folder:"], HAlign::Left);
+        let (left_view, left) = column(&[
+            "Total Size:",
+            "Total Files:",
+            "Hash:",
+            "Created By:",
+            "Comments:",
+        ], HAlign::Left);
+        let (right_view, right) = column(&["Added:", "Completed:", "Pieces:"], HAlign::Left);
+
+        let bottom_view = LinearLayout::horizontal()
+            .child(left_view)
+            .child(TextView::new([" │ "; 3].join("\n")))
+            .child(right_view);
+
+        let view = LinearLayout::vertical()
+            .child(top_view)
+            .child(DummyView)
+            .child(bottom_view);
+
+        let data = DetailsData { top, left, right };
+
+        (view, data)
+    }
 }
 
 #[async_trait]
@@ -255,57 +311,12 @@ impl TorrentTabsViewThread {
     }
 
     async fn update_details_tab(&mut self, hash: InfoHash) -> deluge_rpc::Result<()> {
-        let details = self.session.get_torrent_status::<TorrentDetails>(hash).await?;
+        let details = self.session.get_torrent_status::<details::TorrentDetails>(hash).await?;
 
-        let d_d = &mut self.details_data;
-
-        d_d.top.set_content([
-            details.name,
-            details.download_location,
-        ].join("\n"));
-
-        d_d.left.set_content([
-            util::fmt_bytes(details.total_size),
-            details.num_files.to_string(),
-            hash.to_string(),
-            details.creator,
-            details.comment,
-        ].join("\n"));
-
-        d_d.right.set_content([
-            util::fdate(details.time_added),
-            util::fdate_or_dash(details.completed_time),
-            format!("{} ({})", details.num_pieces, util::fmt_bytes(details.piece_length).replace(".0", "")),
-        ].join("\n"));
+        self.details_data.update(details);
 
         Ok(())
     }
-}
-
-fn details() -> (impl View, DetailsData) {
-    let (top_view, top) = column(&["Name:", "Download Folder:"], HAlign::Left);
-    let (left_view, left) = column(&[
-        "Total Size:",
-        "Total Files:",
-        "Hash:",
-        "Created By:",
-        "Comments:",
-    ], HAlign::Left);
-    let (right_view, right) = column(&["Added:", "Completed:", "Pieces:"], HAlign::Left);
-
-    let bottom_view = LinearLayout::horizontal()
-        .child(left_view)
-        .child(TextView::new([" │ "; 3].join("\n")))
-        .child(right_view);
-
-    let view = LinearLayout::vertical()
-        .child(top_view)
-        .child(DummyView)
-        .child(bottom_view);
-
-    let data = DetailsData { top, left, right };
-
-    (view, data)
 }
 
 impl TorrentTabsView {
@@ -315,7 +326,7 @@ impl TorrentTabsView {
         shutdown: Arc<AsyncRwLock<()>>,
     ) -> Self {
         let (status_tab, status_data) = status::status();
-        let (details_tab, details_data) = details();
+        let (details_tab, details_data) = details::details();
 
         let active_tab = Tab::Status;
         let (active_tab_send, active_tab_recv) = watch::channel(active_tab);
