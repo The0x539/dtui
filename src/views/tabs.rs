@@ -48,6 +48,7 @@ struct TorrentTabsViewThread {
     selected_recv: watch::Receiver<Option<InfoHash>>,
     active_tab_recv: watch::Receiver<Tab>,
     status_data: StatusData,
+    details_data: DetailsData,
 }
 
 pub(crate) struct TorrentTabsView {
@@ -88,11 +89,33 @@ struct TorrentStatus {
     last_seen_complete: i64,
 }
 
+#[derive(Debug, Clone, Deserialize, Query)]
+struct TorrentDetails {
+    name: String,
+    download_location: String,
+    total_size: u64,
+    num_files: u64,
+    // Don't need to query for this
+    // hash: InfoHash,
+    creator: String,
+    comment: String,
+    time_added: i64,
+    completed_time: i64,
+    num_pieces: u64,
+    piece_length: u64,
+}
+
 struct StatusData {
     state: watch::Sender<TorrentState>,
     progress: Counter,
 
     columns: [TextContent; 3],
+}
+
+struct DetailsData {
+    top: TextContent,
+    left: TextContent,
+    right: TextContent,
 }
 
 #[async_trait]
@@ -109,6 +132,7 @@ impl ViewThread for TorrentTabsViewThread {
 
         match active_tab {
             Tab::Status => self.update_status_tab(hash).await?,
+            Tab::Details => self.update_details_tab(hash).await?,
             _ => (),
         }
 
@@ -158,6 +182,33 @@ impl TorrentTabsViewThread {
             util::ftime_or_dash(status.seeding_time),
             util::ftime_or_dash(status.time_since_transfer),
             util::fdate_or_dash(status.last_seen_complete),
+        ].join("\n"));
+
+        Ok(())
+    }
+
+    async fn update_details_tab(&mut self, hash: InfoHash) -> deluge_rpc::Result<()> {
+        let details = self.session.get_torrent_status::<TorrentDetails>(hash).await?;
+
+        let d_d = &mut self.details_data;
+
+        d_d.top.set_content([
+            details.name,
+            details.download_location,
+        ].join("\n"));
+
+        d_d.left.set_content([
+            util::fmt_bytes(details.total_size),
+            details.num_files.to_string(),
+            hash.to_string(),
+            details.creator,
+            details.comment,
+        ].join("\n"));
+
+        d_d.right.set_content([
+            util::fdate(details.time_added),
+            util::fdate_or_dash(details.completed_time),
+            format!("{} ({})", details.num_pieces, util::fmt_bytes(details.piece_length).replace(".0", "")),
         ].join("\n"));
 
         Ok(())
@@ -215,6 +266,32 @@ fn status() -> (impl View, StatusData) {
     (view, data)
 }
 
+fn details() -> (impl View, DetailsData) {
+    let (top_view, top) = column(&["Name:", "Download Folder:"], HAlign::Left);
+    let (left_view, left) = column(&[
+        "Total Size:",
+        "Total Files:",
+        "Hash:",
+        "Created By:",
+        "Comments:",
+    ], HAlign::Left);
+    let (right_view, right) = column(&["Added:", "Completed:", "Pieces:"], HAlign::Left);
+
+    let bottom_view = LinearLayout::horizontal()
+        .child(left_view)
+        .child(TextView::new([" │ "; 3].join("\n")))
+        .child(right_view);
+
+    let view = LinearLayout::vertical()
+        .child(top_view)
+        .child(DummyView)
+        .child(bottom_view);
+
+    let data = DetailsData { top, left, right };
+
+    (view, data)
+}
+
 impl TorrentTabsView {
     pub(crate) fn new(
         session: Arc<Session>,
@@ -222,11 +299,11 @@ impl TorrentTabsView {
         shutdown: Arc<AsyncRwLock<()>>,
     ) -> Self {
         let (status_tab, status_data) = status();
+        let (details_tab, details_data) = details();
 
         let active_tab = Tab::Status;
         let (active_tab_send, active_tab_recv) = watch::channel(active_tab);
 
-        let details_tab = TextView::new("Torrent details (todo)");
         let options_tab = TextView::new("Torrent options (todo)");
         let files_tab = TextView::new("Torrent files (todo)");
         let peers_tab = TextView::new("Torrent peers (todo)");
@@ -237,6 +314,7 @@ impl TorrentTabsView {
             selected_recv,
             active_tab_recv,
             status_data,
+            details_data,
         };
         let thread = task::spawn(thread_obj.run(shutdown));
 
