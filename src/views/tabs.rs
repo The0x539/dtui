@@ -11,6 +11,7 @@ use cursive::traits::*;
 use cursive::view::ViewWrapper;
 use crate::util;
 use cursive::utils::Counter;
+use cursive::align::HAlign;
 use cursive::views::{
     TextView,
     LinearLayout,
@@ -18,6 +19,20 @@ use cursive::views::{
     DummyView,
     TextContent,
 };
+
+fn column(rows: &[&str], h_align: HAlign) -> (impl View, TextContent) {
+    let labels = TextView::new(rows.join("\n")).effect(cursive::theme::Effect::Bold);
+
+    let content = TextContent::new("");
+    let values = TextView::new_with_content(content.clone()).h_align(h_align);
+
+    let view = LinearLayout::horizontal()
+        .child(labels)
+        .child(DummyView.fixed_width(1))
+        .child(values);
+
+    (view, content)
+}
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
 pub(crate) enum Tab { Status, Details, Options, Files, Peers, Trackers }
@@ -157,27 +172,12 @@ fn status() -> (impl View, StatusData) {
         .with_value(progress.clone())
         .with_label(move |val, (_min, _max)| format!("{} {}%", state_recv.borrow().as_str(), val));
 
-
-    fn column(rows: &[&str]) -> (impl View, TextContent) {
-        let labels = TextView::new(rows.join("\n")).effect(cursive::theme::Effect::Bold);
-
-        let content = TextContent::new("");
-        let values = TextView::new_with_content(content.clone()).center();
-
-        let view = LinearLayout::horizontal()
-            .child(labels)
-            .child(DummyView.fixed_width(1))
-            .child(values);
-
-        (view, content)
-    }
-
     let (first_column_view, first_column) = column(&[
         "Down Speed:",
         "Up Speed:",
         "Downloaded:",
         "Uploaded:",
-    ]);
+    ], HAlign::Center);
 
     let (second_column_view, second_column) = column(&[
         "Seeds:",
@@ -185,7 +185,7 @@ fn status() -> (impl View, StatusData) {
         "Share Ratio:",
         "Availability:",
         "Seed Rank:",
-    ]);
+    ], HAlign::Center);
 
     let (third_column_view, third_column) = column(&[
         "ETA Time:",
@@ -193,7 +193,7 @@ fn status() -> (impl View, StatusData) {
         "Seeding Time:",
         "Last Transfer:",
         "Complete Seen:",
-    ]);
+    ], HAlign::Center);
 
     let status = LinearLayout::horizontal()
         .child(first_column_view)
