@@ -57,7 +57,7 @@ pub(crate) struct TorrentTabsView {
 mod status {
     use super::column;
     use cursive::traits::{View, Resizable};
-    use deluge_rpc::{Query, TorrentState};
+    use deluge_rpc::{Query, TorrentState, Session, InfoHash};
     use serde::Deserialize;
     use tokio::sync::watch;
     use cursive::views::{DummyView, TextContent, LinearLayout, ProgressBar};
@@ -66,7 +66,7 @@ mod status {
     use crate::util;
 
     #[derive(Debug, Clone, Deserialize, Query)]
-    pub(crate) struct TorrentStatus {
+    struct TorrentStatus {
         state: TorrentState,
         progress: f64,
 
@@ -104,7 +104,9 @@ mod status {
     }
 
     impl StatusData {
-        pub(super) fn update(&mut self, status: TorrentStatus) {
+        pub(super) async fn update(&mut self, session: &Session, hash: InfoHash) -> deluge_rpc::Result<()> {
+            let status = session.get_torrent_status::<TorrentStatus>(hash).await?;
+
             self.progress.set(status.progress as usize);
             self.state.broadcast(status.state).unwrap();
 
@@ -134,6 +136,8 @@ mod status {
                 util::ftime_or_dash(status.time_since_transfer),
                 util::fdate_or_dash(status.last_seen_complete),
             ].join("\n"));
+
+            Ok(())
         }
     }
 
@@ -193,19 +197,18 @@ mod status {
 mod details {
     use super::column;
     use cursive::traits::View;
-    use deluge_rpc::{Query, InfoHash};
+    use deluge_rpc::{Query, InfoHash, Session};
     use serde::Deserialize;
     use cursive::views::{DummyView, TextContent, LinearLayout, TextView};
     use cursive::align::HAlign;
     use crate::util;
 
     #[derive(Debug, Clone, Deserialize, Query)]
-    pub(super) struct TorrentDetails {
+    struct TorrentDetails {
         name: String,
         download_location: String,
         total_size: u64,
         num_files: u64,
-        hash: InfoHash,
         creator: String,
         comment: String,
         time_added: i64,
@@ -221,7 +224,9 @@ mod details {
     }
 
     impl DetailsData {
-        pub(super) fn update(&mut self, details: TorrentDetails) {
+        pub(super) async fn update(&mut self, session: &Session, hash: InfoHash) -> deluge_rpc::Result<()> {
+            let details = session.get_torrent_status::<TorrentDetails>(hash).await?;
+
             self.top.set_content([
                 details.name,
                 details.download_location,
@@ -230,7 +235,7 @@ mod details {
             self.left.set_content([
                 util::fmt_bytes(details.total_size),
                 details.num_files.to_string(),
-                details.hash.to_string(),
+                hash.to_string(),
                 details.creator,
                 details.comment,
             ].join("\n"));
@@ -241,6 +246,7 @@ mod details {
                 format!("{} ({})", details.num_pieces, util::fmt_bytes(details.piece_length).replace(".0", "")),
             ].join("\n"));
 
+            Ok(())
         }
     }
 
@@ -284,8 +290,8 @@ impl ViewThread for TorrentTabsViewThread {
         let active_tab = *self.active_tab_recv.borrow();
 
         match active_tab {
-            Tab::Status => self.update_status_tab(hash).await?,
-            Tab::Details => self.update_details_tab(hash).await?,
+            Tab::Status => self.status_data.update(&self.session, hash).await?,
+            Tab::Details => self.details_data.update(&self.session, hash).await?,
             _ => (),
         }
 
@@ -296,24 +302,6 @@ impl ViewThread for TorrentTabsViewThread {
             _ = new_active_tab => (),
             _ = time::delay_until(now + time::Duration::from_secs(1)) => (),
         }
-
-        Ok(())
-    }
-}
-
-impl TorrentTabsViewThread {
-    async fn update_status_tab(&mut self, hash: InfoHash) -> deluge_rpc::Result<()> {
-        let status = self.session.get_torrent_status::<status::TorrentStatus>(hash).await?;
-
-        self.status_data.update(status);
-
-        Ok(())
-    }
-
-    async fn update_details_tab(&mut self, hash: InfoHash) -> deluge_rpc::Result<()> {
-        let details = self.session.get_torrent_status::<details::TorrentDetails>(hash).await?;
-
-        self.details_data.update(details);
 
         Ok(())
     }
