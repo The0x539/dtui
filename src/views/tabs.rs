@@ -58,9 +58,9 @@ struct TorrentStatus {
     total_payload_upload: u64,
 
     num_seeds: u64,
-    total_seeds: u64,
+    total_seeds: i64,
     num_peers: u64,
-    total_peers: u64,
+    total_peers: i64,
     ratio: f64,
     #[serde(rename = "distributed_copies")]
     availability: f64,
@@ -127,9 +127,11 @@ impl TorrentTabsViewThread {
 
         let mut ryu_buf = ryu::Buffer::new();
 
+        let nonnegative = |n: i64| (n >= 0).then_some(n as u64);
+
         s_d.columns[1].set_content([
-            util::fmt_pair(|x| x, status.num_seeds, Some(status.total_seeds)),
-            util::fmt_pair(|x| x, status.num_peers, Some(status.total_peers)),
+            util::fmt_pair(|x| x, status.num_seeds, nonnegative(status.total_seeds)),
+            util::fmt_pair(|x| x, status.num_peers, nonnegative(status.total_peers)),
             ryu_buf.format(status.ratio).to_owned(),
             ryu_buf.format(status.availability).to_owned(),
             status.seed_rank.to_string(),
