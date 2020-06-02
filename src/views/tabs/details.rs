@@ -1,10 +1,10 @@
-use super::column;
-use cursive::traits::View;
+use super::{column, TabData};
 use deluge_rpc::{Query, InfoHash, Session};
 use serde::Deserialize;
 use cursive::views::{DummyView, TextContent, LinearLayout, TextView};
 use cursive::align::HAlign;
 use crate::util;
+use async_trait::async_trait;
 
 #[derive(Debug, Clone, Deserialize, Query)]
 struct TorrentDetails {
@@ -26,8 +26,37 @@ pub(super) struct DetailsData {
     right: TextContent,
 }
 
-impl DetailsData {
-    pub(super) async fn update(&mut self, session: &Session, hash: InfoHash) -> deluge_rpc::Result<()> {
+#[async_trait]
+impl TabData for DetailsData {
+    type V = LinearLayout;
+
+    fn view() -> (Self::V, Self) {
+        let (top_view, top) = column(&["Name:", "Download Folder:"], HAlign::Left);
+        let (left_view, left) = column(&[
+            "Total Size:",
+            "Total Files:",
+            "Hash:",
+            "Created By:",
+            "Comments:",
+        ], HAlign::Left);
+        let (right_view, right) = column(&["Added:", "Completed:", "Pieces:"], HAlign::Left);
+
+        let bottom_view = LinearLayout::horizontal()
+            .child(left_view)
+            .child(TextView::new([" │ "; 3].join("\n")))
+            .child(right_view);
+
+        let view = LinearLayout::vertical()
+            .child(top_view)
+            .child(DummyView)
+            .child(bottom_view);
+
+        let data = DetailsData { top, left, right };
+
+        (view, data)
+    }
+
+    async fn update(&mut self, session: &Session, hash: InfoHash) -> deluge_rpc::Result<()> {
         let details = session.get_torrent_status::<TorrentDetails>(hash).await?;
 
         self.top.set_content([
@@ -53,28 +82,3 @@ impl DetailsData {
     }
 }
 
-pub(super) fn details() -> (impl View, DetailsData) {
-    let (top_view, top) = column(&["Name:", "Download Folder:"], HAlign::Left);
-    let (left_view, left) = column(&[
-        "Total Size:",
-        "Total Files:",
-        "Hash:",
-        "Created By:",
-        "Comments:",
-    ], HAlign::Left);
-    let (right_view, right) = column(&["Added:", "Completed:", "Pieces:"], HAlign::Left);
-
-    let bottom_view = LinearLayout::horizontal()
-        .child(left_view)
-        .child(TextView::new([" │ "; 3].join("\n")))
-        .child(right_view);
-
-    let view = LinearLayout::vertical()
-        .child(top_view)
-        .child(DummyView)
-        .child(bottom_view);
-
-    let data = DetailsData { top, left, right };
-
-    (view, data)
-}

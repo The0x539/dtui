@@ -1,5 +1,5 @@
-use super::column;
-use cursive::traits::{View, Resizable};
+use super::{column, TabData};
+use cursive::traits::Resizable;
 use deluge_rpc::{Query, TorrentState, Session, InfoHash};
 use serde::Deserialize;
 use tokio::sync::watch;
@@ -7,6 +7,7 @@ use cursive::views::{DummyView, TextContent, LinearLayout, ProgressBar};
 use cursive::align::HAlign;
 use cursive::utils::Counter;
 use crate::util;
+use async_trait::async_trait;
 
 #[derive(Debug, Clone, Deserialize, Query)]
 struct TorrentStatus {
@@ -46,8 +47,62 @@ pub(super) struct StatusData {
     columns: [TextContent; 3],
 }
 
-impl StatusData {
-    pub(super) async fn update(&mut self, session: &Session, hash: InfoHash) -> deluge_rpc::Result<()> {
+#[async_trait]
+impl TabData for StatusData {
+    type V = LinearLayout;
+
+    fn view() -> (Self::V, Self) {
+        let (state_send, state_recv) = watch::channel(TorrentState::Downloading);
+
+        let progress = Counter::new(0);
+        let progress_bar = ProgressBar::new()
+            .with_value(progress.clone())
+            .with_label(move |val, (_min, _max)| format!("{} {}%", state_recv.borrow().as_str(), val));
+
+        let (first_column_view, first_column) = column(&[
+                                                       "Down Speed:",
+                                                       "Up Speed:",
+                                                       "Downloaded:",
+                                                       "Uploaded:",
+        ], HAlign::Center);
+
+        let (second_column_view, second_column) = column(&[
+                                                         "Seeds:",
+                                                         "Peers:",
+                                                         "Share Ratio:",
+                                                         "Availability:",
+                                                         "Seed Rank:",
+        ], HAlign::Center);
+
+        let (third_column_view, third_column) = column(&[
+                                                       "ETA Time:",
+                                                       "Active Time:",
+                                                       "Seeding Time:",
+                                                       "Last Transfer:",
+                                                       "Complete Seen:",
+        ], HAlign::Center);
+
+        let status = LinearLayout::horizontal()
+            .child(first_column_view)
+            .child(DummyView.fixed_width(3))
+            .child(second_column_view)
+            .child(DummyView.fixed_width(3))
+            .child(third_column_view);
+
+        let view = LinearLayout::vertical()
+            .child(progress_bar)
+            .child(status);
+
+        let data = StatusData {
+            state: state_send,
+            progress,
+            columns: [first_column, second_column, third_column],
+        };
+
+        (view, data)
+    }
+
+    async fn update(&mut self, session: &Session, hash: InfoHash) -> deluge_rpc::Result<()> {
         let status = session.get_torrent_status::<TorrentStatus>(hash).await?;
 
         self.progress.set(status.progress as usize);
@@ -84,53 +139,3 @@ impl StatusData {
     }
 }
 
-pub(super) fn status() -> (impl View, StatusData) {
-    let (state_send, state_recv) = watch::channel(TorrentState::Downloading);
-
-    let progress = Counter::new(0);
-    let progress_bar = ProgressBar::new()
-        .with_value(progress.clone())
-        .with_label(move |val, (_min, _max)| format!("{} {}%", state_recv.borrow().as_str(), val));
-
-    let (first_column_view, first_column) = column(&[
-                                                   "Down Speed:",
-                                                   "Up Speed:",
-                                                   "Downloaded:",
-                                                   "Uploaded:",
-    ], HAlign::Center);
-
-    let (second_column_view, second_column) = column(&[
-                                                     "Seeds:",
-                                                     "Peers:",
-                                                     "Share Ratio:",
-                                                     "Availability:",
-                                                     "Seed Rank:",
-    ], HAlign::Center);
-
-    let (third_column_view, third_column) = column(&[
-                                                   "ETA Time:",
-                                                   "Active Time:",
-                                                   "Seeding Time:",
-                                                   "Last Transfer:",
-                                                   "Complete Seen:",
-    ], HAlign::Center);
-
-    let status = LinearLayout::horizontal()
-        .child(first_column_view)
-        .child(DummyView.fixed_width(3))
-        .child(second_column_view)
-        .child(DummyView.fixed_width(3))
-        .child(third_column_view);
-
-    let view = LinearLayout::vertical()
-        .child(progress_bar)
-        .child(status);
-
-    let data = StatusData {
-        state: state_send,
-        progress,
-        columns: [first_column, second_column, third_column],
-    };
-
-    (view, data)
-}

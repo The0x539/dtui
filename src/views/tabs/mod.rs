@@ -39,6 +39,15 @@ impl std::fmt::Display for Tab {
     }
 }
 
+#[async_trait]
+pub(self) trait TabData {
+    type V: View;
+
+    fn view() -> (Self::V, Self);
+
+    async fn update(&mut self, session: &Session, hash: InfoHash) -> deluge_rpc::Result<()>;
+}
+
 mod status;
 mod details;
 
@@ -93,8 +102,8 @@ impl TorrentTabsView {
         selected_recv: watch::Receiver<Option<InfoHash>>,
         shutdown: Arc<AsyncRwLock<()>>,
     ) -> Self {
-        let (status_tab, status_data) = status::status();
-        let (details_tab, details_data) = details::details();
+        let (status_tab, status_data) = status::StatusData::view();
+        let (details_tab, details_data) = details::DetailsData::view();
 
         let active_tab = Tab::Status;
         let (active_tab_send, active_tab_recv) = watch::channel(active_tab);
