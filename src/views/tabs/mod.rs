@@ -79,10 +79,10 @@ impl ViewThread for TorrentTabsViewThread {
         let active_tab = *self.active_tab_recv.borrow();
 
         match active_tab {
-            Tab::Status => self.status_data.update(&self.session, hash).await?,
-            Tab::Details => self.details_data.update(&self.session, hash).await?,
-            _ => (),
-        }
+            Tab::Status => self.status_data.update(&self.session, hash),
+            Tab::Details => self.details_data.update(&self.session, hash),
+            _ => Box::pin(async { deluge_rpc::Result::Ok(()) }),
+        }.await?;
 
         let new_selection = self.selected_recv.recv();
         let new_active_tab = self.active_tab_recv.recv();
