@@ -281,21 +281,31 @@ impl ViewThread for TorrentsViewThread {
     }
 
     async fn do_update(&mut self) -> deluge_rpc::Result<()> {
-        let now = time::Instant::now();
+        let deadline = time::Instant::now() + time::Duration::from_secs(1);
 
-        if let Ok(new_filters) = time::timeout_at(now, self.filters_recv.recv()).await {
-            self.replace_filters(new_filters.unwrap());
-        }
+        loop {
+            enum ToHandle { Filters(FilterDict), Event(deluge_rpc::Event) }
 
-        if let Ok(event) = time::timeout_at(now, self.events_recv.recv()).await {
-            match event.unwrap() {
-                deluge_rpc::Event::TorrentAdded(hash, _from_state) => {
-                    self.add_torrent_by_hash(hash).await?;
-                },
-                deluge_rpc::Event::TorrentRemoved(hash) => {
-                    self.remove_torrent(hash);
-                },
-                _ => (),
+            let filt_fut = self.filters_recv.recv();
+            let ev_fut = self.events_recv.recv();
+
+            let to_handle = tokio::select! {
+                new_filters = filt_fut => ToHandle::Filters(new_filters.unwrap()),
+                event = ev_fut => ToHandle::Event(event.unwrap()),
+                _ = time::delay_until(deadline) => break,
+            };
+
+            match to_handle {
+                ToHandle::Filters(new_filters) => self.replace_filters(new_filters),
+                ToHandle::Event(event) => match event {
+                    deluge_rpc::Event::TorrentAdded(hash, _from_state) => {
+                        self.add_torrent_by_hash(hash).await?;
+                    },
+                    deluge_rpc::Event::TorrentRemoved(hash) => {
+                        self.remove_torrent(hash);
+                    },
+                    _ => (),
+                }
             }
         }
 
@@ -305,8 +315,6 @@ impl ViewThread for TorrentsViewThread {
         while let Some(hash) = self.missed_torrents.pop() {
             self.add_torrent_by_hash(hash).await?;
         }
-
-        time::delay_until(now + time::Duration::from_secs(1)).await;
 
         Ok(())
     }
