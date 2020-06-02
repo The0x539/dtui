@@ -59,35 +59,22 @@ impl TabData for StatusData {
             .with_value(progress.clone())
             .with_label(move |val, (_min, _max)| format!("{} {}%", state_recv.borrow().as_str(), val));
 
-        let (first_column_view, first_column) = column(&[
-                                                       "Down Speed:",
-                                                       "Up Speed:",
-                                                       "Downloaded:",
-                                                       "Uploaded:",
-        ], HAlign::Center);
+        let (col1, col2, col3) = (
+            ["Down Speed:", "Up Speed:", "Downloaded:", "Uploaded:"],
+            ["Seeds:", "Peers:", "Share Ratio:", "Availability:", "Seed Rank:"],
+            ["ETA Time:", "Active Time:", "Seeding Time:", "Last Transfer:", "Complete Seen:"],
+        );
 
-        let (second_column_view, second_column) = column(&[
-                                                         "Seeds:",
-                                                         "Peers:",
-                                                         "Share Ratio:",
-                                                         "Availability:",
-                                                         "Seed Rank:",
-        ], HAlign::Center);
-
-        let (third_column_view, third_column) = column(&[
-                                                       "ETA Time:",
-                                                       "Active Time:",
-                                                       "Seeding Time:",
-                                                       "Last Transfer:",
-                                                       "Complete Seen:",
-        ], HAlign::Center);
+        let (col1_view, col1_content) = column(&col1, HAlign::Center);
+        let (col2_view, col2_content) = column(&col2, HAlign::Center);
+        let (col3_view, col3_content) = column(&col3, HAlign::Center);
 
         let status = LinearLayout::horizontal()
-            .child(first_column_view)
+            .child(col1_view)
             .child(DummyView.fixed_width(3))
-            .child(second_column_view)
+            .child(col2_view)
             .child(DummyView.fixed_width(3))
-            .child(third_column_view);
+            .child(col3_view);
 
         let view = LinearLayout::vertical()
             .child(progress_bar)
@@ -96,7 +83,7 @@ impl TabData for StatusData {
         let data = StatusData {
             state: state_send,
             progress,
-            columns: [first_column, second_column, third_column],
+            columns: [col1_content, col2_content, col3_content],
         };
 
         (view, data)
