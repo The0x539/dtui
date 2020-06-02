@@ -41,8 +41,8 @@ struct TorrentStatus {
 }
 
 pub(super) struct StatusData {
-    state: watch::Sender<TorrentState>,
-    progress: Counter,
+    progress_label_send: watch::Sender<String>,
+    progress_val: Counter,
 
     columns: [TextContent; 3],
 }
@@ -52,12 +52,13 @@ impl TabData for StatusData {
     type V = LinearLayout;
 
     fn view() -> (Self::V, Self) {
-        let (state_send, state_recv) = watch::channel(TorrentState::Downloading);
+        let (progress_label_send, progress_label_recv) = watch::channel(String::new());
 
-        let progress = Counter::new(0);
+        let progress_val = Counter::new(0);
         let progress_bar = ProgressBar::new()
-            .with_value(progress.clone())
-            .with_label(move |val, (_min, _max)| format!("{} {}%", state_recv.borrow().as_str(), val));
+            .max(10000)
+            .with_value(progress_val.clone())
+            .with_label(move |_, _| progress_label_recv.borrow().clone());
 
         let (col1, col2, col3) = (
             ["Down Speed:", "Up Speed:", "Downloaded:", "Uploaded:"],
@@ -81,8 +82,8 @@ impl TabData for StatusData {
             .child(status);
 
         let data = StatusData {
-            state: state_send,
-            progress,
+            progress_label_send,
+            progress_val,
             columns: [col1_content, col2_content, col3_content],
         };
 
@@ -92,8 +93,11 @@ impl TabData for StatusData {
     async fn update(&mut self, session: &Session, hash: InfoHash) -> deluge_rpc::Result<()> {
         let status = session.get_torrent_status::<TorrentStatus>(hash).await?;
 
-        self.progress.set(status.progress as usize);
-        self.state.broadcast(status.state).unwrap();
+        let mut ryu_buf = ryu::Buffer::new();
+
+        self.progress_val.set((status.progress * 100.0) as usize);
+        let label = format!("{} {}%", status.state, ryu_buf.format_finite(status.progress));
+        self.progress_label_send.broadcast(label).unwrap();
 
         self.columns[0].set_content([
             util::fmt_speed_pair(status.download_payload_rate, status.max_download_speed),
@@ -101,8 +105,6 @@ impl TabData for StatusData {
             util::fmt_pair(util::fmt_bytes, status.total_downloaded, Some(status.total_payload_download)),
             util::fmt_pair(util::fmt_bytes, status.total_uploaded, Some(status.total_payload_upload)),
         ].join("\n"));
-
-        let mut ryu_buf = ryu::Buffer::new();
 
         let nonnegative = |n: i64| (n >= 0).then_some(n as u64);
 
