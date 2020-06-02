@@ -19,14 +19,26 @@ use cursive::views::{
     TextContent,
 };
 
+#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
+pub(crate) enum Tab { Status, Details, Options, Files, Peers, Trackers }
+
+impl std::fmt::Display for Tab {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        std::fmt::Debug::fmt(self, f)
+    }
+}
+
 struct TorrentTabsViewThread {
     session: Arc<Session>,
     selected_recv: watch::Receiver<Option<InfoHash>>,
+    active_tab_recv: watch::Receiver<Tab>,
     status_data: StatusData,
 }
 
-pub struct TorrentTabsView {
-    view: TabPanel<&'static str>,
+pub(crate) struct TorrentTabsView {
+    view: TabPanel<Tab>,
+    active_tab: Tab,
+    active_tab_send: watch::Sender<Tab>,
     thread: JoinHandle<deluge_rpc::Result<()>>,
 }
 
@@ -78,6 +90,27 @@ impl ViewThread for TorrentTabsViewThread {
             None => return Ok(()),
         };
 
+        let active_tab = *self.active_tab_recv.borrow();
+
+        match active_tab {
+            Tab::Status => self.update_status_tab(hash).await?,
+            _ => (),
+        }
+
+        let new_selection = self.selected_recv.recv();
+        let new_active_tab = self.active_tab_recv.recv();
+        tokio::select! {
+            _ = new_selection => (),
+            _ = new_active_tab => (),
+            _ = time::delay_until(now + time::Duration::from_secs(1)) => (),
+        }
+
+        Ok(())
+    }
+}
+
+impl TorrentTabsViewThread {
+    async fn update_status_tab(&mut self, hash: InfoHash) -> deluge_rpc::Result<()> {
         let status = self.session.get_torrent_status::<TorrentStatus>(hash).await?;
 
         let s_d = &mut self.status_data;
@@ -114,12 +147,6 @@ impl ViewThread for TorrentTabsViewThread {
             util::ftime_or_dash(status.time_since_transfer),
             last_seen_complete,
         ].join("\n"));
-
-        let new_selection = self.selected_recv.recv();
-        tokio::select! {
-            _ = new_selection => (),
-            _ = time::delay_until(now + time::Duration::from_secs(1)) => (),
-        }
 
         Ok(())
     }
@@ -192,12 +219,15 @@ fn status() -> (impl View, StatusData) {
 }
 
 impl TorrentTabsView {
-    pub fn new(
+    pub(crate) fn new(
         session: Arc<Session>,
         selected_recv: watch::Receiver<Option<InfoHash>>,
         shutdown: Arc<AsyncRwLock<()>>,
     ) -> Self {
         let (status_tab, status_data) = status();
+
+        let active_tab = Tab::Status;
+        let (active_tab_send, active_tab_recv) = watch::channel(active_tab);
 
         let details_tab = TextView::new("Torrent details (todo)");
         let options_tab = TextView::new("Torrent options (todo)");
@@ -208,21 +238,22 @@ impl TorrentTabsView {
         let thread_obj = TorrentTabsViewThread {
             session,
             selected_recv,
+            active_tab_recv,
             status_data,
         };
         let thread = task::spawn(thread_obj.run(shutdown));
 
         let view = TabPanel::new()
-            .with_tab("Status", status_tab)
-            .with_tab("Details", details_tab)
-            .with_tab("Options", options_tab)
-            .with_tab("Files", files_tab)
-            .with_tab("Peers", peers_tab)
-            .with_tab("Trackers", trackers_tab)
+            .with_tab(Tab::Status, status_tab)
+            .with_tab(Tab::Details, details_tab)
+            .with_tab(Tab::Options, options_tab)
+            .with_tab(Tab::Files, files_tab)
+            .with_tab(Tab::Peers, peers_tab)
+            .with_tab(Tab::Trackers, trackers_tab)
             //.with_bar_placement(cursive_tabs::Placement::VerticalLeft)
-            .with_active_tab("Status").unwrap();
+            .with_active_tab(active_tab).unwrap();
 
-        Self { view, thread }
+        Self { view, active_tab, active_tab_send, thread }
     }
 
     pub fn take_thread(&mut self) -> JoinHandle<deluge_rpc::Result<()>> {
@@ -232,6 +263,20 @@ impl TorrentTabsView {
     }
 }
 
+use cursive::event::{Event, EventResult};
+
 impl ViewWrapper for TorrentTabsView {
-    cursive::wrap_impl!(self.view: TabPanel<&'static str>);
+    cursive::wrap_impl!(self.view: TabPanel<Tab>);
+
+    fn wrap_on_event(&mut self, event: Event) -> EventResult {
+        let old_tab = self.active_tab;
+        let result = self.view.on_event(event);
+        if let Some(new_tab) = self.view.active_tab() {
+            if new_tab != old_tab {
+                self.active_tab = new_tab;
+                self.active_tab_send.broadcast(new_tab).unwrap();
+            }
+        }
+        result
+    }
 }
