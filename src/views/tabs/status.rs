@@ -96,10 +96,10 @@ impl TabData for StatusData {
         self.state.broadcast(status.state).unwrap();
 
         self.columns[0].set_content([
-                                    util::fmt_speed_pair(status.download_payload_rate, status.max_download_speed),
-                                    util::fmt_speed_pair(status.upload_payload_rate, status.max_upload_speed),
-                                    util::fmt_pair(util::fmt_bytes, status.total_downloaded, Some(status.total_payload_download)),
-                                    util::fmt_pair(util::fmt_bytes, status.total_uploaded, Some(status.total_payload_upload)),
+            util::fmt_speed_pair(status.download_payload_rate, status.max_download_speed),
+            util::fmt_speed_pair(status.upload_payload_rate, status.max_upload_speed),
+            util::fmt_pair(util::fmt_bytes, status.total_downloaded, Some(status.total_payload_download)),
+            util::fmt_pair(util::fmt_bytes, status.total_uploaded, Some(status.total_payload_upload)),
         ].join("\n"));
 
         let mut ryu_buf = ryu::Buffer::new();
@@ -107,19 +107,19 @@ impl TabData for StatusData {
         let nonnegative = |n: i64| (n >= 0).then_some(n as u64);
 
         self.columns[1].set_content([
-                                    util::fmt_pair(|x| x, status.num_seeds, nonnegative(status.total_seeds)),
-                                    util::fmt_pair(|x| x, status.num_peers, nonnegative(status.total_peers)),
-                                    ryu_buf.format(status.ratio).to_owned(),
-                                    ryu_buf.format(status.availability).to_owned(),
-                                    status.seed_rank.to_string(),
+            util::fmt_pair(|x| x, status.num_seeds, nonnegative(status.total_seeds)),
+            util::fmt_pair(|x| x, status.num_peers, nonnegative(status.total_peers)),
+            ryu_buf.format(status.ratio).to_owned(),
+            ryu_buf.format(status.availability).to_owned(),
+            status.seed_rank.to_string(),
         ].join("\n"));
 
         self.columns[2].set_content([
-                                    util::ftime_or_dash(status.eta),
-                                    util::ftime_or_dash(status.active_time),
-                                    util::ftime_or_dash(status.seeding_time),
-                                    util::ftime_or_dash(status.time_since_transfer),
-                                    util::fdate_or_dash(status.last_seen_complete),
+            util::ftime_or_dash(status.eta),
+            util::ftime_or_dash(status.active_time),
+            util::ftime_or_dash(status.seeding_time),
+            util::ftime_or_dash(status.time_since_transfer),
+            util::fdate_or_dash(status.last_seen_complete),
         ].join("\n"));
 
         Ok(())
