@@ -137,17 +137,12 @@ impl TorrentTabsViewThread {
             status.seed_rank.to_string(),
         ].join("\n"));
 
-        let last_seen_complete = match status.last_seen_complete {
-            0 => String::from("-"),
-            t => epochs::unix(t).unwrap().to_string(),
-        };
-
         s_d.columns[2].set_content([
             util::ftime_or_dash(status.eta),
             util::ftime_or_dash(status.active_time),
             util::ftime_or_dash(status.seeding_time),
             util::ftime_or_dash(status.time_since_transfer),
-            last_seen_complete,
+            util::fdate_or_dash(status.last_seen_complete),
         ].join("\n"));
 
         Ok(())

@@ -85,3 +85,15 @@ pub fn ftime_or_dash(secs: i64) -> String {
         ftime(secs as u64)
     }
 }
+
+pub fn fdate(t: i64) -> String {
+    epochs::unix(t).unwrap().to_string()
+}
+
+pub fn fdate_or_dash(t: i64) -> String {
+    if t == 0 || t == -1 {
+        String::from("-")
+    } else {
+        fdate(t)
+    }
+}
