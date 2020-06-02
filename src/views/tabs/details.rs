@@ -1,10 +1,11 @@
 use super::{column, TabData};
 use deluge_rpc::{Query, InfoHash, Session};
 use serde::Deserialize;
-use cursive::views::{DummyView, TextContent, LinearLayout, TextView};
+use cursive::views::{TextContent, LinearLayout, TextView};
 use cursive::align::HAlign;
 use crate::util;
 use async_trait::async_trait;
+use static_assertions::const_assert_eq;
 
 #[derive(Debug, Clone, Deserialize, Query)]
 struct TorrentDetails {
@@ -24,6 +25,7 @@ pub(super) struct DetailsData {
     top: TextContent,
     left: TextContent,
     right: TextContent,
+    bottom: TextContent,
 }
 
 #[async_trait]
@@ -32,26 +34,29 @@ impl TabData for DetailsData {
 
     fn view() -> (Self::V, Self) {
         let (top_view, top) = column(&["Name:", "Download Folder:"], HAlign::Left);
-        let (left_view, left) = column(&[
-            "Total Size:",
-            "Total Files:",
-            "Hash:",
-            "Created By:",
-            "Comments:",
-        ], HAlign::Left);
+        let (left_view, left) = column(&["Total Size:", "Total Files:", "Hash:"], HAlign::Left);
         let (right_view, right) = column(&["Added:", "Completed:", "Pieces:"], HAlign::Left);
+        let (bottom_view, bottom) = column(&["Created By:", "Comments:"], HAlign::Left);
 
-        let bottom_view = LinearLayout::horizontal()
+        // We know ahead of time how wide the biggest thing on the left side will be. How fortunate.
+        // Unfortunately, the TextView associated with `left` (a TextContent struct) is hard to access.
+        // Rather than figuring that out, likely complicating `column()`'s interface,
+        // we can just set `left`'s content to something just as wide as its eventual real content.
+        const BLANK_INFOHASH: &'static str = "                                        ";
+        const_assert_eq!(BLANK_INFOHASH.len(), 40);
+        left.set_content(BLANK_INFOHASH);
+
+        let middle_view = LinearLayout::horizontal()
             .child(left_view)
-            .child(TextView::new([" │ "; 3].join("\n")))
+            .child(TextView::new(" ╷ \n │ \n ╵ "))
             .child(right_view);
 
         let view = LinearLayout::vertical()
             .child(top_view)
-            .child(DummyView)
+            .child(middle_view)
             .child(bottom_view);
 
-        let data = DetailsData { top, left, right };
+        let data = DetailsData { top, left, right, bottom };
 
         (view, data)
     }
@@ -68,14 +73,17 @@ impl TabData for DetailsData {
             util::fmt_bytes(details.total_size),
             details.num_files.to_string(),
             hash.to_string(),
-            details.creator,
-            details.comment,
         ].join("\n"));
 
         self.right.set_content([
             util::fdate(details.time_added),
             util::fdate_or_dash(details.completed_time),
             format!("{} ({})", details.num_pieces, util::fmt_bytes(details.piece_length).replace(".0", "")),
+        ].join("\n"));
+
+        self.bottom.set_content([
+            details.creator,
+            details.comment,
         ].join("\n"));
 
         Ok(())

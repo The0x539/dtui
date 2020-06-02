@@ -16,7 +16,7 @@ use cursive::views::{
     TextContent,
 };
 
-fn column(rows: &[&str], h_align: HAlign) -> (impl View, TextContent) {
+fn column(rows: &[&str], h_align: HAlign) -> (LinearLayout, TextContent) {
     let labels = TextView::new(rows.join("\n")).effect(cursive::theme::Effect::Bold);
 
     let content = TextContent::new("");

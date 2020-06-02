@@ -17,6 +17,7 @@ fnv = "1.0.7"
 ryu = "1.0.4"
 async-trait = "0.1.31"
 epochs = "0.2.4"
+static_assertions = "1.1.0"
 
 [patch.crates-io]
 deluge-rpc-macro = { path = "../deluge-rpc/experiment/deluge-rpc-macro" }
