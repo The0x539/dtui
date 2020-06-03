@@ -6,8 +6,9 @@ use cursive::Printer;
 use cursive::vec::Vec2;
 use cursive::view::ViewWrapper;
 use uuid::Uuid;
-use cursive::event::{Event, EventResult, Callback};
+use cursive::event::{Event, EventResult, Callback, AnyCb};
 use cursive::align::HAlign;
+use cursive::view::Selector;
 use std::rc::Rc;
 use cursive::utils::markup::StyledString;
 
@@ -85,13 +86,14 @@ impl Spinnable for f64 {
 pub(crate) struct SpinView<T: Spinnable, B: RangeBounds<T>> {
     bounds: B,
     val: T,
+    own_id: String,
     edit_id: String,
     panel: Panel<LinearLayout>,
     on_modify: Option<Box<dyn Fn(T)>>,
 }
 
 impl<T: Spinnable, B: RangeBounds<T>> SpinView<T, B> where Self: 'static {
-    pub(crate) fn new(title: Option<String>, bounds: B) -> NamedView<Self> {
+    pub(crate) fn new(title: Option<String>, bounds: B) -> Self {
         
         let val = T::default();
 
@@ -134,7 +136,9 @@ impl<T: Spinnable, B: RangeBounds<T>> SpinView<T, B> where Self: 'static {
             panel.set_title_position(HAlign::Left);
         }
 
-        Self { bounds, val, edit_id, panel, on_modify: None }.with_name(id.as_ref())
+        let own_id = String::clone(id.as_ref());
+
+        Self { bounds, val, own_id, edit_id, panel, on_modify: None }
     }
 
     pub fn get_val(&self) -> T { self.val }
@@ -236,5 +240,12 @@ where Self: 'static {
         }
 
         self.panel.on_event(event)
+    }
+
+    fn wrap_call_on_any(&mut self, sel: &Selector, cb: AnyCb) {
+        match sel {
+            Selector::Name(name) if name == &self.own_id => cb(self),
+            _ => cb(&mut self.panel)
+        }
     }
 }

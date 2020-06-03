@@ -3,7 +3,7 @@
 use super::{column, TabData};
 use deluge_rpc::{Query, InfoHash, Session};
 use serde::Deserialize;
-use cursive::views::{TextContent, LinearLayout, TextView, NamedView};
+use cursive::views::{TextContent, LinearLayout, TextView};
 use cursive::align::HAlign;
 use crate::util;
 use async_trait::async_trait;
@@ -21,18 +21,15 @@ pub(super) struct OptionsData {
 
 #[async_trait]
 impl TabData for OptionsData {
-    type V = NamedView<SpinView<i64, std::ops::Range<i64>>>;
+    type V = SpinView<i64, std::ops::Range<i64>>;
 
     fn view() -> (Self::V, Self) {
         let (test_val_send, test_val_recv) = watch::channel(0i64);
 
         let mut view = SpinView::new(Some(String::from("test")), -1..i64::MAX);
 
-        {
-            let mut v = view.get_mut();
-            v.set_on_modify(move |v| test_val_send.broadcast(v).unwrap());
-            v.set_label("kiB/s");
-        }
+        view.set_on_modify(move |v| test_val_send.broadcast(v).unwrap());
+        view.set_label("kiB/s");
 
         let data = OptionsData { test_val_recv };
         (view, data)
