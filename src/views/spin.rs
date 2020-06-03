@@ -245,7 +245,7 @@ where Self: 'static {
     fn wrap_call_on_any(&mut self, sel: &Selector, cb: AnyCb) {
         match sel {
             Selector::Name(name) if name == &self.own_id => cb(self),
-            _ => cb(&mut self.panel)
+            sel => self.panel.call_on_any(sel, cb)
         }
     }
 }
