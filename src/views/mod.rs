@@ -3,6 +3,8 @@ pub(crate) mod torrents;
 pub(crate) mod filters;
 pub(crate) mod statusbar;
 
+pub(crate) mod spin;
+
 pub(crate) mod tabs;
 
 // traits

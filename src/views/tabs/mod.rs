@@ -50,6 +50,7 @@ pub(self) trait TabData {
 
 mod status;
 mod details;
+mod options;
 
 struct TorrentTabsViewThread {
     session: Arc<Session>,
@@ -57,6 +58,7 @@ struct TorrentTabsViewThread {
     active_tab_recv: watch::Receiver<Tab>,
     status_data: status::StatusData,
     details_data: details::DetailsData,
+    options_data: options::OptionsData,
 }
 
 pub(crate) struct TorrentTabsView {
@@ -80,6 +82,7 @@ impl ViewThread for TorrentTabsViewThread {
             match active_tab {
                 Tab::Status => self.status_data.update(&self.session, hash),
                 Tab::Details => self.details_data.update(&self.session, hash),
+                Tab::Options => self.options_data.update(&self.session, hash),
                 _ => Box::pin(async { deluge_rpc::Result::Ok(()) }),
             }.await?;
         }
@@ -104,11 +107,11 @@ impl TorrentTabsView {
     ) -> Self {
         let (status_tab, status_data) = status::StatusData::view();
         let (details_tab, details_data) = details::DetailsData::view();
+        let (options_tab, options_data) = options::OptionsData::view();
 
         let active_tab = Tab::Status;
         let (active_tab_send, active_tab_recv) = watch::channel(active_tab);
 
-        let options_tab = TextView::new("Torrent options (todo)");
         let files_tab = TextView::new("Torrent files (todo)");
         let peers_tab = TextView::new("Torrent peers (todo)");
         let trackers_tab = TextView::new("Torrent trackers (todo)");
@@ -119,6 +122,7 @@ impl TorrentTabsView {
             active_tab_recv,
             status_data,
             details_data,
+            options_data,
         };
         let thread = task::spawn(thread_obj.run(shutdown));
 

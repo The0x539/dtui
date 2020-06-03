@@ -18,9 +18,11 @@ ryu = "1.0.4"
 async-trait = "0.1.31"
 epochs = "0.2.4"
 static_assertions = "1.1.0"
+uuid = { version = "0.8.1", features = ["v4"] }
 
 [patch.crates-io]
 deluge-rpc-macro = { path = "../deluge-rpc/experiment/deluge-rpc-macro" }
+cursive-tabs = { path = "experiment/cursive-tabs" }
 
 [profile.dev]
 panic = "abort"
