@@ -72,21 +72,17 @@ impl ViewThread for TorrentTabsViewThread {
         let tick = time::Instant::now() + time::Duration::from_secs(1);
 
         let opt_hash = *self.selected_recv.borrow();
-        let hash = match opt_hash {
-            Some(hash) => hash,
-            None => {
-                time::delay_until(tick).await;
-                return Ok(());
-            },
-        };
 
-        let active_tab = *self.active_tab_recv.borrow();
+        if let Some(hash) = opt_hash {
 
-        match active_tab {
-            Tab::Status => self.status_data.update(&self.session, hash),
-            Tab::Details => self.details_data.update(&self.session, hash),
-            _ => Box::pin(async { deluge_rpc::Result::Ok(()) }),
-        }.await?;
+            let active_tab = *self.active_tab_recv.borrow();
+
+            match active_tab {
+                Tab::Status => self.status_data.update(&self.session, hash),
+                Tab::Details => self.details_data.update(&self.session, hash),
+                _ => Box::pin(async { deluge_rpc::Result::Ok(()) }),
+            }.await?;
+        }
 
         let new_selection = self.selected_recv.recv();
         let new_active_tab = self.active_tab_recv.recv();
