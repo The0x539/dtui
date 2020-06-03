@@ -9,12 +9,14 @@ use crate::util;
 use async_trait::async_trait;
 use static_assertions::const_assert_eq;
 use crate::views::spin::SpinView;
+use tokio::sync::watch;
 
 #[derive(Debug, Clone, Deserialize, Query)]
 struct TorrentOptions {
 }
 
 pub(super) struct OptionsData {
+    test_val_recv: watch::Receiver<i64>,
 }
 
 #[async_trait]
@@ -22,8 +24,13 @@ impl TabData for OptionsData {
     type V = NamedView<SpinView<i64, std::ops::Range<i64>>>;
 
     fn view() -> (Self::V, Self) {
-        let view = SpinView::new(Some(String::from("test")), -1..i64::MAX);
-        let data = OptionsData {};
+        let (test_val_send, test_val_recv) = watch::channel(0i64);
+
+        let mut view = SpinView::new(Some(String::from("test")), -1..i64::MAX);
+
+        view.get_mut().set_on_modify(move |v| test_val_send.broadcast(v).unwrap());
+
+        let data = OptionsData { test_val_recv };
         (view, data)
     }
 
