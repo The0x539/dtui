@@ -1,7 +1,7 @@
 #![allow(unused)]
 
 use cursive::traits::*;
-use cursive::views::{EditView, LinearLayout, TextView, Button, NamedView, Panel};
+use cursive::views::{EditView, LinearLayout, TextView, Button, NamedView, Panel, PaddedView};
 use cursive::Printer;
 use cursive::vec::Vec2;
 use cursive::view::ViewWrapper;
@@ -9,9 +9,10 @@ use uuid::Uuid;
 use cursive::event::{Event, EventResult, Callback};
 use cursive::align::HAlign;
 use std::rc::Rc;
+use cursive::utils::markup::StyledString;
 
 use std::{
-    convert::From,
+    convert::{From, Into},
     cmp::PartialOrd,
     cmp::PartialEq,
     ops::{RangeBounds, Bound},
@@ -86,6 +87,7 @@ pub(crate) struct SpinView<T: Spinnable, B: RangeBounds<T>> {
     val: T,
     edit_id: String,
     panel: Panel<LinearLayout>,
+    on_modify: Option<Box<dyn Fn(T)>>,
 }
 
 impl<T: Spinnable, B: RangeBounds<T>> SpinView<T, B> where Self: 'static {
@@ -104,7 +106,7 @@ impl<T: Spinnable, B: RangeBounds<T>> SpinView<T, B> where Self: 'static {
                 s.call_on_name(&id0, |v: &mut Self| v.parse_content(content)).unwrap();
             })
             .on_submit(move |s, content| {
-                let cb = s.call_on_name(&id1, |v: &mut Self| v.set_val(v.val)).unwrap();
+                let cb = s.call_on_name(&id1, Self::submit).unwrap();
                 cb(s)
             });
 
@@ -132,7 +134,7 @@ impl<T: Spinnable, B: RangeBounds<T>> SpinView<T, B> where Self: 'static {
             panel.set_title_position(HAlign::Left);
         }
 
-        Self { bounds, val, edit_id, panel }.with_name(id.as_ref())
+        Self { bounds, val, edit_id, panel, on_modify: None }.with_name(id.as_ref())
     }
 
     pub fn get_val(&self) -> T { self.val }
@@ -140,6 +142,22 @@ impl<T: Spinnable, B: RangeBounds<T>> SpinView<T, B> where Self: 'static {
     pub fn set_val(&mut self, new_val: T) -> Callback {
         self.val = new_val;
         self.call_on_edit_view(|v| v.set_content(new_val.to_string()))
+    }
+
+    pub fn set_on_modify<F: Fn(T) + 'static>(&mut self, on_modify: F) {
+        self.on_modify = Some(Box::new(on_modify));
+    }
+
+    pub fn set_label<S: Into<StyledString>>(&mut self, label: S) {
+        let linear = self.panel.get_inner_mut();
+
+        if linear.len() == 6 {
+            linear.remove_child(1);
+        }
+
+        assert_eq!(linear.len(), 5);
+
+        linear.insert_child(1, PaddedView::lrtb(1, 1, 0, 0, TextView::new(label)));
     }
 
     fn call_on_edit_view<F: FnOnce(&mut EditView) -> R, R>(&mut self, f: F) -> R {
@@ -166,11 +184,20 @@ impl<T: Spinnable, B: RangeBounds<T>> SpinView<T, B> where Self: 'static {
     }
 
     fn decr(&mut self) -> Callback {
-        self.set_val(self.val.clamped_decr(&self.bounds))
+        let new_val = self.val.clamped_decr(&self.bounds);
+        self.on_modify.as_ref().map(|f| f(new_val));
+        self.set_val(new_val)
     }
 
     fn incr(&mut self) -> Callback {
-        self.set_val(self.val.clamped_incr(&self.bounds))
+        let new_val = self.val.clamped_incr(&self.bounds);
+        self.on_modify.as_ref().map(|f| f(new_val));
+        self.set_val(new_val)
+    }
+
+    fn submit(&mut self) -> Callback {
+        self.on_modify.as_ref().map(|f| f(self.val));
+        self.set_val(self.val)
     }
 }
 

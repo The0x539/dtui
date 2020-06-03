@@ -28,7 +28,11 @@ impl TabData for OptionsData {
 
         let mut view = SpinView::new(Some(String::from("test")), -1..i64::MAX);
 
-        view.get_mut().set_on_modify(move |v| test_val_send.broadcast(v).unwrap());
+        {
+            let mut v = view.get_mut();
+            v.set_on_modify(move |v| test_val_send.broadcast(v).unwrap());
+            v.set_label("kiB/s");
+        }
 
         let data = OptionsData { test_val_recv };
         (view, data)
