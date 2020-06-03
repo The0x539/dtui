@@ -69,11 +69,15 @@ pub(crate) struct TorrentTabsView {
 #[async_trait]
 impl ViewThread for TorrentTabsViewThread {
     async fn do_update(&mut self) -> deluge_rpc::Result<()> {
-        let now = time::Instant::now();
+        let tick = time::Instant::now() + time::Duration::from_secs(1);
 
-        let hash = match *self.selected_recv.borrow() {
+        let opt_hash = *self.selected_recv.borrow();
+        let hash = match opt_hash {
             Some(hash) => hash,
-            None => return Ok(()),
+            None => {
+                time::delay_until(tick).await;
+                return Ok(());
+            },
         };
 
         let active_tab = *self.active_tab_recv.borrow();
@@ -89,7 +93,7 @@ impl ViewThread for TorrentTabsViewThread {
         tokio::select! {
             _ = new_selection => (),
             _ = new_active_tab => (),
-            _ = time::delay_until(now + time::Duration::from_secs(1)) => (),
+            _ = time::delay_until(tick) => (),
         }
 
         Ok(())
