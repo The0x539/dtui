@@ -93,7 +93,7 @@ impl<T: Spinnable, B: RangeBounds<T>> SpinView<T, B> where Self: 'static {
         
         let val = T::default();
 
-        let id = Uuid::new_v4().to_string();
+        let id = Rc::new(Uuid::new_v4().to_string());
         let (id0, id1, id2, id3) = (id.clone(), id.clone(), id.clone(), id.clone());
 
         let edit_id = Uuid::new_v4().to_string();
@@ -132,7 +132,7 @@ impl<T: Spinnable, B: RangeBounds<T>> SpinView<T, B> where Self: 'static {
             panel.set_title_position(HAlign::Left);
         }
 
-        Self { bounds, val, edit_id, panel }.with_name(id)
+        Self { bounds, val, edit_id, panel }.with_name(id.as_ref())
     }
 
     pub fn get_val(&self) -> T { self.val }
