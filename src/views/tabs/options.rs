@@ -3,7 +3,8 @@
 use super::{column, TabData};
 use deluge_rpc::{Query, InfoHash, Session};
 use serde::Deserialize;
-use cursive::views::{TextContent, LinearLayout, TextView};
+use cursive::views::{TextContent, LinearLayout, TextView, Checkbox, DummyView, Button};
+use cursive::traits::Resizable;
 use cursive::align::HAlign;
 use crate::util;
 use async_trait::async_trait;
@@ -16,22 +17,44 @@ struct TorrentOptions {
 }
 
 pub(super) struct OptionsData {
-    test_val_recv: watch::Receiver<i64>,
 }
 
 #[async_trait]
 impl TabData for OptionsData {
-    type V = SpinView<i64, std::ops::Range<i64>>;
+    type V = LinearLayout;
 
     fn view() -> (Self::V, Self) {
-        let (test_val_send, test_val_recv) = watch::channel(0i64);
+        fn labeled_checkbox(label: &str) -> LinearLayout {
+            // TODO: make this into a full-fledged view class
+            // that way, it can have the full Checkbox interface
+            LinearLayout::horizontal()
+                .child(Checkbox::new())
+                .child(TextView::new(label))
+        }
 
-        let mut view = SpinView::new(Some(String::from("test")), -1..i64::MAX);
+        let col1 = LinearLayout::vertical()
+            .child(SpinView::new(Some("Download Speed"), -1.0f64..).with_label("kiB/s"))
+            .child(SpinView::new(Some("Upload Speed"), -1.0f64..).with_label("kiB/s"));
 
-        view.set_on_modify(move |v| test_val_send.broadcast(v).unwrap());
-        view.set_label("kiB/s");
+        let col2 = LinearLayout::vertical()
+            .child(SpinView::new(Some("Connections"), -1i64..))
+            .child(SpinView::new(Some("Upload Slots"), -1i64..));
 
-        let data = OptionsData { test_val_recv };
+        let col3 = LinearLayout::vertical()
+            .child(labeled_checkbox("Auto Managed"))
+            .child(labeled_checkbox("Stop seed at ratio:"))
+            .child(SpinView::new(None, 0.0f64..))
+            .child(labeled_checkbox("Remove at ratio"))
+            .child(Button::new("Apply", |_| ()));
+
+        let view = LinearLayout::horizontal()
+            .child(col1)
+            .child(DummyView.fixed_width(2))
+            .child(col2)
+            .child(DummyView.fixed_width(2))
+            .child(col3);
+
+        let data = OptionsData {  };
         (view, data)
     }
 

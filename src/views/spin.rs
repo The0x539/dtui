@@ -93,7 +93,7 @@ pub(crate) struct SpinView<T: Spinnable, B: RangeBounds<T>> {
 }
 
 impl<T: Spinnable, B: RangeBounds<T>> SpinView<T, B> where Self: 'static {
-    pub(crate) fn new(title: Option<String>, bounds: B) -> Self {
+    pub(crate) fn new(title: Option<&str>, bounds: B) -> Self {
         
         let val = T::default();
 
@@ -148,8 +148,13 @@ impl<T: Spinnable, B: RangeBounds<T>> SpinView<T, B> where Self: 'static {
         self.call_on_edit_view(|v| v.set_content(new_val.to_string()))
     }
 
-    pub fn set_on_modify<F: Fn(T) + 'static>(&mut self, on_modify: F) {
-        self.on_modify = Some(Box::new(on_modify));
+    pub fn set_on_modify<F: Fn(T) + 'static>(&mut self, cb: F) {
+        self.on_modify = Some(Box::new(cb));
+    }
+
+    pub fn on_modify<F: Fn(T) + 'static>(mut self, cb: F) -> Self {
+        self.set_on_modify(cb);
+        self
     }
 
     pub fn set_label<S: Into<StyledString>>(&mut self, label: S) {
@@ -162,6 +167,11 @@ impl<T: Spinnable, B: RangeBounds<T>> SpinView<T, B> where Self: 'static {
         assert_eq!(linear.len(), 5);
 
         linear.insert_child(1, PaddedView::lrtb(1, 1, 0, 0, TextView::new(label)));
+    }
+
+    pub fn with_label<S: Into<StyledString>>(mut self, label: S) -> Self {
+        self.set_label(label);
+        self
     }
 
     fn call_on_edit_view<F: FnOnce(&mut EditView) -> R, R>(&mut self, f: F) -> R {
