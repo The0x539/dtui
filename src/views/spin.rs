@@ -1,7 +1,7 @@
 #![allow(unused)]
 
 use cursive::traits::*;
-use cursive::views::{EditView, LinearLayout, TextView, Button, NamedView, Panel, PaddedView};
+use cursive::views::{EditView, LinearLayout, TextView, Button, NamedView, Panel, PaddedView, DummyView};
 use cursive::Printer;
 use cursive::vec::Vec2;
 use cursive::view::ViewWrapper;
@@ -88,12 +88,12 @@ pub(crate) struct SpinView<T: Spinnable, B: RangeBounds<T>> {
     val: T,
     own_id: String,
     edit_id: String,
-    panel: Panel<LinearLayout>,
+    inner: LinearLayout,
     on_modify: Option<Box<dyn Fn(T)>>,
 }
 
 impl<T: Spinnable, B: RangeBounds<T>> SpinView<T, B> where Self: 'static {
-    pub(crate) fn new(title: Option<&str>, bounds: B) -> Self {
+    pub(crate) fn new(title: Option<&str>, label: Option<&str>, bounds: B) -> Self {
         
         let val = T::default();
 
@@ -122,23 +122,24 @@ impl<T: Spinnable, B: RangeBounds<T>> SpinView<T, B> where Self: 'static {
             cb(s)
         });
 
-        let views = LinearLayout::horizontal()
-            .child(edit.with_name(&edit_id).full_width())
-            .child(TextView::new("│"))
-            .child(decr)
-            .child(TextView::new("│"))
-            .child(incr);
-
-        let mut panel = Panel::new(views);
-
+        let mut inner = LinearLayout::horizontal();
         if let Some(title) = title {
-            panel.set_title(title);
-            panel.set_title_position(HAlign::Left);
+            let mut v = TextView::new(title).no_wrap();
+            v.append(": ");
+            inner.add_child(v);
         }
+        inner.add_child(edit.with_name(&edit_id).full_width());
+        inner.add_child(DummyView);
+        if let Some(label) = label {
+            inner.add_child(TextView::new(label).no_wrap());
+            inner.add_child(DummyView);
+        }
+        inner.add_child(decr);
+        inner.add_child(incr);
 
         let own_id = String::clone(id.as_ref());
 
-        Self { bounds, val, own_id, edit_id, panel, on_modify: None }
+        Self { bounds, val, own_id, edit_id, inner, on_modify: None }
     }
 
     pub fn get_val(&self) -> T { self.val }
@@ -157,25 +158,8 @@ impl<T: Spinnable, B: RangeBounds<T>> SpinView<T, B> where Self: 'static {
         self
     }
 
-    pub fn set_label<S: Into<StyledString>>(&mut self, label: S) {
-        let linear = self.panel.get_inner_mut();
-
-        if linear.len() == 6 {
-            linear.remove_child(1);
-        }
-
-        assert_eq!(linear.len(), 5);
-
-        linear.insert_child(1, PaddedView::lrtb(1, 1, 0, 0, TextView::new(label)));
-    }
-
-    pub fn with_label<S: Into<StyledString>>(mut self, label: S) -> Self {
-        self.set_label(label);
-        self
-    }
-
     fn call_on_edit_view<F: FnOnce(&mut EditView) -> R, R>(&mut self, f: F) -> R {
-        self.panel.call_on_name(&self.edit_id, f).unwrap()
+        self.inner.call_on_name(&self.edit_id, f).unwrap()
     }
 
     fn get_content(&mut self) -> Rc<String> {
@@ -217,23 +201,10 @@ impl<T: Spinnable, B: RangeBounds<T>> SpinView<T, B> where Self: 'static {
 
 impl<T: Spinnable, B: RangeBounds<T>> ViewWrapper for SpinView<T, B>
 where Self: 'static {
-    cursive::wrap_impl!(self.panel: Panel<LinearLayout>);
-
-    fn wrap_required_size(&mut self, mut constraint: Vec2) -> Vec2 {
-        constraint.y = 3; // no tallness allowed
-        self.panel.required_size(constraint)
-    }
-
-    fn wrap_draw(&self, printer: &Printer) {
-        self.panel.draw(printer);
-
-        printer.print((printer.size.x - 9, 0), "┬───┬");
-        //                                      │ + │
-        printer.print((printer.size.x - 9, 2), "┴───┴");
-    }
+    cursive::wrap_impl!(self.inner: LinearLayout);
 
     fn wrap_on_event(&mut self, event: Event) -> EventResult {
-        if self.panel.get_inner().get_focus_index() == 0 {
+        if self.inner.get_focus_index() == 0 {
             if let Event::Char(ch) = event {
                 match ch {
                     '0'..='9' => (),
@@ -249,13 +220,13 @@ where Self: 'static {
             }
         }
 
-        self.panel.on_event(event)
+        self.inner.on_event(event)
     }
 
     fn wrap_call_on_any(&mut self, sel: &Selector, cb: AnyCb) {
         match sel {
             Selector::Name(name) if name == &self.own_id => cb(self),
-            sel => self.panel.call_on_any(sel, cb)
+            sel => self.inner.call_on_any(sel, cb)
         }
     }
 }

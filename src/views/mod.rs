@@ -4,6 +4,7 @@ pub(crate) mod filters;
 pub(crate) mod statusbar;
 
 pub(crate) mod spin;
+pub(crate) mod linear_panel;
 
 pub(crate) mod tabs;
 
