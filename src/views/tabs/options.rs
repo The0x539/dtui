@@ -12,12 +12,27 @@ use static_assertions::const_assert_eq;
 use crate::views::spin::SpinView;
 use tokio::sync::watch;
 use crate::views::linear_panel::LinearPanel;
+use std::sync::{Arc, RwLock};
 
-#[derive(Debug, Clone, Deserialize, Query)]
+#[derive(Default, Debug, Clone, Deserialize, Query)]
 struct TorrentOptions {
+    max_download_speed: f64,
+    max_upload_speed: f64,
+    max_connections: i64,
+    max_upload_slots: i64,
+
+    auto_managed: bool,
+    stop_at_ratio: bool,
+    stop_ratio: f64,
+    remove_at_ratio: bool,
 }
 
+type OptionsDiff = <TorrentOptions as Query>::Diff;
+
+#[derive(Default)]
 pub(super) struct OptionsData {
+    current_options: TorrentOptions,
+    pending_options: Arc<RwLock<Option<OptionsDiff>>>,
 }
 
 #[async_trait]
@@ -33,11 +48,43 @@ impl TabData for OptionsData {
                 .child(TextView::new(label))
         }
 
-        let bandwidth_limits = LinearPanel::vertical()
-            .child(SpinView::new(Some("Download Speed"), Some("kiB/s"), -1.0f64..), None)
-            .child(SpinView::new(Some("Upload Speed"), Some("kiB/s"), -1.0f64..), None)
-            .child(SpinView::new(Some("Connections"), None, -1i64..), None)
-            .child(SpinView::new(Some("Upload Slots"), None, -1i64..), None);
+        let pending_options = Arc::new(RwLock::new(None));
+
+        macro_rules! set {
+            ($obj:ident.$field:ident) => {
+                {
+                    let cloned_arc = $obj.clone();
+                    move |v| {
+                        cloned_arc
+                            .write()
+                            .unwrap()
+                            .get_or_insert_with(OptionsDiff::default)
+                            .$field
+                            .replace(v);
+                    }
+                }
+            }
+        }
+
+        let bandwidth_limits = {
+            let down = SpinView::new(Some("Download Speed"), Some("kiB/s"), -1.0f64..)
+                .on_modify(set!(pending_options.max_download_speed));
+
+            let up = SpinView::new(Some("Upload Speed"), Some("kiB/s"), -1.0f64..)
+                .on_modify(set!(pending_options.max_upload_speed));
+
+            let peers = SpinView::new(Some("Connections"), None, -1i64..)
+                .on_modify(set!(pending_options.max_connections));
+
+            let slots = SpinView::new(Some("Upload Slots"), None, -1i64..)
+                .on_modify(set!(pending_options.max_upload_slots));
+
+            LinearPanel::vertical()
+                .child(down, None)
+                .child(up, None)
+                .child(peers, None)
+                .child(slots, None)
+        };
 
         let col1 = LinearLayout::vertical()
             .child(TextView::new("Bandwidth Limits"))
@@ -63,7 +110,10 @@ impl TabData for OptionsData {
             .child(DummyView.fixed_width(2))
             .child(col2);
 
-        let data = OptionsData {  };
+        let data = OptionsData {
+            current_options: TorrentOptions::default(),
+            pending_options,
+        };
         (view, data)
     }
 
