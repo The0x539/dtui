@@ -342,6 +342,7 @@ dependencies = [
  "deluge-rpc-macro",
  "enum-kinds",
  "fnv",
+ "futures",
  "hex",
  "lazy-regex",
  "lazy_static",
