@@ -11,7 +11,7 @@ use async_trait::async_trait;
 use static_assertions::const_assert_eq;
 use crate::views::spin::SpinView;
 use tokio::sync::watch;
-use crate::views::linear_panel::LinearPanel;
+use crate::views::{linear_panel::LinearPanel, labeled_checkbox::LabeledCheckbox};
 use std::sync::{Arc, RwLock};
 
 #[derive(Default, Debug, Clone, Deserialize, Query)]
@@ -40,14 +40,6 @@ impl TabData for OptionsData {
     type V = LinearLayout;
 
     fn view() -> (Self::V, Self) {
-        fn labeled_checkbox(label: &str) -> LinearLayout {
-            // TODO: make this into a full-fledged view class
-            // that way, it can have the full Checkbox interface
-            LinearLayout::horizontal()
-                .child(Checkbox::new())
-                .child(TextView::new(label))
-        }
-
         let pending_options = Arc::new(RwLock::new(None));
 
         macro_rules! set {
@@ -93,15 +85,15 @@ impl TabData for OptionsData {
 
         let ratio_limit_panel = {
             let spinner = SpinView::new(None, None, 0.0f64..);
-            let checkbox = labeled_checkbox("Remove at ratio");
+            let checkbox = LabeledCheckbox::new("Remove at ratio");
             let layout = LinearLayout::vertical().child(spinner).child(checkbox);
             let panel = Panel::new(layout).max_width(30);
             EnableableView::new(panel).disabled()
         };
 
         let col2 = LinearLayout::vertical()
-            .child(labeled_checkbox("Auto Managed"))
-            .child(labeled_checkbox("Stop seed at ratio:"))
+            .child(LabeledCheckbox::new("Auto Managed"))
+            .child(LabeledCheckbox::new("Stop seed at ratio:"))
             .child(ratio_limit_panel)
             .child(Button::new("Apply", |_| ()));
 
