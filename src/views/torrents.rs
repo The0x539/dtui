@@ -1,6 +1,5 @@
 use cursive::traits::*;
 use deluge_rpc::*;
-use crate::Torrent;
 use cursive::Printer;
 use cursive::vec::Vec2;
 use cursive::event::{Event, EventResult, MouseEvent, MouseButton};
@@ -32,6 +31,56 @@ impl AsRef<str> for Column {
 
 impl Default for Column {
     fn default() -> Self { Self::Name }
+}
+
+#[derive(Clone, Debug, serde::Deserialize, Query)]
+struct Torrent {
+    hash: InfoHash,
+    name: String,
+    state: TorrentState,
+    total_size: u64,
+    progress: f32,
+    upload_payload_rate: u64,
+    download_payload_rate: u64,
+    label: String,
+    owner: String,
+    tracker_host: String,
+    tracker_status: String,
+}
+
+impl Torrent {
+    pub fn matches_filters(&self, filters: &FilterDict) -> bool {
+        for (key, val) in filters.iter() {
+            let cmp_val = match key {
+                FilterKey::State if val == "Active" => if self.is_active() {
+                    continue;
+                } else {
+                    return false;
+                }
+
+                FilterKey::Tracker if val == "Error" => if self.has_tracker_error() {
+                    continue;
+                } else {
+                    return false;
+                }
+
+                FilterKey::State   => self.state.as_str(),
+                FilterKey::Owner   => self.owner.as_str(),
+                FilterKey::Label   => self.label.as_str(),
+                FilterKey::Tracker => self.tracker_host.as_str(),
+            };
+            if val != cmp_val { return false; }
+        }
+        true
+    }
+
+    pub fn has_tracker_error(&self) -> bool {
+        self.tracker_status.starts_with("Error:")
+    }
+
+    pub fn is_active(&self) -> bool {
+        self.download_payload_rate > 0 || self.upload_payload_rate > 0
+    }
 }
 
 fn draw_cell(printer: &Printer, tor: &Torrent, col: Column) {
