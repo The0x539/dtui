@@ -13,26 +13,93 @@ use crate::views::spin::SpinView;
 use tokio::sync::watch;
 use crate::views::{linear_panel::LinearPanel, labeled_checkbox::LabeledCheckbox};
 use std::sync::{Arc, RwLock};
+use tokio::task;
+use cursive::traits::Nameable;
 
 #[derive(Default, Debug, Clone, Deserialize, Query)]
-struct TorrentOptions {
-    max_download_speed: f64,
-    max_upload_speed: f64,
-    max_connections: i64,
-    max_upload_slots: i64,
+pub(super) struct OptionsQuery {
+    pub max_download_speed: f64,
+    pub max_upload_speed: f64,
+    pub max_connections: i64,
+    pub max_upload_slots: i64,
 
-    auto_managed: bool,
-    stop_at_ratio: bool,
-    stop_ratio: f64,
-    remove_at_ratio: bool,
+    pub auto_managed: bool,
+    pub stop_at_ratio: bool,
+    pub stop_ratio: f64,
+    pub remove_at_ratio: bool,
 }
 
-type OptionsDiff = <TorrentOptions as Query>::Diff;
+#[derive(Clone)]
+pub(super) struct OptionsNames {
+    pub max_download_speed: String,
+    pub max_upload_speed: String,
+    pub max_connections: String,
+    pub max_upload_slots: String,
+    pub auto_managed: String,
+    pub stop_at_ratio: String,
+    pub stop_ratio: String,
+    pub remove_at_ratio: String,
 
-#[derive(Default)]
+    pub ratio_limit_panel: String,
+}
+
+impl OptionsNames {
+    fn new() -> Self {
+        use uuid::Uuid;
+        Self {
+            max_download_speed: Uuid::new_v4().to_string(),
+            max_upload_speed: Uuid::new_v4().to_string(),
+            max_connections: Uuid::new_v4().to_string(),
+            max_upload_slots: Uuid::new_v4().to_string(),
+            auto_managed: Uuid::new_v4().to_string(),
+            stop_at_ratio: Uuid::new_v4().to_string(),
+            stop_ratio: Uuid::new_v4().to_string(),
+            remove_at_ratio: Uuid::new_v4().to_string(),
+
+            ratio_limit_panel: Uuid::new_v4().to_string(),
+        }
+    }
+}
+
 pub(super) struct OptionsData {
-    current_options: TorrentOptions,
-    pending_options: Arc<RwLock<Option<OptionsDiff>>>,
+    active_torrent: Option<InfoHash>,
+    current_options_send: watch::Sender<OptionsQuery>,
+    pub current_options_recv: watch::Receiver<OptionsQuery>,
+    pub pending_options: Arc<RwLock<Option<OptionsQuery>>>,
+    pub names: OptionsNames,
+}
+
+impl OptionsData {
+    async fn apply(&mut self, session: &Session) -> deluge_rpc::Result<()> {
+        let new_options = task::block_in_place(|| {
+            let mut opts = self.pending_options.write().unwrap();
+            assert!(opts.is_some());
+            opts.take().unwrap()
+        });
+
+        self.current_options_send.broadcast(new_options).unwrap();
+
+        assert!(self.active_torrent.is_some());
+        let hash = self.active_torrent.unwrap();
+
+        let options = {
+            let c = self.current_options_recv.borrow();
+            // Not sure whether I made a mistake with this interface.
+            deluge_rpc::TorrentOptions {
+                max_download_speed: Some(c.max_download_speed),
+                max_upload_speed: Some(c.max_upload_speed),
+                max_connections: Some(c.max_connections),
+                max_upload_slots: Some(c.max_upload_slots),
+                auto_managed: Some(c.auto_managed),
+                stop_at_ratio: Some(c.stop_at_ratio),
+                stop_ratio: Some(c.stop_ratio),
+                remove_at_ratio: Some(c.remove_at_ratio),
+                ..Default::default()
+            }
+        };
+
+        session.set_torrent_options(&[hash], &options).await
+    }
 }
 
 #[async_trait]
@@ -41,18 +108,20 @@ impl TabData for OptionsData {
 
     fn view() -> (Self::V, Self) {
         let pending_options = Arc::new(RwLock::new(None));
+        let (current_options_send, current_options_recv) = watch::channel(OptionsQuery::default());
+        let names = OptionsNames::new();
 
         macro_rules! set {
             ($obj:ident.$field:ident) => {
                 {
                     let cloned_arc = $obj.clone();
+                    let current_options_recv = current_options_recv.clone();
                     move |_, v| {
                         cloned_arc
                             .write()
                             .unwrap()
-                            .get_or_insert_with(OptionsDiff::default)
-                            .$field
-                            .replace(v);
+                            .get_or_insert_with(|| current_options_recv.borrow().clone())
+                            .$field = v;
                     }
                 }
             }
@@ -60,16 +129,20 @@ impl TabData for OptionsData {
 
         let bandwidth_limits = {
             let down = SpinView::new(Some("Download Speed"), Some("kiB/s"), -1.0f64..)
-                .on_modify(set!(pending_options.max_download_speed));
+                .on_modify(set!(pending_options.max_download_speed))
+                .with_name(&names.max_download_speed);
 
             let up = SpinView::new(Some("Upload Speed"), Some("kiB/s"), -1.0f64..)
-                .on_modify(set!(pending_options.max_upload_speed));
+                .on_modify(set!(pending_options.max_upload_speed))
+                .with_name(&names.max_upload_speed);
 
             let peers = SpinView::new(Some("Connections"), None, -1i64..)
-                .on_modify(set!(pending_options.max_connections));
+                .on_modify(set!(pending_options.max_connections))
+                .with_name(&names.max_connections);
 
             let slots = SpinView::new(Some("Upload Slots"), None, -1i64..)
-                .on_modify(set!(pending_options.max_upload_slots));
+                .on_modify(set!(pending_options.max_upload_slots))
+                .with_name(&names.max_upload_slots);
 
             LinearPanel::vertical()
                 .child(down, None)
@@ -83,19 +156,36 @@ impl TabData for OptionsData {
             .child(bandwidth_limits)
             .max_width(40);
 
-        let ratio_limit_panel = {
-            let spinner = SpinView::new(None, None, 0.0f64..);
-            let checkbox = LabeledCheckbox::new("Remove at ratio");
-            let layout = LinearLayout::vertical().child(spinner).child(checkbox);
-            let panel = Panel::new(layout).max_width(30);
-            EnableableView::new(panel).disabled()
-        };
+        let col2 = {
+            let auto_managed = LabeledCheckbox::new("Auto Managed")
+                .on_change(set!(pending_options.auto_managed))
+                .with_name(&names.auto_managed);
 
-        let col2 = LinearLayout::vertical()
-            .child(LabeledCheckbox::new("Auto Managed"))
-            .child(LabeledCheckbox::new("Stop seed at ratio:"))
-            .child(ratio_limit_panel)
-            .child(Button::new("Apply", |_| ()));
+            let stop_at_ratio = LabeledCheckbox::new("Stop seed at ratio:")
+                .on_change(set!(pending_options.stop_at_ratio))
+                .with_name(&names.stop_at_ratio);
+
+            let ratio_limit_panel = {
+                let spinner = SpinView::new(None, None, 0.0f64..)
+                    .on_modify(set!(pending_options.stop_ratio))
+                    .with_name(&names.stop_ratio);
+
+                let checkbox = LabeledCheckbox::new("Remove at ratio")
+                    .on_change(set!(pending_options.remove_at_ratio))
+                    .with_name(&names.remove_at_ratio);
+
+                let layout = LinearLayout::vertical().child(spinner).child(checkbox);
+                EnableableView::new(Panel::new(layout)).max_width(30)
+            };
+
+            let apply = Button::new("Apply", |_| todo!());
+
+            LinearLayout::vertical()
+                .child(auto_managed)
+                .child(stop_at_ratio)
+                .child(ratio_limit_panel)
+                .child(apply)
+        };
 
         let view = LinearLayout::horizontal()
             .child(col1)
@@ -103,13 +193,27 @@ impl TabData for OptionsData {
             .child(col2);
 
         let data = OptionsData {
-            current_options: TorrentOptions::default(),
+            active_torrent: None,
+            current_options_send,
+            current_options_recv,
             pending_options,
+            names,
         };
         (view, data)
     }
 
     async fn update(&mut self, session: &Session, hash: InfoHash) -> deluge_rpc::Result<()> {
+        if !self.active_torrent.contains(&hash) {
+            self.active_torrent = Some(hash);
+            task::block_in_place(|| self.pending_options.write().unwrap().take());
+        }
+
+        if task::block_in_place(|| self.pending_options.read().unwrap().is_none()) {
+            let options = session.get_torrent_status::<OptionsQuery>(hash).await?;
+            self.current_options_send.broadcast(options).unwrap();
+            assert!(self.pending_options.read().unwrap().is_none());
+        }
+
         Ok(())
     }
 }

@@ -9,12 +9,15 @@ use tokio::task::{self, JoinHandle};
 use cursive::traits::*;
 use cursive::view::ViewWrapper;
 use cursive::align::HAlign;
+use cursive::vec::Vec2;
 use cursive::views::{
     TextView,
     LinearLayout,
     DummyView,
     TextContent,
 };
+
+use crate::views::labeled_checkbox::LabeledCheckbox;
 
 fn column(rows: &[&str], h_align: HAlign) -> (LinearLayout, TextContent) {
     let labels = TextView::new(rows.join("\n")).effect(cursive::theme::Effect::Bold);
@@ -66,6 +69,9 @@ pub(crate) struct TorrentTabsView {
     active_tab: Tab,
     active_tab_send: watch::Sender<Tab>,
     thread: JoinHandle<deluge_rpc::Result<()>>,
+
+    options_field_names: options::OptionsNames,
+    current_options_recv: watch::Receiver<options::OptionsQuery>,
 }
 
 #[async_trait]
@@ -109,6 +115,9 @@ impl TorrentTabsView {
         let (details_tab, details_data) = details::DetailsData::view();
         let (options_tab, options_data) = options::OptionsData::view();
 
+        let options_field_names = options_data.names.clone();
+        let current_options_recv = options_data.current_options_recv.clone();
+
         let active_tab = Tab::Status;
         let (active_tab_send, active_tab_recv) = watch::channel(active_tab);
 
@@ -136,7 +145,14 @@ impl TorrentTabsView {
             //.with_bar_placement(cursive_tabs::Placement::VerticalLeft)
             .with_active_tab(active_tab).unwrap();
 
-        Self { view, active_tab, active_tab_send, thread }
+        Self {
+            view,
+            active_tab,
+            active_tab_send,
+            thread,
+            options_field_names,
+            current_options_recv,
+        }
     }
 
     pub fn take_thread(&mut self) -> JoinHandle<deluge_rpc::Result<()>> {
@@ -160,6 +176,22 @@ impl ViewWrapper for TorrentTabsView {
                 self.active_tab_send.broadcast(new_tab).unwrap();
             }
         }
+
         result
+    }
+
+    fn wrap_layout(&mut self, size: Vec2) {
+        if self.active_tab == Tab::Options {
+            let names = &self.options_field_names;
+            let co = self.current_options_recv.borrow().clone();
+            let view = &mut self.view;
+
+            view.call_on_name(
+                &names.auto_managed,
+                |v: &mut LabeledCheckbox| v.set_checked(co.auto_managed),
+            ).unwrap();
+        }
+
+        self.view.layout(size)
     }
 }
