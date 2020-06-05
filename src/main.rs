@@ -71,7 +71,7 @@ async fn main() -> deluge_rpc::Result<()> {
         .child(status_bar);
 
     let mut siv = cursive::Cursive::new(|| {
-        cursive::backend::crossterm::Backend::init()
+        cursive::backends::crossterm::Backend::init()
             .map(cursive_buffered_backend::BufferedBackend::new)
             .map(Box::new)
             .unwrap()

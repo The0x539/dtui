@@ -7,11 +7,11 @@ edition = "2018"
 [dependencies]
 serde = "*"
 tokio = { version = "0.2", features = ["time", "dns"] }
-cursive = { version = "0.14.1", default-features = false, features = ["crossterm-backend"] }
+cursive = { version = "0.15.0", default-features = false, features = ["crossterm-backend"] }
 deluge-rpc.path = "../deluge-rpc"
 bytesize = "1.0.1"
 cursive-tabs = "*"
-cursive_buffered_backend = "0.3.3"
+cursive_buffered_backend = "0.4.0"
 futures = "*"
 fnv = "1.0.7"
 ryu = "1.0.4"
