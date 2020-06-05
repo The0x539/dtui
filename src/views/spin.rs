@@ -11,6 +11,7 @@ use cursive::align::HAlign;
 use cursive::view::Selector;
 use std::rc::Rc;
 use cursive::utils::markup::StyledString;
+use cursive::Cursive;
 
 use std::{
     convert::{From, Into},
@@ -89,7 +90,7 @@ pub(crate) struct SpinView<T: Spinnable, B: RangeBounds<T>> {
     own_id: String,
     edit_id: String,
     inner: LinearLayout,
-    on_modify: Option<Box<dyn Fn(T)>>,
+    on_modify: Option<Rc<dyn Fn(&mut Cursive, T)>>,
 }
 
 impl<T: Spinnable, B: RangeBounds<T>> SpinView<T, B> where Self: 'static {
@@ -146,14 +147,21 @@ impl<T: Spinnable, B: RangeBounds<T>> SpinView<T, B> where Self: 'static {
 
     pub fn set_val(&mut self, new_val: T) -> Callback {
         self.val = new_val;
-        self.call_on_edit_view(|v| v.set_content(new_val.to_string()))
+        let cb = self.call_on_edit_view(|v| v.set_content(new_val.to_string()));
+        if let Some(f) = self.on_modify.as_ref() {
+            let f = f.clone();
+            let val = self.val;
+            Callback::from_fn(move |s| { cb(s); f(s, val); })
+        } else {
+            cb
+        }
     }
 
-    pub fn set_on_modify<F: Fn(T) + 'static>(&mut self, cb: F) {
-        self.on_modify = Some(Box::new(cb));
+    pub fn set_on_modify<F: Fn(&mut Cursive, T) + 'static>(&mut self, cb: F) {
+        self.on_modify = Some(Rc::new(cb));
     }
 
-    pub fn on_modify<F: Fn(T) + 'static>(mut self, cb: F) -> Self {
+    pub fn on_modify<F: Fn(&mut Cursive, T) + 'static>(mut self, cb: F) -> Self {
         self.set_on_modify(cb);
         self
     }
@@ -183,18 +191,15 @@ impl<T: Spinnable, B: RangeBounds<T>> SpinView<T, B> where Self: 'static {
 
     fn decr(&mut self) -> Callback {
         let new_val = self.val.clamped_decr(&self.bounds);
-        self.on_modify.as_ref().map(|f| f(new_val));
         self.set_val(new_val)
     }
 
     fn incr(&mut self) -> Callback {
         let new_val = self.val.clamped_incr(&self.bounds);
-        self.on_modify.as_ref().map(|f| f(new_val));
         self.set_val(new_val)
     }
 
     fn submit(&mut self) -> Callback {
-        self.on_modify.as_ref().map(|f| f(self.val));
         self.set_val(self.val)
     }
 }

@@ -54,7 +54,7 @@ impl TabData for OptionsData {
             ($obj:ident.$field:ident) => {
                 {
                     let cloned_arc = $obj.clone();
-                    move |v| {
+                    move |_, v| {
                         cloned_arc
                             .write()
                             .unwrap()
