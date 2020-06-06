@@ -15,9 +15,15 @@ use cursive::views::{
     LinearLayout,
     DummyView,
     TextContent,
+    EnableableView,
+    Panel,
+    Button,
 };
 
-use crate::views::labeled_checkbox::LabeledCheckbox;
+use crate::views::{
+    labeled_checkbox::LabeledCheckbox,
+    spin::SpinView,
+};
 
 fn column(rows: &[&str], h_align: HAlign) -> (LinearLayout, TextContent) {
     let labels = TextView::new(rows.join("\n")).effect(cursive::theme::Effect::Bold);
@@ -193,10 +199,41 @@ impl ViewWrapper for TorrentTabsView {
             let co = self.current_options_recv.borrow().clone();
             let view = &mut self.view;
 
+            // Intentionally ignoring the callbacks returned here.
+            // In this case, those callbacks will update the pending options.
+            // That is very much what we don't want. We're just tracking updates from the server,
+            // so we don't want these updates to be treated like user input.
+
+            use std::ops::RangeFrom;
+            type Spin<T> = SpinView<T, RangeFrom<T>>;
+
+            macro_rules! update {
+                ($type:ty, $method:ident($field:ident)) => {
+                    {
+                        let cb = |v: &mut $type| v.$method(co.$field);
+                        view.call_on_name(&names.$field, cb).unwrap();
+                    }
+                }
+            }
+
+            update!(Spin<f64>, set_val(max_download_speed));
+            update!(Spin<f64>, set_val(max_upload_speed));
+            update!(Spin<i64>, set_val(max_connections));
+            update!(Spin<i64>, set_val(max_upload_slots));
+
+            update!(LabeledCheckbox, set_checked(auto_managed));
+            update!(LabeledCheckbox, set_checked(stop_at_ratio));
+            update!(Spin<f64>, set_val(stop_ratio));
+            update!(LabeledCheckbox, set_checked(remove_at_ratio));
+
+            // And now for the "secondary" updates.
+
             view.call_on_name(
-                &names.auto_managed,
-                |v: &mut LabeledCheckbox| v.set_checked(co.auto_managed),
+                &names.ratio_limit_panel,
+                |v: &mut EnableableView<Panel<LinearLayout>>| v.set_enabled(co.stop_at_ratio),
             ).unwrap();
+
+            view.call_on_name(&names.apply_button, |v: &mut Button| v.disable()).unwrap();
         }
 
         self.view.layout(size)

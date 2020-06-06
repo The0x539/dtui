@@ -38,6 +38,7 @@ pub(super) struct OptionsNames {
     pub remove_at_ratio: String,
 
     pub ratio_limit_panel: String,
+    pub apply_button: String,
 }
 
 impl OptionsNames {
@@ -54,6 +55,7 @@ impl OptionsNames {
             remove_at_ratio: Uuid::new_v4().to_string(),
 
             ratio_limit_panel: Uuid::new_v4().to_string(),
+            apply_button: Uuid::new_v4().to_string(),
         }
     }
 }
@@ -175,7 +177,9 @@ impl TabData for OptionsData {
                     .with_name(&names.remove_at_ratio);
 
                 let layout = LinearLayout::vertical().child(spinner).child(checkbox);
-                EnableableView::new(Panel::new(layout)).max_width(30)
+                EnableableView::new(Panel::new(layout))
+                    .with_name(&names.ratio_limit_panel)
+                    .max_width(30)
             };
 
             let apply = Button::new("Apply", move |siv| {
@@ -185,7 +189,7 @@ impl TabData for OptionsData {
                     let fut = apply_send.send(session);
                     futures::executor::block_on(fut).unwrap();
                 });
-            });
+            }).with_name(&names.apply_button);
 
             LinearLayout::vertical()
                 .child(auto_managed)
