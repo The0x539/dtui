@@ -191,7 +191,17 @@ impl ViewWrapper for TorrentTabsView {
 
     fn wrap_layout(&mut self, size: Vec2) {
         if self.active_tab == Tab::Options {
-            if task::block_in_place(|| self.pending_options.read().unwrap().is_some()) {
+            if let Some(opts) = task::block_in_place(|| self.pending_options.read().unwrap().clone()) {
+                let names = &self.options_field_names;
+                let view = &mut self.view;
+
+                view.call_on_name(
+                    &names.ratio_limit_panel,
+                    |v: &mut EnableableView<Panel<LinearLayout>>| v.set_enabled(opts.stop_at_ratio),
+                ).unwrap();
+
+                view.call_on_name(&names.apply_button, |v: &mut Button| v.enable()).unwrap();
+
                 return;
             }
 
