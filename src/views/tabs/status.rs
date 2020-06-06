@@ -58,7 +58,8 @@ impl TabData for StatusData {
         let progress_bar = ProgressBar::new()
             .max(10000)
             .with_value(progress_val.clone())
-            .with_label(move |_, _| progress_label_recv.borrow().clone());
+            .with_label(move |_, _| progress_label_recv.borrow().clone())
+            .full_width();
 
         let (col1, col2, col3) = (
             ["Down Speed:", "Up Speed:", "Downloaded:", "Uploaded:"],

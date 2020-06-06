@@ -185,12 +185,13 @@ impl TabData for OptionsData {
             let apply_notify = apply_notify.clone();
             let apply = Button::new("Apply", move |_| apply_notify.notify())
                 .with_name(&names.apply_button);
+            let apply_panel = Panel::new(apply);
 
             LinearLayout::vertical()
                 .child(auto_managed)
                 .child(stop_at_ratio)
                 .child(ratio_limit_panel)
-                .child(apply)
+                .child(apply_panel)
         };
 
         let view = LinearLayout::horizontal()

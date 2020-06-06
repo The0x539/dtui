@@ -15,8 +15,9 @@ pub fn dracula() -> Theme {
     palette[Shadow] = Rgb(0x21, 0x22, 0x2C);
     palette[TitlePrimary] = palette[Primary];
     palette[TitleSecondary] = palette[Secondary];
-    palette[Highlight] = Rgb(0x8B, 0xE9, 0xFD);
+    palette[Highlight] = palette[Tertiary];
     palette[HighlightInactive] = palette[Tertiary];
+    palette[HighlightText] = palette[Primary];
 
     Theme { palette, ..Theme::default() }
 }
