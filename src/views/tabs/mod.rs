@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 use deluge_rpc::{Session, InfoHash};
 use super::thread::ViewThread;
 use async_trait::async_trait;
@@ -72,6 +72,7 @@ pub(crate) struct TorrentTabsView {
 
     options_field_names: options::OptionsNames,
     current_options_recv: watch::Receiver<options::OptionsQuery>,
+    pending_options: Arc<RwLock<Option<options::OptionsQuery>>>,
 }
 
 #[async_trait]
@@ -117,6 +118,7 @@ impl TorrentTabsView {
 
         let options_field_names = options_data.names.clone();
         let current_options_recv = options_data.current_options_recv.clone();
+        let pending_options = options_data.pending_options.clone();
 
         let active_tab = Tab::Status;
         let (active_tab_send, active_tab_recv) = watch::channel(active_tab);
@@ -152,6 +154,7 @@ impl TorrentTabsView {
             thread,
             options_field_names,
             current_options_recv,
+            pending_options,
         }
     }
 
@@ -182,6 +185,10 @@ impl ViewWrapper for TorrentTabsView {
 
     fn wrap_layout(&mut self, size: Vec2) {
         if self.active_tab == Tab::Options {
+            if task::block_in_place(|| self.pending_options.read().unwrap().is_some()) {
+                return;
+            }
+
             let names = &self.options_field_names;
             let co = self.current_options_recv.borrow().clone();
             let view = &mut self.view;

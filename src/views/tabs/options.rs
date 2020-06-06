@@ -1,19 +1,16 @@
-#![allow(unused)]
-
-use super::{column, TabData};
+use super::TabData;
 use deluge_rpc::{Query, InfoHash, Session};
 use serde::Deserialize;
-use cursive::views::{TextContent, LinearLayout, TextView, Checkbox, DummyView, Button, Panel, EnableableView};
+use cursive::views::{LinearLayout, TextView, DummyView, Button, Panel, EnableableView};
 use cursive::traits::Resizable;
-use cursive::align::HAlign;
-use crate::util;
 use async_trait::async_trait;
-use static_assertions::const_assert_eq;
 use crate::views::spin::SpinView;
 use tokio::sync::watch;
 use crate::views::{linear_panel::LinearPanel, labeled_checkbox::LabeledCheckbox};
 use std::sync::{Arc, RwLock};
+use tokio::sync::mpsc;
 use tokio::task;
+use tokio::time;
 use cursive::traits::Nameable;
 
 #[derive(Default, Debug, Clone, Deserialize, Query)]
@@ -64,6 +61,7 @@ impl OptionsNames {
 pub(super) struct OptionsData {
     active_torrent: Option<InfoHash>,
     current_options_send: watch::Sender<OptionsQuery>,
+    apply_recv: mpsc::Receiver<Arc<Session>>,
     pub current_options_recv: watch::Receiver<OptionsQuery>,
     pub pending_options: Arc<RwLock<Option<OptionsQuery>>>,
     pub names: OptionsNames,
@@ -156,6 +154,8 @@ impl TabData for OptionsData {
             .child(bandwidth_limits)
             .max_width(40);
 
+        let (apply_send, apply_recv) = mpsc::channel(5);
+
         let col2 = {
             let auto_managed = LabeledCheckbox::new("Auto Managed")
                 .on_change(set!(pending_options.auto_managed))
@@ -178,7 +178,14 @@ impl TabData for OptionsData {
                 EnableableView::new(Panel::new(layout)).max_width(30)
             };
 
-            let apply = Button::new("Apply", |_| todo!());
+            let apply = Button::new("Apply", move |siv| {
+                let session: Arc<Session> = siv.user_data::<Arc<Session>>().unwrap().clone();
+                let mut apply_send = apply_send.clone();
+                task::block_in_place(move || {
+                    let fut = apply_send.send(session);
+                    futures::executor::block_on(fut).unwrap();
+                });
+            });
 
             LinearLayout::vertical()
                 .child(auto_managed)
@@ -196,6 +203,7 @@ impl TabData for OptionsData {
             active_torrent: None,
             current_options_send,
             current_options_recv,
+            apply_recv,
             pending_options,
             names,
         };
@@ -203,6 +211,8 @@ impl TabData for OptionsData {
     }
 
     async fn update(&mut self, session: &Session, hash: InfoHash) -> deluge_rpc::Result<()> {
+        let deadline = time::Instant::now() + time::Duration::from_secs(1);
+
         if !self.active_torrent.contains(&hash) {
             self.active_torrent = Some(hash);
             task::block_in_place(|| self.pending_options.write().unwrap().take());
@@ -211,7 +221,12 @@ impl TabData for OptionsData {
         if task::block_in_place(|| self.pending_options.read().unwrap().is_none()) {
             let options = session.get_torrent_status::<OptionsQuery>(hash).await?;
             self.current_options_send.broadcast(options).unwrap();
-            assert!(self.pending_options.read().unwrap().is_none());
+            time::delay_until(deadline).await;
+        } else {
+            let timeout = time::timeout_at(deadline, self.apply_recv.recv());
+            if let Ok(ses) = timeout.await {
+                self.apply(&ses.unwrap()).await?;
+            }
         }
 
         Ok(())
