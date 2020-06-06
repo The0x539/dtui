@@ -1,20 +1,14 @@
-#![allow(unused)]
-
 use cursive::traits::*;
-use cursive::views::{EditView, LinearLayout, TextView, Button, NamedView, Panel, PaddedView, DummyView};
-use cursive::Printer;
-use cursive::vec::Vec2;
+use cursive::views::{EditView, LinearLayout, TextView, Button, DummyView};
 use cursive::view::ViewWrapper;
 use uuid::Uuid;
 use cursive::event::{Event, EventResult, Callback, AnyCb};
-use cursive::align::HAlign;
 use cursive::view::Selector;
 use std::rc::Rc;
-use cursive::utils::markup::StyledString;
 use cursive::Cursive;
 
 use std::{
-    convert::{From, Into},
+    convert::From,
     cmp::PartialOrd,
     cmp::PartialEq,
     ops::{RangeBounds, Bound},
@@ -103,12 +97,13 @@ impl<T: Spinnable, B: RangeBounds<T>> SpinView<T, B> where Self: 'static {
 
         let edit_id = Uuid::new_v4().to_string();
 
+        // TODO: figure out semantics of editing vs. being done editing
         let edit = EditView::new()
             .content(val.to_string())
             .on_edit(move |s, content, _| {
                 s.call_on_name(&id0, |v: &mut Self| v.parse_content(content)).unwrap();
             })
-            .on_submit(move |s, content| {
+            .on_submit(move |s, _content| {
                 let cb = s.call_on_name(&id1, Self::submit).unwrap();
                 cb(s)
             });
@@ -143,6 +138,7 @@ impl<T: Spinnable, B: RangeBounds<T>> SpinView<T, B> where Self: 'static {
         Self { bounds, val, own_id, edit_id, inner, on_modify: None }
     }
 
+    #[allow(dead_code)]
     pub fn get_val(&self) -> T { self.val }
 
     pub fn set_val(&mut self, new_val: T) -> Callback {
