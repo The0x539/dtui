@@ -1,7 +1,7 @@
 use super::TabData;
 use deluge_rpc::{Query, InfoHash, Session};
 use serde::Deserialize;
-use cursive::views::{LinearLayout, TextView, DummyView, Button, Panel, EnableableView};
+use cursive::views::{EditView, LinearLayout, TextView, DummyView, Button, Panel, EnableableView};
 use cursive::traits::Resizable;
 use async_trait::async_trait;
 use crate::views::spin::SpinView;
@@ -24,6 +24,13 @@ pub(super) struct OptionsQuery {
     pub stop_at_ratio: bool,
     pub stop_ratio: f64,
     pub remove_at_ratio: bool,
+
+    pub shared: bool,
+    pub prioritize_first_last_pieces: bool,
+    pub sequential_download: bool,
+    pub super_seeding: bool,
+    pub move_completed: bool,
+    pub move_completed_path: String,
 }
 
 #[derive(Clone)]
@@ -36,6 +43,12 @@ pub(super) struct OptionsNames {
     pub stop_at_ratio: String,
     pub stop_ratio: String,
     pub remove_at_ratio: String,
+    pub shared: String,
+    pub prioritize_first_last_pieces: String,
+    pub sequential_download: String,
+    pub super_seeding: String,
+    pub move_completed: String,
+    pub move_completed_path: String,
 
     pub ratio_limit_panel: String,
     pub apply_button: String,
@@ -44,18 +57,25 @@ pub(super) struct OptionsNames {
 impl OptionsNames {
     fn new() -> Self {
         use uuid::Uuid;
+        let v4 = || Uuid::new_v4().to_string();
         Self {
-            max_download_speed: Uuid::new_v4().to_string(),
-            max_upload_speed: Uuid::new_v4().to_string(),
-            max_connections: Uuid::new_v4().to_string(),
-            max_upload_slots: Uuid::new_v4().to_string(),
-            auto_managed: Uuid::new_v4().to_string(),
-            stop_at_ratio: Uuid::new_v4().to_string(),
-            stop_ratio: Uuid::new_v4().to_string(),
-            remove_at_ratio: Uuid::new_v4().to_string(),
+            max_download_speed: v4(),
+            max_upload_speed: v4(),
+            max_connections: v4(),
+            max_upload_slots: v4(),
+            auto_managed: v4(),
+            stop_at_ratio: v4(),
+            stop_ratio: v4(),
+            remove_at_ratio: v4(),
+            shared: v4(),
+            prioritize_first_last_pieces: v4(),
+            sequential_download: v4(),
+            super_seeding: v4(),
+            move_completed: v4(),
+            move_completed_path: v4(),
 
-            ratio_limit_panel: Uuid::new_v4().to_string(),
-            apply_button: Uuid::new_v4().to_string(),
+            ratio_limit_panel: v4(),
+            apply_button: v4(),
         }
     }
 }
@@ -94,6 +114,12 @@ impl OptionsData {
                 stop_at_ratio: Some(c.stop_at_ratio),
                 stop_ratio: Some(c.stop_ratio),
                 remove_at_ratio: Some(c.remove_at_ratio),
+                shared: Some(c.shared),
+                prioritize_first_last_pieces: Some(c.prioritize_first_last_pieces),
+                sequential_download: Some(c.sequential_download),
+                super_seeding: Some(c.super_seeding),
+                move_completed: Some(c.move_completed),
+                move_completed_path: Some(c.move_completed_path.clone()),
                 ..Default::default()
             }
         };
@@ -194,10 +220,61 @@ impl TabData for OptionsData {
                 .child(apply_panel)
         };
 
+        let col3 = {
+            // TODO: TextView indicating owner
+
+            let shared = LabeledCheckbox::new("Shared")
+                .on_change(set!(pending_options.shared))
+                .with_name(&names.shared);
+
+            let prioritize_first_last_pieces = LabeledCheckbox::new("Prioritize First/Last")
+                .on_change(set!(pending_options.prioritize_first_last_pieces))
+                .with_name(&names.prioritize_first_last_pieces);
+
+            let sequential_download = LabeledCheckbox::new("Sequential Download")
+                .on_change(set!(pending_options.sequential_download))
+                .with_name(&names.sequential_download);
+
+            let super_seeding = LabeledCheckbox::new("Super Seeding")
+                .on_change(set!(pending_options.super_seeding))
+                .with_name(&names.super_seeding);
+
+            let move_completed = LabeledCheckbox::new("Move completed:")
+                .on_change(set!(pending_options.move_completed))
+                .with_name(&names.move_completed);
+
+            let edit_cb = {
+                let cloned_arc = pending_options.clone();
+                let current_options_recv = current_options_recv.clone();
+                move |_: &mut cursive::Cursive, v: &str, _: usize| {
+                    cloned_arc
+                        .write()
+                        .unwrap()
+                        .get_or_insert_with(|| current_options_recv.borrow().clone())
+                        .move_completed_path = String::from(v);
+                }
+            };
+
+            let move_completed_path = EditView::new()
+                .on_edit(edit_cb)
+                .with_name(&names.move_completed_path)
+                .min_width(25);
+
+            LinearLayout::vertical()
+                .child(shared)
+                .child(prioritize_first_last_pieces)
+                .child(sequential_download)
+                .child(super_seeding)
+                .child(move_completed)
+                .child(move_completed_path)
+        };
+
         let view = LinearLayout::horizontal()
             .child(col1)
             .child(DummyView.fixed_width(2))
-            .child(col2);
+            .child(col2)
+            .child(DummyView.fixed_width(2))
+            .child(col3);
 
         let data = OptionsData {
             active_torrent: None,

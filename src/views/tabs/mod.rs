@@ -18,6 +18,7 @@ use cursive::views::{
     EnableableView,
     Panel,
     Button,
+    EditView,
 };
 use futures::FutureExt;
 
@@ -201,6 +202,11 @@ impl ViewWrapper for TorrentTabsView {
                     |v: &mut EnableableView<Panel<LinearLayout>>| v.set_enabled(opts.stop_at_ratio),
                 ).unwrap();
 
+                view.call_on_name(
+                    &names.move_completed_path,
+                    |v: &mut EditView| v.set_enabled(opts.move_completed),
+                ).unwrap();
+
                 view.call_on_name(&names.apply_button, Button::enable).unwrap();
 
                 return;
@@ -236,11 +242,26 @@ impl ViewWrapper for TorrentTabsView {
                 update!(Spin<f64>, set_val(stop_ratio));
                 update!(LabeledCheckbox, set_checked(remove_at_ratio));
 
+                update!(LabeledCheckbox, set_checked(shared));
+                update!(LabeledCheckbox, set_checked(prioritize_first_last_pieces));
+                update!(LabeledCheckbox, set_checked(sequential_download));
+                update!(LabeledCheckbox, set_checked(super_seeding));
+                update!(LabeledCheckbox, set_checked(move_completed));
+                view.call_on_name(
+                    &names.move_completed_path,
+                    |v: &mut EditView| v.set_content(&opts.move_completed_path),
+                ).unwrap();
+
                 // And now for the "secondary" updates.
 
                 view.call_on_name(
                     &names.ratio_limit_panel,
                     |v: &mut EnableableView<Panel<LinearLayout>>| v.set_enabled(opts.stop_at_ratio),
+                ).unwrap();
+
+                view.call_on_name(
+                    &names.move_completed_path,
+                    |v: &mut EditView| v.set_enabled(opts.move_completed),
                 ).unwrap();
 
                 view.call_on_name(&names.apply_button, Button::disable).unwrap();
