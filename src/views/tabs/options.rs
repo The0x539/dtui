@@ -216,13 +216,14 @@ impl TabData for OptionsData {
 
     async fn update(&mut self, session: &Session, hash: InfoHash) -> deluge_rpc::Result<()> {
         let deadline = time::Instant::now() + time::Duration::from_secs(1);
+        let new_active = !self.active_torrent.contains(&hash);
 
-        if !self.active_torrent.contains(&hash) {
+        if new_active {
             self.active_torrent = Some(hash);
             task::block_in_place(|| self.pending_options.write().unwrap().take());
         }
 
-        if task::block_in_place(|| self.pending_options.read().unwrap().is_none()) {
+        if new_active || task::block_in_place(|| self.pending_options.read().unwrap().is_none()) {
             let options = session.get_torrent_status::<OptionsQuery>(hash).await?;
             self.current_options_send.broadcast(options).unwrap();
             time::delay_until(deadline).await;
