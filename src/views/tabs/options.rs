@@ -8,7 +8,7 @@ use crate::views::spin::SpinView;
 use tokio::sync::watch;
 use crate::views::{linear_panel::LinearPanel, labeled_checkbox::LabeledCheckbox};
 use std::sync::{Arc, RwLock};
-use tokio::sync::mpsc;
+use tokio::sync::Notify;
 use tokio::task;
 use tokio::time;
 use cursive::traits::Nameable;
@@ -63,7 +63,7 @@ impl OptionsNames {
 pub(super) struct OptionsData {
     active_torrent: Option<InfoHash>,
     current_options_send: watch::Sender<OptionsQuery>,
-    apply_recv: mpsc::Receiver<Arc<Session>>,
+    apply_notify: Arc<Notify>,
     pub current_options_recv: watch::Receiver<OptionsQuery>,
     pub pending_options: Arc<RwLock<Option<OptionsQuery>>>,
     pub names: OptionsNames,
@@ -156,7 +156,7 @@ impl TabData for OptionsData {
             .child(bandwidth_limits)
             .max_width(40);
 
-        let (apply_send, apply_recv) = mpsc::channel(5);
+        let apply_notify = Arc::new(Notify::new());
 
         let col2 = {
             let auto_managed = LabeledCheckbox::new("Auto Managed")
@@ -182,14 +182,9 @@ impl TabData for OptionsData {
                     .max_width(30)
             };
 
-            let apply = Button::new("Apply", move |siv| {
-                let session: Arc<Session> = siv.user_data::<Arc<Session>>().unwrap().clone();
-                let mut apply_send = apply_send.clone();
-                task::block_in_place(move || {
-                    let fut = apply_send.send(session);
-                    futures::executor::block_on(fut).unwrap();
-                });
-            }).with_name(&names.apply_button);
+            let apply_notify = apply_notify.clone();
+            let apply = Button::new("Apply", move |_| apply_notify.notify())
+                .with_name(&names.apply_button);
 
             LinearLayout::vertical()
                 .child(auto_managed)
@@ -207,7 +202,7 @@ impl TabData for OptionsData {
             active_torrent: None,
             current_options_send,
             current_options_recv,
-            apply_recv,
+            apply_notify,
             pending_options,
             names,
         };
@@ -228,9 +223,9 @@ impl TabData for OptionsData {
             self.current_options_send.broadcast(options).unwrap();
             time::delay_until(deadline).await;
         } else {
-            let timeout = time::timeout_at(deadline, self.apply_recv.recv());
-            if let Ok(ses) = timeout.await {
-                self.apply(&ses.unwrap()).await?;
+            let timeout = time::timeout_at(deadline, self.apply_notify.notified());
+            if let Ok(()) = timeout.await {
+                self.apply(session).await?;
             }
         }
 
