@@ -62,6 +62,7 @@ pub(self) trait TabData {
 mod status;
 mod details;
 mod options;
+mod files;
 
 struct TorrentTabsViewThread {
     session: Arc<Session>,
