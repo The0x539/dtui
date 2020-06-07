@@ -36,9 +36,34 @@ struct Dir {
     descendants: Vec<usize>,
 }
 
+#[derive(Clone, Copy)]
 enum DirEntry {
     File(usize), // an index into a Vec<File>
     Dir(usize),  // an index into a Slab<Dir>
+}
+
+impl DirEntry {
+    fn is_descendant_of(
+        &self,
+        files_info: &Vec<File>,
+        dirs_info: &Slab<Dir>,
+        possible_parent: usize
+    ) -> bool {
+        // TODO: early return if possible_parent.depth >= self.depth
+
+        let mut parent_id = match *self {
+            Self::File(id) => Some(files_info[id].parent),
+            Self::Dir(id) => dirs_info[id].parent,
+        };
+
+        // Recursion avoided for the sake of avoiding recursion.
+        while let Some(id) = parent_id {
+            if id == possible_parent { return true; }
+            parent_id = dirs_info[id].parent;
+        }
+
+        false
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Deserialize)]
