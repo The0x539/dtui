@@ -3,6 +3,7 @@
 use deluge_rpc::{FilePriority, Query};
 use serde::Deserialize;
 use slab::Slab;
+use std::cmp::Ordering;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Column { Filename, Size, Progress, Priority }
@@ -34,36 +35,13 @@ struct Dir {
     depth: usize,
     children: Vec<DirEntry>,
     descendants: Vec<usize>,
+    size: u64,
 }
 
 #[derive(Clone, Copy)]
 enum DirEntry {
     File(usize), // an index into a Vec<File>
     Dir(usize),  // an index into a Slab<Dir>
-}
-
-impl DirEntry {
-    fn is_descendant_of(
-        &self,
-        files_info: &Vec<File>,
-        dirs_info: &Slab<Dir>,
-        possible_parent: usize
-    ) -> bool {
-        // TODO: early return if possible_parent.depth >= self.depth
-
-        let mut parent_id = match *self {
-            Self::File(id) => Some(files_info[id].parent),
-            Self::Dir(id) => dirs_info[id].parent,
-        };
-
-        // Recursion avoided for the sake of avoiding recursion.
-        while let Some(id) = parent_id {
-            if id == possible_parent { return true; }
-            parent_id = dirs_info[id].parent;
-        }
-
-        false
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Deserialize)]
@@ -81,90 +59,137 @@ struct FilesQuery {
     file_priorities: Vec<FilePriority>,
 }
 
-fn build_tree(query: FilesQuery, files_info: &mut Vec<File>, dirs_info: &mut Slab<Dir>) -> usize {
-    let FilesQuery { files, file_progress, file_priorities } = query;
 
-    assert_eq!(files.len(), file_progress.len());
-    assert_eq!(files.len(), file_priorities.len());
-
-    files_info.clear();
-    files_info.reserve_exact(files.len());
-    dirs_info.clear();
-
-    let root = dirs_info.insert(Dir::default());
-
-    for (i, file) in files.into_iter().enumerate() {
-        let mut cwd = root;
-        dirs_info[cwd].descendants.push(i);
-
-        assert_eq!(i, file.index);
-        let progress = file_progress[i];
-        let priority = file_priorities[i];
-
-        let mut iter = file.path.split('/').peekable();
-
-        while let Some(segment) = iter.next() {
-            let segment = String::from(segment);
-
-            let depth = dirs_info[cwd].depth + 1;
-
-            if iter.peek().is_none() {
-                let f = File {
-                    parent: cwd,
-                    index: file.index,
-                    size: file.size,
-                    name: segment,
-                    depth,
-                    progress,
-                    priority,
-                };
-
-                assert_eq!(files_info.len(), i);
-                files_info.push(f);
-                dirs_info[cwd].children.push(DirEntry::File(i));
-
-                break;
-            } else {
-                let d = Dir {
-                    parent: Some(cwd),
-                    name: segment,
-                    depth,
-                    ..Dir::default()
-                };
-
-                let child_key = dirs_info.insert(d);
-                dirs_info[cwd].children.push(DirEntry::Dir(child_key));
-                cwd = child_key;
-            }
-        }
-    }
-
-    root
-}
-
-/*
-#[derive(Debug, Default, Clone)]
 struct FilesData {
-    rows: Vec<Row>,
-    files: Directory,
+    rows: Vec<DirEntry>,
+    files_info: Vec<File>,
+    dirs_info: Slab<Dir>,
+    root_dir: usize,
     sort_column: Column,
     descending_sort: bool,
 }
 
 impl FilesData {
-    fn compare_rows(&self, a: &Row, b: &Row) -> Ordering {
+    fn get_name(&self, entry: DirEntry) -> &str {
+        match entry {
+            DirEntry::Dir(id) => &self.dirs_info[id].name,
+            DirEntry::File(id) => &self.files_info[id].name,
+        }
+    }
+
+    fn get_depth(&self, entry: DirEntry) -> usize {
+        match entry {
+            DirEntry::Dir(id) => self.dirs_info[id].depth,
+            DirEntry::File(id) => self.files_info[id].depth,
+        }
+    }
+
+    fn get_parent(&self, entry: DirEntry) -> Option<usize> {
+        match entry {
+            DirEntry::Dir(id) => self.dirs_info[id].parent,
+            DirEntry::File(id) => Some(self.files_info[id].parent),
+        }
+    }
+
+    fn is_parent(&self, possible_parent: usize, possible_child: DirEntry) -> bool {
+        if self.get_depth(possible_child) <= self.dirs_info[possible_parent].depth {
+            return false;
+        }
+
+        let mut parent_id = self.get_parent(possible_child);
+
+        // Recursion avoided for the sake of avoiding recursion.
+        while let Some(id) = parent_id {
+            if id == possible_parent {
+                return true;
+            }
+            parent_id = self.dirs_info[id].parent;
+        }
+
+        false
+    }
+
+    fn compare_dir_entries(&self, a: DirEntry, b: DirEntry) -> Ordering {
         match (a, b) {
-            (Row::Directory(_), Row::File(_)) => Ordering::Greater,
-            (Row::File(_), Row::Directory(_)) => Ordering::Less,
-            (Row::Directory(_, name, size, progress), Row::Directory(_, name, size, progress)) => {
+            (DirEntry::Dir(_), DirEntry::File(_)) => Ordering::Greater,
+            (DirEntry::File(_), DirEntry::Dir(_)) => Ordering::Less,
+
+            (DirEntry::Dir(a), DirEntry::Dir(b)) => {
+                let (a, b) = (&self.dirs_info[a], &self.dirs_info[b]);
+
                 match self.sort_column {
-                    Column::Filename => 
+                    Column::Filename => a.name.cmp(&b.name).reverse(),
+                    _ => todo!(),
                 }
             },
-            (Row::File(name, size, progress, priority), Row::File(name, size, progress, priority)) => {
 
+            (DirEntry::File(a), DirEntry::File(b)) => {
+                let (a, b) = (&self.files_info[a], &self.files_info[b]);
+
+                match self.sort_column {
+                    Column::Filename => a.name.cmp(&b.name).reverse(),
+                    _ => todo!(),
+                }
+            }
+        }
+    }
+
+    fn build_tree(&mut self, query: FilesQuery) {
+        let FilesQuery { files, file_progress, file_priorities } = query;
+
+        assert_eq!(files.len(), file_progress.len());
+        assert_eq!(files.len(), file_priorities.len());
+
+        self.files_info.clear();
+        self.files_info.reserve_exact(files.len());
+        self.dirs_info.clear();
+
+        self.root_dir = self.dirs_info.insert(Dir::default());
+
+        for (i, file) in files.into_iter().enumerate() {
+            let mut cwd = self.root_dir;
+            self.dirs_info[cwd].descendants.push(i);
+
+            assert_eq!(i, file.index);
+            let progress = file_progress[i];
+            let priority = file_priorities[i];
+
+            let mut iter = file.path.split('/').peekable();
+
+            while let Some(segment) = iter.next() {
+                let segment = String::from(segment);
+
+                let depth = self.dirs_info[cwd].depth + 1;
+
+                if iter.peek().is_none() {
+                    let f = File {
+                        parent: cwd,
+                        index: file.index,
+                        size: file.size,
+                        name: segment,
+                        depth,
+                        progress,
+                        priority,
+                    };
+
+                    assert_eq!(self.files_info.len(), i);
+                    self.files_info.push(f);
+                    self.dirs_info[cwd].children.push(DirEntry::File(i));
+
+                    break;
+                } else {
+                    let d = Dir {
+                        parent: Some(cwd),
+                        name: segment,
+                        depth,
+                        ..Dir::default()
+                    };
+
+                    let child_key = self.dirs_info.insert(d);
+                    self.dirs_info[cwd].children.push(DirEntry::Dir(child_key));
+                    cwd = child_key;
+                }
             }
         }
     }
 }
-*/
