@@ -23,6 +23,7 @@ struct File {
     parent: usize,
     index: usize,
     depth: usize,
+    name: String,
     size: u64,
     progress: f64,
     priority: FilePriority,
@@ -32,9 +33,9 @@ struct File {
 struct Dir {
     parent: Option<usize>,
     depth: usize,
+    name: String,
     children: HashMap<String, DirEntry>,
     descendants: Vec<usize>,
-    size: u64,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -179,12 +180,18 @@ impl FilesData {
                         DirEntry::File(_) => panic!("Unexpected file"),
                     };
                 } else {
-                    let d = Dir { parent: Some(cwd), depth, ..Dir::default() };
+                    let d = Dir {
+                        parent: Some(cwd),
+                        depth,
+                        name: String::from(dir_name),
+                        ..Dir::default()
+                    };
+                    let dir_name = d.name.clone();
                     let child_id = self.dirs_info.insert(d);
 
                     self.dirs_info[cwd]
                         .children
-                        .insert(String::from(dir_name), DirEntry::Dir(child_id));
+                        .insert(dir_name, DirEntry::Dir(child_id));
 
                     cwd = child_id;
                 }
@@ -194,6 +201,7 @@ impl FilesData {
                 parent: cwd,
                 index: file.index,
                 size: file.size,
+                name: String::from(file_name),
                 depth,
                 progress,
                 priority,
@@ -201,12 +209,13 @@ impl FilesData {
 
             assert_eq!(self.files_info.len(), i);
             self.files_info.push(f);
+            let file_name = &self.files_info[i].name;
 
             // TODO: Result
             assert!(!self.dirs_info[cwd].children.contains_key(file_name));
             self.dirs_info[cwd]
                 .children
-                .insert(String::from(file_name), DirEntry::File(i));
+                .insert(file_name.clone(), DirEntry::File(i));
         }
     }
 }
