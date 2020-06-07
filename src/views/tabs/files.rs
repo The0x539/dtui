@@ -3,7 +3,8 @@
 use deluge_rpc::{FilePriority, Query};
 use serde::Deserialize;
 use slab::Slab;
-use std::cmp::Ordering;
+use std::collections::HashMap;
+//use std::cmp::Ordering;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Column { Filename, Size, Progress, Priority }
@@ -21,7 +22,6 @@ impl AsRef<str> for Column {
 struct File {
     parent: usize,
     index: usize,
-    name: String,
     depth: usize,
     size: u64,
     progress: f64,
@@ -31,14 +31,13 @@ struct File {
 #[derive(Default)]
 struct Dir {
     parent: Option<usize>,
-    name: String,
     depth: usize,
-    children: Vec<DirEntry>,
+    children: HashMap<String, DirEntry>,
     descendants: Vec<usize>,
     size: u64,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 enum DirEntry {
     File(usize), // an index into a Vec<File>
     Dir(usize),  // an index into a Slab<Dir>
@@ -70,12 +69,14 @@ struct FilesData {
 }
 
 impl FilesData {
+    /*
     fn get_name(&self, entry: DirEntry) -> &str {
         match entry {
             DirEntry::Dir(id) => &self.dirs_info[id].name,
             DirEntry::File(id) => &self.files_info[id].name,
         }
     }
+    */
 
     fn get_depth(&self, entry: DirEntry) -> usize {
         match entry {
@@ -109,6 +110,7 @@ impl FilesData {
         false
     }
 
+    /*
     fn compare_dir_entries(&self, a: DirEntry, b: DirEntry) -> Ordering {
         match (a, b) {
             (DirEntry::Dir(_), DirEntry::File(_)) => Ordering::Greater,
@@ -133,6 +135,7 @@ impl FilesData {
             }
         }
     }
+    */
 
     fn build_tree(&mut self, query: FilesQuery) {
         let FilesQuery { files, file_progress, file_priorities } = query;
@@ -148,7 +151,6 @@ impl FilesData {
 
         for (i, file) in files.into_iter().enumerate() {
             let mut cwd = self.root_dir;
-            self.dirs_info[cwd].descendants.push(i);
 
             assert_eq!(i, file.index);
             let progress = file_progress[i];
@@ -156,17 +158,18 @@ impl FilesData {
 
             let mut iter = file.path.split('/').peekable();
 
-            while let Some(segment) = iter.next() {
-                let segment = String::from(segment);
+            loop {
+                let segment = String::from(iter.next().unwrap());
 
                 let depth = self.dirs_info[cwd].depth + 1;
+
+                self.dirs_info[cwd].descendants.push(i);
 
                 if iter.peek().is_none() {
                     let f = File {
                         parent: cwd,
                         index: file.index,
                         size: file.size,
-                        name: segment,
                         depth,
                         progress,
                         priority,
@@ -174,20 +177,31 @@ impl FilesData {
 
                     assert_eq!(self.files_info.len(), i);
                     self.files_info.push(f);
-                    self.dirs_info[cwd].children.push(DirEntry::File(i));
+                    assert!(!self.dirs_info[cwd].children.contains_key(&segment));
+                    self.dirs_info[cwd]
+                        .children
+                        .insert(segment, DirEntry::File(i));
 
                     break;
                 } else {
-                    let d = Dir {
-                        parent: Some(cwd),
-                        name: segment,
-                        depth,
-                        ..Dir::default()
-                    };
+                    cwd = match self.dirs_info[cwd].children.get(&segment) {
+                        Some(DirEntry::Dir(id)) => *id,
 
-                    let child_key = self.dirs_info.insert(d);
-                    self.dirs_info[cwd].children.push(DirEntry::Dir(child_key));
-                    cwd = child_key;
+                        // TODO: use a Result? The server could totally send us a bogus structure.
+                        Some(DirEntry::File(_)) => panic!("Unexpected file"),
+
+                        None => {
+                            let d = Dir {
+                                parent: Some(cwd),
+                                depth,
+                                ..Dir::default()
+                            };
+
+                            let child_id = self.dirs_info.insert(d);
+                            self.dirs_info[cwd].children.insert(segment, DirEntry::Dir(child_id));
+                            child_id
+                        }
+                    }
                 }
             }
         }
