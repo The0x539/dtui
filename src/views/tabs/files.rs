@@ -1,8 +1,8 @@
 #![allow(dead_code)]
 
-use std::collections::HashMap;
 use deluge_rpc::{FilePriority, Query};
 use serde::Deserialize;
+use slab::Slab;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Column { Filename, Size, Progress, Priority }
@@ -18,23 +18,25 @@ impl AsRef<str> for Column {
 }
 
 struct File {
+    parent: usize,
     index: usize,
-    path: String,
+    name: String,
     size: u64,
     progress: f64,
     priority: FilePriority,
 }
 
 #[derive(Default)]
-struct Directory {
-    children: HashMap<String, DirEntry>,
-    num_leaves: usize,
-    progress: f64,
+struct Dir {
+    parent: Option<usize>,
+    name: String,
+    children: Vec<DirEntry>,
+    descendants: Vec<usize>,
 }
 
 enum DirEntry {
-    File(File),
-    Directory(Directory),
+    File(usize), // an index into a Vec<File>
+    Dir(usize),  // an index into a Slab<Dir>
 }
 
 #[derive(Debug, Clone, PartialEq, Deserialize)]
@@ -52,47 +54,56 @@ struct FilesQuery {
     file_priorities: Vec<FilePriority>,
 }
 
-fn build_file_tree(query: FilesQuery) -> Directory {
+fn build_tree(query: FilesQuery, files_info: &mut Vec<File>, dirs_info: &mut Slab<Dir>) -> usize {
     let FilesQuery { files, file_progress, file_priorities } = query;
 
     assert_eq!(files.len(), file_progress.len());
     assert_eq!(files.len(), file_priorities.len());
 
-    let mut root = Directory::default();
- 
-    for file in files.into_iter() {
-        let mut cwd = &mut root;
-        
+    files_info.clear();
+    files_info.reserve_exact(files.len());
+    dirs_info.clear();
+
+    let root = dirs_info.insert(Dir::default());
+    let mut cwd = root;
+
+    for (i, file) in files.into_iter().enumerate() {
+        assert_eq!(i, file.index);
+        let progress = file_progress[i];
+        let priority = file_priorities[i];
+
         let mut iter = file.path.split('/').peekable();
 
         while let Some(segment) = iter.next() {
             let segment = String::from(segment);
 
-            cwd.progress *= cwd.num_leaves as f64;
-            cwd.num_leaves += 1;
-            cwd.progress += file_progress[file.index];
-            cwd.progress /= cwd.num_leaves as f64;
+            dirs_info[cwd].descendants.push(i);
 
             if iter.peek().is_none() {
-                assert!(!cwd.children.contains_key(&segment), "unexpected dir entry");
                 let f = File {
+                    parent: cwd,
                     index: file.index,
                     size: file.size,
-                    path: file.path,
-                    progress: file_progress[file.index],
-                    priority: file_priorities[file.index],
+                    name: segment,
+                    progress,
+                    priority,
                 };
-                cwd.children.insert(segment, DirEntry::File(f));
+
+                assert_eq!(files_info.len(), i);
+                files_info.push(f);
+                dirs_info[cwd].children.push(DirEntry::File(i));
+
                 break;
             } else {
-                let entry = cwd.children
-                    .entry(segment)
-                    .or_insert(DirEntry::Directory(Directory::default()));
+                let d = Dir {
+                    parent: Some(cwd),
+                    name: segment,
+                    ..Dir::default()
+                };
 
-                cwd = match entry {
-                    DirEntry::Directory(ref mut dir) => dir,
-                    DirEntry::File(_) => panic!("unexpected file"),
-                }
+                let child_key = dirs_info.insert(d);
+                dirs_info[cwd].children.push(DirEntry::Dir(child_key));
+                cwd = child_key;
             }
         }
     }
@@ -100,3 +111,29 @@ fn build_file_tree(query: FilesQuery) -> Directory {
     root
 }
 
+/*
+#[derive(Debug, Default, Clone)]
+struct FilesData {
+    rows: Vec<Row>,
+    files: Directory,
+    sort_column: Column,
+    descending_sort: bool,
+}
+
+impl FilesData {
+    fn compare_rows(&self, a: &Row, b: &Row) -> Ordering {
+        match (a, b) {
+            (Row::Directory(_), Row::File(_)) => Ordering::Greater,
+            (Row::File(_), Row::Directory(_)) => Ordering::Less,
+            (Row::Directory(_, name, size, progress), Row::Directory(_, name, size, progress)) => {
+                match self.sort_column {
+                    Column::Filename => 
+                }
+            },
+            (Row::File(name, size, progress, priority), Row::File(name, size, progress, priority)) => {
+
+            }
+        }
+    }
+}
+*/
