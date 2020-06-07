@@ -5,6 +5,8 @@ use serde::Deserialize;
 use slab::Slab;
 use std::collections::HashMap;
 use std::cmp::Ordering;
+use cursive::Printer;
+use crate::util;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Column { Filename, Size, Progress, Priority }
@@ -76,6 +78,20 @@ struct FilesData {
 }
 
 impl FilesData {
+    fn get_size(&self, entry: DirEntry) -> u64 {
+        match entry {
+            DirEntry::Dir(id) => self.dirs_info[id].size,
+            DirEntry::File(id) => self.files_info[id].size,
+        }
+    }
+
+    fn get_progress(&self, entry: DirEntry) -> f64 {
+        match entry {
+            DirEntry::Dir(id) => self.dirs_info[id].progress,
+            DirEntry::File(id) => self.files_info[id].progress,
+        }
+    }
+
     fn get_depth(&self, entry: DirEntry) -> usize {
         match entry {
             DirEntry::Dir(id) => self.dirs_info[id].depth,
@@ -286,4 +302,46 @@ impl FilesData {
         self.push_entry(&mut rows, DirEntry::Dir(self.root_dir));
         self.rows = rows;
     }
+
+    fn draw_cell(&self, printer: &Printer, entry: DirEntry, col: Column) {
+        match (col, entry) {
+            (Column::Filename, DirEntry::Dir(id)) => {
+                let dir = &self.dirs_info[id];
+                let c = if dir.collapsed { '▸' } else { '▾' };
+                let text = format!("{} {}", c, dir.name);
+                printer.print((dir.depth, 0), &text);
+            },
+
+            (Column::Filename, DirEntry::File(id)) => {
+                let file = &self.files_info[id];
+                printer.print((file.depth, 0), &file.name);
+            },
+
+            (Column::Size, entry) => {
+                let size = self.get_size(entry);
+                printer.print((0, 0), &util::fmt_bytes(size));
+            },
+
+            (Column::Progress, entry) => {
+                let progress = self.get_progress(entry);
+                printer.print((0, 0), &progress.to_string());
+            },
+
+            (Column::Priority, DirEntry::Dir(_)) => (),
+
+            (Column::Priority, DirEntry::File(id)) => {
+                let priority = self.files_info[id].priority;
+                // TODO: this is missing from deluge_rpc
+                let s = match priority {
+                    FilePriority::Skip => "Skip",
+                    FilePriority::Low => "Low",
+                    FilePriority::Normal => "Normal",
+                    FilePriority::High => "High",
+                };
+                printer.print((0, 0), s);
+            },
+        }
+    }
+    
+    fn click_column(&mut self, column: Column) {
 }
