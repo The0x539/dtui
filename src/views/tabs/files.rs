@@ -21,6 +21,7 @@ struct File {
     parent: usize,
     index: usize,
     name: String,
+    depth: usize,
     size: u64,
     progress: f64,
     priority: FilePriority,
@@ -30,6 +31,7 @@ struct File {
 struct Dir {
     parent: Option<usize>,
     name: String,
+    depth: usize,
     children: Vec<DirEntry>,
     descendants: Vec<usize>,
 }
@@ -65,9 +67,11 @@ fn build_tree(query: FilesQuery, files_info: &mut Vec<File>, dirs_info: &mut Sla
     dirs_info.clear();
 
     let root = dirs_info.insert(Dir::default());
-    let mut cwd = root;
 
     for (i, file) in files.into_iter().enumerate() {
+        let mut cwd = root;
+        dirs_info[cwd].descendants.push(i);
+
         assert_eq!(i, file.index);
         let progress = file_progress[i];
         let priority = file_priorities[i];
@@ -77,7 +81,7 @@ fn build_tree(query: FilesQuery, files_info: &mut Vec<File>, dirs_info: &mut Sla
         while let Some(segment) = iter.next() {
             let segment = String::from(segment);
 
-            dirs_info[cwd].descendants.push(i);
+            let depth = dirs_info[cwd].depth + 1;
 
             if iter.peek().is_none() {
                 let f = File {
@@ -85,6 +89,7 @@ fn build_tree(query: FilesQuery, files_info: &mut Vec<File>, dirs_info: &mut Sla
                     index: file.index,
                     size: file.size,
                     name: segment,
+                    depth,
                     progress,
                     priority,
                 };
@@ -98,6 +103,7 @@ fn build_tree(query: FilesQuery, files_info: &mut Vec<File>, dirs_info: &mut Sla
                 let d = Dir {
                     parent: Some(cwd),
                     name: segment,
+                    depth,
                     ..Dir::default()
                 };
 
