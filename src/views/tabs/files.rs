@@ -217,6 +217,9 @@ impl FilesData {
             self.files_info.push(f);
             let file_name = &self.files_info[i].name;
 
+            debug_assert!(!self.dirs_info[cwd].descendants.contains(&i));
+            self.dirs_info[cwd].descendants.push(i);
+
             // TODO: Result
             assert!(!self.dirs_info[cwd].children.contains_key(file_name));
             self.dirs_info[cwd]
