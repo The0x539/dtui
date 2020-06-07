@@ -71,6 +71,7 @@ struct TorrentTabsViewThread {
     status_data: status::StatusData,
     details_data: details::DetailsData,
     options_data: options::OptionsData,
+    files_data: files::FilesData,
 }
 
 pub(crate) struct TorrentTabsView {
@@ -99,6 +100,7 @@ impl ViewThread for TorrentTabsViewThread {
                 Tab::Status => self.status_data.update(&self.session, hash),
                 Tab::Details => self.details_data.update(&self.session, hash),
                 Tab::Options => self.options_data.update(&self.session, hash),
+                Tab::Files => self.files_data.update(&self.session, hash),
                 _ => Box::pin(async { deluge_rpc::Result::Ok(()) }),
             }.await?;
         }
@@ -124,6 +126,7 @@ impl TorrentTabsView {
         let (status_tab, status_data) = status::StatusData::view();
         let (details_tab, details_data) = details::DetailsData::view();
         let (options_tab, options_data) = options::OptionsData::view();
+        let (files_tab, files_data) = files::FilesData::view();
 
         let options_field_names = options_data.names.clone();
         let current_options_recv = options_data.current_options_recv.clone();
@@ -132,7 +135,6 @@ impl TorrentTabsView {
         let active_tab = Tab::Status;
         let (active_tab_send, active_tab_recv) = watch::channel(active_tab);
 
-        let files_tab = TextView::new("Torrent files (todo)");
         let peers_tab = TextView::new("Torrent peers (todo)");
         let trackers_tab = TextView::new("Torrent trackers (todo)");
 
@@ -143,6 +145,7 @@ impl TorrentTabsView {
             status_data,
             details_data,
             options_data,
+            files_data,
         };
         let thread = task::spawn(thread_obj.run(shutdown));
 

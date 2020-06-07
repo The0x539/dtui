@@ -1,12 +1,19 @@
 #![allow(dead_code)]
 
-use deluge_rpc::{FilePriority, Query};
+use deluge_rpc::{FilePriority, Query, Session, InfoHash};
 use serde::Deserialize;
 use slab::Slab;
 use std::collections::HashMap;
 use std::cmp::Ordering;
 use cursive::Printer;
 use crate::util;
+use std::sync::{Arc, RwLock};
+use super::TabData;
+use async_trait::async_trait;
+use cursive::view::ScrollBase;
+use cursive::Vec2;
+use cursive::View;
+use tokio::time;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Column { Filename, Size, Progress, Priority }
@@ -66,7 +73,7 @@ struct FilesQuery {
 }
 
 #[derive(Default)]
-struct FilesData {
+struct FilesState {
     rows: Vec<DirEntry>,
     files_info: Vec<File>,
     // TODO: write a simpler Slab with more applicable invariants
@@ -77,7 +84,7 @@ struct FilesData {
     descending_sort: bool,
 }
 
-impl FilesData {
+impl FilesState {
     fn get_size(&self, entry: DirEntry) -> u64 {
         match entry {
             DirEntry::Dir(id) => self.dirs_info[id].size,
@@ -197,7 +204,10 @@ impl FilesData {
 
                 if let Some(entry) = self.dirs_info[cwd].children.get(dir_name) {
                     cwd = match entry {
-                        DirEntry::Dir(id) => *id,
+                        DirEntry::Dir(id) => {
+                            assert_eq!(depth, self.dirs_info[*id].depth);
+                            *id
+                        },
                         // TODO: Result
                         DirEntry::File(_) => panic!("Unexpected file"),
                     };
@@ -218,6 +228,8 @@ impl FilesData {
                     cwd = child_id;
                 }
             }
+
+            depth += 1;
 
             let f = File {
                 parent: cwd,
@@ -291,7 +303,10 @@ impl FilesData {
 
                 children.sort_unstable_by(|&a, &b| self.compare_dir_entries(a, b));
 
-                rows.extend_from_slice(&children);
+                // welcome to recursion land
+                for child in children.into_iter() {
+                    self.push_entry(rows, child);
+                }
             }
         }
     }
@@ -342,6 +357,134 @@ impl FilesData {
             },
         }
     }
-    
+
+    fn draw_row(&self, columns: &[(Column, usize)], printer: &Printer, entry: DirEntry) {
+        let mut x = 0;
+        for (column, width) in columns {
+            self.draw_cell(&printer.offset((x, 0)).cropped((*width, 1)), entry, *column);
+            x += width + 1;
+        }
+    }
+
+    /*
     fn click_column(&mut self, column: Column) {
+        if column == self.sort_column {
+            self.descending_sort = !self.descending_sort;
+        } else {
+            self.sort_column = column;
+            self.descending_sort = true;
+        }
+        // TODO: would figuring out how to do stuff in-place be meaningfully cheaper?
+        self.rebuild_rows();
+    }
+    */
+}
+
+pub(super) struct FilesView {
+    state: Arc<RwLock<FilesState>>,
+    columns: Vec<(Column, usize)>,
+    scrollbase: ScrollBase,
+}
+
+impl View for FilesView {
+    // TODO: figure out what this, the torrents tab, and the files tab have in common.
+    // Move that to shared code.
+    fn draw(&self, printer: &Printer) {
+        let Vec2 { x: w, y: h } = printer.size;
+
+        let data = self.state.read().unwrap();
+
+        let mut x = 0;
+        for (column, width) in &self.columns {
+            let mut name = String::from(column.as_ref());
+
+            if *column == data.sort_column {
+                name.push_str(if data.descending_sort { " v" } else { " ^" });
+            }
+
+            printer.cropped((x+width, 1)).print((x, 0), &name);
+            printer.print_hline((x, 1), *width, "─");
+            x += width;
+            if x == w - 1 {
+                printer.print((x, 1), "─");
+                break;
+            }
+            printer.print_vline((x, 0), h, "│");
+            printer.print((x, 1), "┼");
+            x += 1;
+        }
+        printer.print((0, 1), "╶");
+
+        self.scrollbase.draw(&printer.offset((0, 2)), |p, i| {
+            if let Some(entry) = data.rows.get(i) {
+                p.with_selection(
+                    false, // TODO: clicking on rows to do stuff
+                    |p| data.draw_row(&self.columns, p, *entry),
+                );
+            }
+        });
+    }
+
+    fn required_size(&mut self, constraint: Vec2) -> Vec2 {
+        constraint
+    }
+
+    fn layout(&mut self, size: Vec2) {
+        self.columns[0].1 = size.x - 34;
+        self.columns[1].1 = 10;
+        self.columns[2].1 = 10;
+        self.columns[3].1 = 10;
+        let sb = &mut self.scrollbase;
+        sb.view_height = size.y - 2;
+        sb.content_height = self.state.read().unwrap().rows.len();
+        sb.start_line = sb.start_line.min(sb.content_height.saturating_sub(sb.view_height));
+    }
+
+    fn take_focus(&mut self, _: cursive::direction::Direction) -> bool { true }
+}
+
+#[derive(Default)]
+pub(super) struct FilesData {
+    state: Arc<RwLock<FilesState>>,
+    active_torrent: Option<InfoHash>,
+}
+
+#[async_trait]
+impl TabData for FilesData {
+    type V = FilesView;
+
+    fn view() -> (Self::V, Self) {
+        let state = Arc::new(RwLock::new(FilesState::default()));
+        let view = {
+            FilesView {
+                state: state.clone(),
+                scrollbase: ScrollBase::default(),
+                columns: vec![
+                    (Column::Filename, 10),
+                    (Column::Size, 10),
+                    (Column::Progress, 10),
+                    (Column::Priority, 10),
+                ],
+            }
+        };
+        let data = FilesData { state, active_torrent: None };
+        (view, data)
+    }
+
+    async fn update(&mut self, session: &Session, hash: InfoHash) -> deluge_rpc::Result<()> {
+        let deadline = time::Instant::now() + time::Duration::from_secs(1);
+        self.active_torrent = Some(hash);
+
+        let query = session.get_torrent_status::<FilesQuery>(hash).await?;
+
+        {
+            let mut state = self.state.write().unwrap();
+            state.build_tree(query);
+            state.rebuild_rows();
+        }
+
+        time::delay_until(deadline).await;
+
+        Ok(())
+    }
 }
