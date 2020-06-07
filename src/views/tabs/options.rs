@@ -1,7 +1,7 @@
 use super::TabData;
 use deluge_rpc::{Query, InfoHash, Session};
 use serde::Deserialize;
-use cursive::views::{EditView, LinearLayout, TextView, DummyView, Button, Panel, EnableableView};
+use cursive::views::{EditView, LinearLayout, TextView, DummyView, Button, Panel, EnableableView, TextContent};
 use cursive::traits::Resizable;
 use async_trait::async_trait;
 use crate::views::spin::SpinView;
@@ -25,6 +25,7 @@ pub(super) struct OptionsQuery {
     pub stop_ratio: f64,
     pub remove_at_ratio: bool,
 
+    pub owner: String,
     pub shared: bool,
     pub prioritize_first_last_pieces: bool,
     pub sequential_download: bool,
@@ -43,6 +44,7 @@ pub(super) struct OptionsNames {
     pub stop_at_ratio: String,
     pub stop_ratio: String,
     pub remove_at_ratio: String,
+    pub owner: String,
     pub shared: String,
     pub prioritize_first_last_pieces: String,
     pub sequential_download: String,
@@ -67,6 +69,7 @@ impl OptionsNames {
             stop_at_ratio: v4(),
             stop_ratio: v4(),
             remove_at_ratio: v4(),
+            owner: v4(),
             shared: v4(),
             prioritize_first_last_pieces: v4(),
             sequential_download: v4(),
@@ -84,6 +87,7 @@ pub(super) struct OptionsData {
     active_torrent: Option<InfoHash>,
     current_options_send: watch::Sender<OptionsQuery>,
     apply_notify: Arc<Notify>,
+    owner: TextContent,
     pub current_options_recv: watch::Receiver<OptionsQuery>,
     pub pending_options: Arc<RwLock<Option<OptionsQuery>>>,
     pub names: OptionsNames,
@@ -220,8 +224,15 @@ impl TabData for OptionsData {
                 .child(apply_panel)
         };
 
+        let owner_content = TextContent::new("");
+
         let col3 = {
-            // TODO: TextView indicating owner
+            let owner_text = TextView::new_with_content(owner_content.clone())
+                .with_name(&names.owner);
+
+            let owner = LinearLayout::horizontal()
+                .child(TextView::new("Owner: "))
+                .child(owner_text);
 
             let shared = LabeledCheckbox::new("Shared")
                 .on_change(set!(pending_options.shared))
@@ -261,6 +272,7 @@ impl TabData for OptionsData {
                 .min_width(25);
 
             LinearLayout::vertical()
+                .child(owner)
                 .child(shared)
                 .child(prioritize_first_last_pieces)
                 .child(sequential_download)
@@ -280,6 +292,7 @@ impl TabData for OptionsData {
             active_torrent: None,
             current_options_send,
             current_options_recv,
+            owner: owner_content,
             apply_notify,
             pending_options,
             names,
@@ -298,6 +311,7 @@ impl TabData for OptionsData {
 
         if new_active || task::block_in_place(|| self.pending_options.read().unwrap().is_none()) {
             let options = session.get_torrent_status::<OptionsQuery>(hash).await?;
+            self.owner.set_content(&options.owner);
             self.current_options_send.broadcast(options).unwrap();
             time::delay_until(deadline).await;
         } else {
