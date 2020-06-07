@@ -39,6 +39,7 @@ struct Dir {
     descendants: Vec<usize>,
     size: u64,
     progress: f64,
+    collapsed: bool,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -252,5 +253,34 @@ impl FilesData {
 
     fn update_dir_values(&mut self) {
         take_mut::take_or_recover(self, Self::default, Self::update_dir_values_owned);
+    }
+
+    fn push_entry(&self, rows: &mut Vec<DirEntry>, entry: DirEntry) {
+        rows.push(entry);
+
+        if let DirEntry::Dir(id) = entry {
+            if !self.dirs_info[id].collapsed {
+                // TODO: find a way to do this before building the rows
+                // or something
+                // I don't really know
+                // this is a really complicated problem
+                let mut children: Vec<DirEntry> = self.dirs_info[id]
+                    .children
+                    .values()
+                    .copied()
+                    .collect();
+
+                children.sort_unstable_by(|&a, &b| self.compare_dir_entries(a, b));
+
+                rows.extend_from_slice(&children);
+            }
+        }
+    }
+
+    fn rebuild_rows(&mut self) {
+        let mut rows = std::mem::replace(&mut self.rows, Vec::new());
+        rows.clear();
+        self.push_entry(&mut rows, DirEntry::Dir(self.root_dir));
+        self.rows = rows;
     }
 }
