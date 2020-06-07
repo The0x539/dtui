@@ -4,7 +4,7 @@ use deluge_rpc::{FilePriority, Query};
 use serde::Deserialize;
 use slab::Slab;
 use std::collections::HashMap;
-//use std::cmp::Ordering;
+use std::cmp::Ordering;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Column { Filename, Size, Progress, Priority }
@@ -75,15 +75,6 @@ struct FilesData {
 }
 
 impl FilesData {
-    /*
-    fn get_name(&self, entry: DirEntry) -> &str {
-        match entry {
-            DirEntry::Dir(id) => &self.dirs_info[id].name,
-            DirEntry::File(id) => &self.files_info[id].name,
-        }
-    }
-    */
-
     fn get_depth(&self, entry: DirEntry) -> usize {
         match entry {
             DirEntry::Dir(id) => self.dirs_info[id].depth,
@@ -116,8 +107,12 @@ impl FilesData {
         false
     }
 
-    /*
     fn compare_dir_entries(&self, a: DirEntry, b: DirEntry) -> Ordering {
+        // "Weak" invariant
+        assert_eq!(self.get_parent(a), self.get_parent(b), "Non-sibling dir entries must not be compared");
+        // "Strong" invariant
+        assert_eq!(self.get_depth(a), self.get_depth(b), "Sibling dir entries must have the same depth");
+
         match (a, b) {
             (DirEntry::Dir(_), DirEntry::File(_)) => Ordering::Greater,
             (DirEntry::File(_), DirEntry::Dir(_)) => Ordering::Less,
@@ -127,7 +122,9 @@ impl FilesData {
 
                 match self.sort_column {
                     Column::Filename => a.name.cmp(&b.name).reverse(),
-                    _ => todo!(),
+                    Column::Size => a.size.cmp(&b.size),
+                    Column::Progress => a.progress.partial_cmp(&b.progress).expect("well-behaved floats"),
+                    Column::Priority => Ordering::Equal,
                 }
             },
 
@@ -136,12 +133,13 @@ impl FilesData {
 
                 match self.sort_column {
                     Column::Filename => a.name.cmp(&b.name).reverse(),
-                    _ => todo!(),
+                    Column::Size => a.size.cmp(&b.size),
+                    Column::Progress => a.progress.partial_cmp(&b.progress).expect("well-behaved floats"),
+                    Column::Priority => a.priority.cmp(&b.priority),
                 }
             }
         }
     }
-    */
 
     fn build_tree(&mut self, query: FilesQuery) {
         let FilesQuery { files, file_progress, file_priorities } = query;
@@ -239,7 +237,7 @@ impl FilesData {
             dir.size = 0;
             dir.progress = 0.0;
 
-            let files =  dir.descendants.iter().map(|id| &files_info[*id]);
+            let files = dir.descendants.iter().map(|id| &files_info[*id]);
 
             for file in files {
                 dir.size += file.size;
