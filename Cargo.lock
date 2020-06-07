@@ -414,6 +414,7 @@ dependencies = [
  "serde",
  "slab",
  "static_assertions",
+ "take_mut",
  "tokio",
  "uuid",
 ]

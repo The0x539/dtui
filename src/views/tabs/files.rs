@@ -18,6 +18,7 @@ impl AsRef<str> for Column {
         }
     }
 }
+impl Default for Column { fn default() -> Self { Self::Filename } }
 
 struct File {
     parent: usize,
@@ -36,6 +37,8 @@ struct Dir {
     name: String,
     children: HashMap<String, DirEntry>,
     descendants: Vec<usize>,
+    size: u64,
+    progress: f64,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -59,9 +62,12 @@ struct FilesQuery {
     file_priorities: Vec<FilePriority>,
 }
 
+#[derive(Default)]
 struct FilesData {
     rows: Vec<DirEntry>,
     files_info: Vec<File>,
+    // TODO: write a simpler Slab with more applicable invariants
+    // Would also be usable for files_info.
     dirs_info: Slab<Dir>,
     root_dir: usize,
     sort_column: Column,
@@ -146,6 +152,7 @@ impl FilesData {
         self.files_info.clear();
         self.files_info.reserve_exact(files.len());
         self.dirs_info.clear();
+        self.dirs_info.reserve_exact(files.len()); // hey, it's an upper bound
 
         self.root_dir = self.dirs_info.insert(Dir::default());
 
@@ -217,5 +224,35 @@ impl FilesData {
                 .children
                 .insert(file_name.clone(), DirEntry::File(i));
         }
+
+        self.files_info.shrink_to_fit();
+        self.dirs_info.shrink_to_fit();
+
+        self.update_dir_values();
+    }
+
+    fn update_dir_values_owned(self) -> Self {
+        let mut dirs_info = self.dirs_info;
+        let files_info = &self.files_info;
+
+        for (_, dir) in dirs_info.iter_mut() {
+            dir.size = 0;
+            dir.progress = 0.0;
+
+            let files =  dir.descendants.iter().map(|id| &files_info[*id]);
+
+            for file in files {
+                dir.size += file.size;
+                dir.progress += file.progress;
+            }
+
+            dir.progress /= dir.descendants.len() as f64;
+        }
+
+        Self { dirs_info, ..self }
+    }
+
+    fn update_dir_values(&mut self) {
+        take_mut::take_or_recover(self, Self::default, Self::update_dir_values_owned);
     }
 }

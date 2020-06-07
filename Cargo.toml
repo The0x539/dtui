@@ -20,6 +20,7 @@ epochs = "0.2.4"
 static_assertions = "1.1.0"
 uuid = { version = "0.8.1", features = ["v4"] }
 slab = "0.4.2"
+take_mut = "0.2.2"
 
 [patch.crates-io]
 deluge-rpc-macro = { git = "https://github.com/The0x539/deluge-macro.git", branch = "trunk" }
