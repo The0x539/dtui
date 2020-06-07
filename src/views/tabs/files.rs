@@ -58,7 +58,6 @@ struct FilesQuery {
     file_priorities: Vec<FilePriority>,
 }
 
-
 struct FilesData {
     rows: Vec<DirEntry>,
     files_info: Vec<File>,
@@ -156,54 +155,58 @@ impl FilesData {
             let progress = file_progress[i];
             let priority = file_priorities[i];
 
-            let mut iter = file.path.split('/').peekable();
+            let mut depth = self.dirs_info[cwd].depth;
+            assert_eq!(depth, 0);
 
-            loop {
-                let segment = String::from(iter.next().unwrap());
+            let (dir_names, file_name) = {
+                let mut iter = file.path.split('/');
+                let last = iter.next_back().unwrap();
+                // TODO: Result
+                assert!(!last.is_empty());
+                (iter, last)
+            };
 
-                let depth = self.dirs_info[cwd].depth + 1;
-
+            for dir_name in dir_names {
+                // TODO: Result
+                assert!(!dir_name.is_empty());
+                depth += 1;
                 self.dirs_info[cwd].descendants.push(i);
 
-                if iter.peek().is_none() {
-                    let f = File {
-                        parent: cwd,
-                        index: file.index,
-                        size: file.size,
-                        depth,
-                        progress,
-                        priority,
+                if let Some(entry) = self.dirs_info[cwd].children.get(dir_name) {
+                    cwd = match entry {
+                        DirEntry::Dir(id) => *id,
+                        // TODO: Result
+                        DirEntry::File(_) => panic!("Unexpected file"),
                     };
+                } else {
+                    let d = Dir { parent: Some(cwd), depth, ..Dir::default() };
+                    let child_id = self.dirs_info.insert(d);
 
-                    assert_eq!(self.files_info.len(), i);
-                    self.files_info.push(f);
-                    assert!(!self.dirs_info[cwd].children.contains_key(&segment));
                     self.dirs_info[cwd]
                         .children
-                        .insert(segment, DirEntry::File(i));
+                        .insert(String::from(dir_name), DirEntry::Dir(child_id));
 
-                    break;
-                } else {
-                    cwd = match self.dirs_info[cwd].children.get(&segment) {
-                        Some(DirEntry::Dir(id)) => *id,
-
-                        // TODO: use a Result? The server could totally send us a bogus structure.
-                        Some(DirEntry::File(_)) => panic!("Unexpected file"),
-
-                        None => {
-                            let d = Dir {
-                                parent: Some(cwd),
-                                depth,
-                                ..Dir::default()
-                            };
-
-                            let child_id = self.dirs_info.insert(d);
-                            self.dirs_info[cwd].children.insert(segment, DirEntry::Dir(child_id));
-                            child_id
-                        }
-                    }
+                    cwd = child_id;
                 }
             }
+
+            let f = File {
+                parent: cwd,
+                index: file.index,
+                size: file.size,
+                depth,
+                progress,
+                priority,
+            };
+
+            assert_eq!(self.files_info.len(), i);
+            self.files_info.push(f);
+
+            // TODO: Result
+            assert!(!self.dirs_info[cwd].children.contains_key(file_name));
+            self.dirs_info[cwd]
+                .children
+                .insert(String::from(file_name), DirEntry::File(i));
         }
     }
 }
