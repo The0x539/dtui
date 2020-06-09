@@ -10,7 +10,7 @@ tokio = { version = "0.2", features = ["time", "dns"] }
 cursive = { version = "0.15.0", default-features = false, features = ["crossterm-backend"] }
 deluge-rpc = { git = "https://github.com/The0x539/rust-deluge-rpc.git", branch = "trunk" }
 bytesize = "1.0.1"
-cursive-tabs = "*"
+cursive-tabs = { path = "experiment/cursive-tabs" }
 cursive_buffered_backend = "0.4.0"
 futures = "*"
 fnv = "1.0.7"
@@ -24,7 +24,6 @@ take_mut = "0.2.2"
 
 [patch.crates-io]
 deluge-rpc-macro = { git = "https://github.com/The0x539/deluge-macro.git", branch = "trunk" }
-cursive-tabs = { path = "experiment/cursive-tabs" }
 
 [profile.dev]
 panic = "abort"
