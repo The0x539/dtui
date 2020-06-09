@@ -296,7 +296,7 @@ impl TableViewData for FilesState {
         descending_sort = self.descending_sort;
     }
 
-    fn get_row_value<'a: 'b, 'b: 'c, 'c>(&'a self, index: &'b Self::RowIndex) -> &'c Self::RowValue {
+    fn get_row_value<'a: 'b, 'b: 'c, 'c>(&'a self, index: &'b DirEntry) -> &'c DirEntry {
         index
     }
 
@@ -312,7 +312,7 @@ impl TableViewData for FilesState {
         self.descending_sort = val;
     }
 
-    fn draw_cell(&self, printer: &Printer, entry: &Self::RowValue, col: Column) {
+    fn draw_cell(&self, printer: &Printer, entry: &DirEntry, col: Column) {
         match (col, *entry) {
             (Column::Filename, DirEntry::Dir(id)) => {
                 let dir = &self.dirs_info[id];

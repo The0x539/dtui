@@ -96,18 +96,18 @@ impl TableViewData for ViewData {
     type Column = Column;
     type RowIndex = InfoHash;
     type RowValue = Torrent;
-    type Rows = Vec<Self::RowIndex>;
+    type Rows = Vec<InfoHash>;
     impl_table! {
         sort_column = self.sort_column;
         rows = self.rows;
         descending_sort = self.descending_sort;
     }
 
-    fn get_row_value<'a: 'b, 'b: 'c, 'c>(&'a self, index: &'b Self::RowIndex) -> &'c Self::RowValue {
+    fn get_row_value<'a: 'b, 'b: 'c, 'c>(&'a self, index: &'b InfoHash) -> &'c Torrent {
         &self.torrents[index]
     }
 
-    fn set_sort_column(&mut self, val: Self::Column) {
+    fn set_sort_column(&mut self, val: Column) {
         self.sort_column = val;
         self.sort_stable();
     }
@@ -138,7 +138,7 @@ impl TableViewData for ViewData {
         ord
     }
 
-    fn draw_cell(&self, printer: &Printer, tor: &Self::RowValue, column: Self::Column) {
+    fn draw_cell(&self, printer: &Printer, tor: &Torrent, column: Column) {
         match column {
             Column::Name => printer.print((0, 0), &tor.name),
             Column::State => {
