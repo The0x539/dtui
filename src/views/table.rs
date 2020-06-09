@@ -51,7 +51,7 @@ pub(crate) trait TableViewData: Default {
         }
     }
 
-    fn get_row_value<'a: 'b, 'b: 'c, 'c>(&'a self, index: &'b Self::RowIndex) -> &'c Self::RowValue;
+    fn get_row_value<'a>(&'a self, index: &'a Self::RowIndex) -> &'a Self::RowValue;
 
     fn draw_cell(&self, printer: &Printer, row: &Self::RowValue, column: Self::Column);
 

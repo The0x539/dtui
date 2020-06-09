@@ -296,7 +296,7 @@ impl TableViewData for FilesState {
         descending_sort = self.descending_sort;
     }
 
-    fn get_row_value<'a: 'b, 'b: 'c, 'c>(&'a self, index: &'b DirEntry) -> &'c DirEntry {
+    fn get_row_value<'a>(&'a self, index: &'a DirEntry) -> &'a DirEntry {
         index
     }
 

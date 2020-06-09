@@ -103,7 +103,7 @@ impl TableViewData for ViewData {
         descending_sort = self.descending_sort;
     }
 
-    fn get_row_value<'a: 'b, 'b: 'c, 'c>(&'a self, index: &'b InfoHash) -> &'c Torrent {
+    fn get_row_value<'a>(&'a self, index: &'a InfoHash) -> &'a Torrent {
         &self.torrents[index]
     }
 
