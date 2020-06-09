@@ -112,22 +112,56 @@ impl FilesState {
         }
     }
 
-    fn is_parent(&self, possible_parent: usize, possible_child: DirEntry) -> bool {
-        if self.get_depth(possible_child) <= self.dirs_info[possible_parent].depth {
+    fn is_ancestor(&self, ancestor: DirEntry, entry: DirEntry) -> bool {
+        let ancestor_id = match ancestor {
+            DirEntry::Dir(id) => id,
+            DirEntry::File(_) => return false,
+        };
+
+        if self.get_depth(entry) <= self.dirs_info[ancestor_id].depth {
             return false;
         }
 
-        let mut parent_id = self.get_parent(possible_child);
+        let mut parent_id = self.get_parent(entry);
 
         // Recursion avoided for the sake of avoiding recursion.
         while let Some(id) = parent_id {
-            if id == possible_parent {
+            if id == ancestor_id {
                 return true;
             }
             parent_id = self.dirs_info[id].parent;
         }
 
         false
+    }
+
+    fn siblings(&self, a: DirEntry, b: DirEntry) -> bool {
+        a == b || self.get_parent(a) == self.get_parent(b)
+    }
+
+    fn sibling_ancestors(&self, mut a: DirEntry, mut b: DirEntry) -> (DirEntry, DirEntry) {
+        if self.siblings(a, b) {
+            return (a, b);
+        }
+
+        // Okay to unwrap because only the root node gives None.
+        // If we get to the root, we shouldn't be trying to go further.
+        let pdir = |e| DirEntry::Dir(self.get_parent(e).unwrap());
+
+        loop {
+            match self.get_depth(a).cmp(&self.get_depth(b)) {
+                Ordering::Less => b = pdir(b),
+                Ordering::Greater => a = pdir(a),
+                Ordering::Equal => {
+                    if self.siblings(a, b) {
+                        return (a, b);
+                    } else {
+                        a = pdir(a);
+                        b = pdir(b);
+                    }
+                }
+            }
+        }
     }
 
     fn build_tree(&mut self, query: FilesQuery) {
@@ -282,6 +316,28 @@ impl FilesState {
         self.push_entry(&mut rows, DirEntry::Dir(self.root_dir));
         self.rows = rows;
     }
+
+    fn compare_dirs(&self, a: usize, b: usize) -> Ordering {
+        let (a, b) = (&self.dirs_info[a], &self.dirs_info[b]);
+
+        match self.sort_column {
+            Column::Filename => a.name.cmp(&b.name).reverse(),
+            Column::Size => a.size.cmp(&b.size),
+            Column::Progress => a.progress.partial_cmp(&b.progress).expect("well-behaved floats"),
+            Column::Priority => Ordering::Equal,
+        }
+    }
+
+    fn compare_files(&self, a: usize, b: usize) -> Ordering {
+        let (a, b) = (&self.files_info[a], &self.files_info[b]);
+
+        match self.sort_column {
+            Column::Filename => a.name.cmp(&b.name).reverse(),
+            Column::Size => a.size.cmp(&b.size),
+            Column::Progress => a.progress.partial_cmp(&b.progress).expect("well-behaved floats"),
+            Column::Priority => a.priority.cmp(&b.priority),
+        }
+    }
 }
 
 impl TableViewData for FilesState {
@@ -353,37 +409,22 @@ impl TableViewData for FilesState {
     }
 
     fn compare_rows(&self, a: &DirEntry, b: &DirEntry) -> Ordering {
-        let (a, b) = (*a, *b);
-        // "Weak" invariant
-        assert_eq!(self.get_parent(a), self.get_parent(b), "Non-sibling dir entries must not be compared");
-        // "Strong" invariant
-        assert_eq!(self.get_depth(a), self.get_depth(b), "Sibling dir entries must have the same depth");
+        if self.is_ancestor(*a, *b) {
+            return Ordering::Less;
+        } else if self.is_ancestor(*b, *a) {
+            return Ordering::Greater;
+        }
+
+        let (a, b) = self.sibling_ancestors(*a, *b);
+
+        assert_eq!(self.get_parent(a), self.get_parent(b));
+        assert_eq!(self.get_depth(a), self.get_depth(b));
 
         match (a, b) {
             (DirEntry::Dir(_), DirEntry::File(_)) => Ordering::Greater,
             (DirEntry::File(_), DirEntry::Dir(_)) => Ordering::Less,
-
-            (DirEntry::Dir(a), DirEntry::Dir(b)) => {
-                let (a, b) = (&self.dirs_info[a], &self.dirs_info[b]);
-
-                match self.sort_column {
-                    Column::Filename => a.name.cmp(&b.name).reverse(),
-                    Column::Size => a.size.cmp(&b.size),
-                    Column::Progress => a.progress.partial_cmp(&b.progress).expect("well-behaved floats"),
-                    Column::Priority => Ordering::Equal,
-                }
-            },
-
-            (DirEntry::File(a), DirEntry::File(b)) => {
-                let (a, b) = (&self.files_info[a], &self.files_info[b]);
-
-                match self.sort_column {
-                    Column::Filename => a.name.cmp(&b.name).reverse(),
-                    Column::Size => a.size.cmp(&b.size),
-                    Column::Progress => a.progress.partial_cmp(&b.progress).expect("well-behaved floats"),
-                    Column::Priority => a.priority.cmp(&b.priority),
-                }
-            }
+            (DirEntry::Dir(a), DirEntry::Dir(b)) => self.compare_dirs(a, b),
+            (DirEntry::File(a), DirEntry::File(b)) => self.compare_files(a, b),
         }
     }
 }
