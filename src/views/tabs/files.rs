@@ -286,33 +286,37 @@ impl FilesState {
 
     fn push_entry(&self, rows: &mut Vec<DirEntry>, entry: DirEntry) {
         rows.push(entry);
+        self.push_children(rows, entry);
+    }
 
-        if let DirEntry::Dir(id) = entry {
-            if !self.dirs_info[id].collapsed {
-                // TODO: find a way to do this before building the rows
-                // or something
-                // I don't really know
-                // this is a really complicated problem
-                let mut children: Vec<DirEntry> = self.dirs_info[id]
-                    .children
-                    .values()
-                    .copied()
-                    .collect();
+    fn push_children(&self, rows: &mut Vec<DirEntry>, entry: DirEntry) {
+        let id = match entry {
+            DirEntry::Dir(id) if !self.dirs_info[id].collapsed => id,
+            _ => return,
+        };
 
-                children.sort_unstable_by(|a, b| self.compare_rows(a, b));
+        // TODO: find a way to do this before building the rows
+        // or something
+        // I don't really know
+        // this is a really complicated problem
+        let mut children: Vec<DirEntry> = self.dirs_info[id]
+            .children
+            .values()
+            .copied()
+            .collect();
 
-                // welcome to recursion land
-                for child in children.into_iter() {
-                    self.push_entry(rows, child);
-                }
-            }
+        children.sort_unstable_by(|a, b| self.compare_rows(a, b));
+
+        // welcome to recursion land
+        for child in children.into_iter() {
+            self.push_entry(rows, child);
         }
     }
 
     fn rebuild_rows(&mut self) {
         let mut rows = std::mem::replace(&mut self.rows, Vec::new());
         rows.clear();
-        self.push_entry(&mut rows, DirEntry::Dir(self.root_dir));
+        self.push_children(&mut rows, DirEntry::Dir(self.root_dir));
         self.rows = rows;
         self.sort_stable();
     }
