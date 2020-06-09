@@ -83,34 +83,6 @@ impl Torrent {
     }
 }
 
-fn draw_cell(printer: &Printer, tor: &Torrent, col: Column) {
-    match col {
-        Column::Name => printer.print((0, 0), &tor.name),
-        Column::State => {
-            let status = match tor.state {
-                TorrentState::Downloading => "DOWN",
-                TorrentState::Seeding => "SEED",
-                TorrentState::Paused => "PAUSE",
-                TorrentState::Checking => "CHECK",
-                TorrentState::Moving => "MOVE",
-                TorrentState::Allocating => "ALLOC",
-                TorrentState::Error => "ERROR",
-                TorrentState::Queued => "QUEUE",
-            };
-            let mut buf = ryu::Buffer::new();
-            let progress = buf.format_finite(tor.progress);
-            // TODO: draw my own damn progress bar
-            let status_msg = format!("{} {}%", status, progress);
-            ProgressBar::new()
-                .with_value(Counter::new(tor.progress as usize))
-                .with_label(move |_, _| status_msg.to_owned())
-                .draw(printer);
-        },
-        Column::Size => printer.print((0, 0), &fmt_bytes(tor.total_size)),
-        Column::Speed => printer.print((0, 0), &(fmt_bytes(tor.upload_payload_rate) + "/s")),
-    };
-}
-
 #[derive(Debug, Default, Clone)]
 struct ViewData {
     rows: Vec<InfoHash>,
@@ -179,10 +151,38 @@ impl ViewData {
         }
     }
 
+    fn draw_cell(&self, printer: &Printer, tor: &Torrent, col: Column) {
+        match col {
+            Column::Name => printer.print((0, 0), &tor.name),
+            Column::State => {
+                let status = match tor.state {
+                    TorrentState::Downloading => "DOWN",
+                    TorrentState::Seeding => "SEED",
+                    TorrentState::Paused => "PAUSE",
+                    TorrentState::Checking => "CHECK",
+                    TorrentState::Moving => "MOVE",
+                    TorrentState::Allocating => "ALLOC",
+                    TorrentState::Error => "ERROR",
+                    TorrentState::Queued => "QUEUE",
+                };
+                let mut buf = ryu::Buffer::new();
+                let progress = buf.format_finite(tor.progress);
+                // TODO: draw my own damn progress bar
+                let status_msg = format!("{} {}%", status, progress);
+                ProgressBar::new()
+                    .with_value(Counter::new(tor.progress as usize))
+                    .with_label(move |_, _| status_msg.to_owned())
+                    .draw(printer);
+            },
+            Column::Size => printer.print((0, 0), &fmt_bytes(tor.total_size)),
+            Column::Speed => printer.print((0, 0), &(fmt_bytes(tor.upload_payload_rate) + "/s")),
+        };
+    }
+
     fn draw_row(&self, printer: &Printer, columns: &[(Column, usize)], torrent: &Torrent) {
         let mut x = 0;
         for (column, width) in columns {
-            draw_cell(&printer.offset((x, 0)).cropped((*width, 1)), torrent, *column);
+            self.draw_cell(&printer.offset((x, 0)).cropped((*width, 1)), torrent, *column);
             x += width + 1;
         }
     }
