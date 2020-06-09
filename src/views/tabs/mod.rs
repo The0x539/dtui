@@ -54,9 +54,11 @@ impl std::fmt::Display for Tab {
 pub(self) trait TabData {
     type V: View;
 
-    fn view() -> (Self::V, Self);
+    fn view() -> (Self::V, Self) where Self: Sized;
 
-    async fn update(&mut self, session: &Session, hash: InfoHash) -> deluge_rpc::Result<()>;
+    async fn update(&mut self, session: &Session) -> deluge_rpc::Result<()>;
+
+    async fn reload(&mut self, session: &Session, hash: InfoHash) -> deluge_rpc::Result<()>;
 }
 
 mod status;
@@ -67,7 +69,11 @@ mod files;
 struct TorrentTabsViewThread {
     session: Arc<Session>,
     selected_recv: watch::Receiver<Option<InfoHash>>,
+    selected: Option<InfoHash>,
     active_tab_recv: watch::Receiver<Tab>,
+    active_tab: Tab,
+    should_reload: bool,
+
     status_data: status::StatusData,
     details_data: details::DetailsData,
     options_data: options::OptionsData,
@@ -90,26 +96,43 @@ impl ViewThread for TorrentTabsViewThread {
     async fn do_update(&mut self) -> deluge_rpc::Result<()> {
         let tick = time::Instant::now() + time::Duration::from_secs(1);
 
-        let opt_hash = *self.selected_recv.borrow();
+        if let Some(hash) = self.selected {
 
-        if let Some(hash) = opt_hash {
-
-            let active_tab = *self.active_tab_recv.borrow();
-
-            match active_tab {
-                Tab::Status => self.status_data.update(&self.session, hash),
-                Tab::Details => self.details_data.update(&self.session, hash),
-                Tab::Options => self.options_data.update(&self.session, hash),
-                Tab::Files => self.files_data.update(&self.session, hash),
-                _ => Box::pin(async { deluge_rpc::Result::Ok(()) }),
-            }.await?;
+            if self.should_reload {
+                match self.active_tab {
+                    Tab::Status => self.status_data.reload(&self.session, hash),
+                    Tab::Details => self.details_data.reload(&self.session, hash),
+                    Tab::Options => self.options_data.reload(&self.session, hash),
+                    Tab::Files => self.files_data.reload(&self.session, hash),
+                    _ => Box::pin(async { deluge_rpc::Result::Ok(()) }),
+                }.await?;
+            } else {
+                match self.active_tab {
+                    Tab::Status => self.status_data.update(&self.session),
+                    Tab::Details => self.details_data.update(&self.session),
+                    Tab::Options => self.options_data.update(&self.session),
+                    Tab::Files => self.files_data.update(&self.session),
+                    _ => Box::pin(async { deluge_rpc::Result::Ok(()) }),
+                }.await?;
+            }
         }
 
         let new_selection = self.selected_recv.recv();
         let new_active_tab = self.active_tab_recv.recv();
+
+        let should_reload = &mut self.should_reload;
+        let selected = &mut self.selected;
+        let active_tab = &mut self.active_tab;
+
         tokio::select! {
-            _ = new_selection => (),
-            _ = new_active_tab => (),
+            hash = new_selection => {
+                *should_reload = true;
+                *selected = hash.unwrap();
+            },
+            tab = new_active_tab => {
+                *should_reload = true;
+                *active_tab = tab.unwrap();
+            },
             _ = time::delay_until(tick) => (),
         }
 
@@ -141,7 +164,10 @@ impl TorrentTabsView {
         let thread_obj = TorrentTabsViewThread {
             session,
             selected_recv,
+            selected: None,
             active_tab_recv,
+            active_tab,
+            should_reload: true,
             status_data,
             details_data,
             options_data,

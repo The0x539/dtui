@@ -11,7 +11,6 @@ use std::sync::{Arc, RwLock};
 use super::TabData;
 use async_trait::async_trait;
 use cursive::view::ViewWrapper;
-use tokio::time;
 use crate::views::table::{TableViewData, TableView};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -465,9 +464,8 @@ impl TabData for FilesData {
         (view, data)
     }
 
-    async fn update(&mut self, session: &Session, hash: InfoHash) -> deluge_rpc::Result<()> {
-        let deadline = time::Instant::now() + time::Duration::from_secs(1);
-        self.active_torrent = Some(hash);
+    async fn update(&mut self, session: &Session) -> deluge_rpc::Result<()> {
+        let hash = self.active_torrent.unwrap();
 
         let query = session.get_torrent_status::<FilesQuery>(hash).await?;
 
@@ -477,8 +475,11 @@ impl TabData for FilesData {
             state.rebuild_rows();
         }
 
-        time::delay_until(deadline).await;
-
         Ok(())
+    }
+
+    async fn reload(&mut self, session: &Session, hash: InfoHash) -> deluge_rpc::Result<()> {
+        self.active_torrent = Some(hash);
+        self.update(session).await
     }
 }

@@ -41,6 +41,8 @@ struct TorrentStatus {
 }
 
 pub(super) struct StatusData {
+    active_torrent: Option<InfoHash>,
+
     progress_label_send: watch::Sender<String>,
     progress_val: Counter,
 
@@ -83,6 +85,7 @@ impl TabData for StatusData {
             .child(status);
 
         let data = StatusData {
+            active_torrent: None,
             progress_label_send,
             progress_val,
             columns: [col1_content, col2_content, col3_content],
@@ -91,7 +94,9 @@ impl TabData for StatusData {
         (view, data)
     }
 
-    async fn update(&mut self, session: &Session, hash: InfoHash) -> deluge_rpc::Result<()> {
+    async fn update(&mut self, session: &Session) -> deluge_rpc::Result<()> {
+        let hash = self.active_torrent.unwrap();
+
         let status = session.get_torrent_status::<TorrentStatus>(hash).await?;
 
         let mut ryu_buf = ryu::Buffer::new();
@@ -126,6 +131,11 @@ impl TabData for StatusData {
         ].join("\n"));
 
         Ok(())
+    }
+
+    async fn reload(&mut self, session: &Session, hash: InfoHash) -> deluge_rpc::Result<()> {
+        self.active_torrent = Some(hash);
+        self.update(session).await
     }
 }
 

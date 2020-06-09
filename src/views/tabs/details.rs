@@ -22,6 +22,8 @@ struct TorrentDetails {
 }
 
 pub(super) struct DetailsData {
+    active_torrent: Option<InfoHash>,
+
     top: TextContent,
     left: TextContent,
     right: TextContent,
@@ -56,12 +58,14 @@ impl TabData for DetailsData {
             .child(middle_view)
             .child(bottom_view);
 
-        let data = DetailsData { top, left, right, bottom };
+        let data = DetailsData { active_torrent: None, top, left, right, bottom };
 
         (view, data)
     }
 
-    async fn update(&mut self, session: &Session, hash: InfoHash) -> deluge_rpc::Result<()> {
+    async fn update(&mut self, session: &Session) -> deluge_rpc::Result<()> {
+        let hash = self.active_torrent.unwrap();
+
         let details = session.get_torrent_status::<TorrentDetails>(hash).await?;
 
         self.top.set_content([
@@ -87,6 +91,11 @@ impl TabData for DetailsData {
         ].join("\n"));
 
         Ok(())
+    }
+
+    async fn reload(&mut self, session: &Session, hash: InfoHash) -> deluge_rpc::Result<()> {
+        self.active_torrent = Some(hash);
+        self.update(session).await
     }
 }
 

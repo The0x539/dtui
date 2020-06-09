@@ -300,26 +300,31 @@ impl TabData for OptionsData {
         (view, data)
     }
 
-    async fn update(&mut self, session: &Session, hash: InfoHash) -> deluge_rpc::Result<()> {
+    async fn update(&mut self, session: &Session) -> deluge_rpc::Result<()> {
         let deadline = time::Instant::now() + time::Duration::from_secs(1);
-        let new_active = !self.active_torrent.contains(&hash);
 
-        if new_active {
-            self.active_torrent = Some(hash);
-            task::block_in_place(|| self.pending_options.write().unwrap().take());
-        }
-
-        if new_active || task::block_in_place(|| self.pending_options.read().unwrap().is_none()) {
+        if task::block_in_place(|| self.pending_options.read().unwrap().is_none()) {
+            let hash = self.active_torrent.unwrap();
             let options = session.get_torrent_status::<OptionsQuery>(hash).await?;
             self.owner.set_content(&options.owner);
             self.current_options_send.broadcast(options).unwrap();
-            time::delay_until(deadline).await;
         } else {
             let timeout = time::timeout_at(deadline, self.apply_notify.notified());
             if let Ok(()) = timeout.await {
                 self.apply(session).await?;
             }
         }
+
+        Ok(())
+    }
+
+    async fn reload(&mut self, session: &Session, hash: InfoHash) -> deluge_rpc::Result<()> {
+        self.active_torrent = Some(hash);
+        task::block_in_place(|| self.pending_options.write().unwrap().take());
+
+        let options = session.get_torrent_status::<OptionsQuery>(hash).await?;
+        self.owner.set_content(&options.owner);
+        self.current_options_send.broadcast(options).unwrap();
 
         Ok(())
     }
