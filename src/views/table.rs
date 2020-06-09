@@ -11,8 +11,9 @@ use cursive::direction::Direction;
 
 pub(crate) trait TableViewData: Default {
     type Column: Copy + Eq + AsRef<str>;
-    type Row: Copy + Eq;
-    type Rows: DerefMut<Target = [Self::Row]> + Default;
+    type RowIndex: Copy + Eq;
+    type RowValue;
+    type Rows: DerefMut<Target = [Self::RowIndex]> + Default;
 
     fn sort_column(&self) -> Self::Column;
     fn set_sort_column(&mut self, val: Self::Column);
@@ -28,7 +29,7 @@ pub(crate) trait TableViewData: Default {
     fn rows_mut(&mut self) -> &mut Self::Rows;
     fn set_rows(&mut self, val: Self::Rows);
 
-    fn compare_rows(&self, a: &Self::Row, b: &Self::Row) -> Ordering;
+    fn compare_rows(&self, a: &Self::RowIndex, b: &Self::RowIndex) -> Ordering;
 
     fn sort_unstable(&mut self) {
         let mut rows = std::mem::replace(self.rows_mut(), Self::Rows::default());
@@ -50,13 +51,15 @@ pub(crate) trait TableViewData: Default {
         }
     }
 
-    fn draw_cell(&self, printer: &Printer, row: &Self::Row, column: Self::Column);
+    fn get_row_value<'a: 'b, 'b: 'c, 'c>(&'a self, index: &'b Self::RowIndex) -> &'c Self::RowValue;
+
+    fn draw_cell(&self, printer: &Printer, row: &Self::RowValue, column: Self::Column);
 
     fn draw_row(
         &self,
         printer: &Printer,
         columns: &[(Self::Column, usize)],
-        row: &Self::Row,
+        row: &Self::RowValue,
     ) {
         let mut x = 0;
         for (column, width) in columns {
@@ -69,14 +72,10 @@ pub(crate) trait TableViewData: Default {
 
 macro_rules! impl_table {
     (
-        sort_column: $col_ty:ty = self.$col:ident;
-        rows: Vec<$row_ty:ty> = self.$rows:ident; // this is all I need; sue me
+        sort_column = self.$col:ident;
+        rows = self.$rows:ident;
         descending_sort = self.$sort:ident;
     ) => {
-        type Column = $col_ty;
-        type Row = $row_ty;
-        type Rows = Vec<Self::Row>;
-
         fn sort_column(&self) -> Self::Column { self.$col }
         fn descending_sort(&self) -> bool { self.$sort }
         fn rows(&self) -> &Self::Rows { &self.$rows }
@@ -89,7 +88,7 @@ pub(crate) struct TableView<T: TableViewData> {
     pub data: Arc<RwLock<T>>,
     pub columns: Vec<(T::Column, usize)>,
     scrollbase: ScrollBase,
-    pub selected: Option<T::Row>,
+    pub selected: Option<T::RowIndex>,
 }
 
 impl<T: TableViewData> TableView<T> {
@@ -156,7 +155,7 @@ impl<T: TableViewData> View for TableView<T> where Self: 'static {
             if let Some(row) = data.rows().get(i) {
                 p.with_selection(
                     self.selected.contains(row),
-                    |p| data.draw_row(p, &self.columns, row),
+                    |p| data.draw_row(p, &self.columns, data.get_row_value(row)),
                 );
             }
         });

@@ -285,10 +285,19 @@ impl FilesState {
 }
 
 impl TableViewData for FilesState {
+    type Column = Column;
+    type RowIndex = DirEntry;
+    type RowValue = DirEntry;
+    type Rows = Vec<DirEntry>;
+
     impl_table! {
-        sort_column: Column = self.sort_column;
-        rows: Vec<DirEntry> = self.rows;
+        sort_column = self.sort_column;
+        rows = self.rows;
         descending_sort = self.descending_sort;
+    }
+
+    fn get_row_value<'a: 'b, 'b: 'c, 'c>(&'a self, index: &'b Self::RowIndex) -> &'c Self::RowValue {
+        index
     }
 
     fn set_sort_column(&mut self, val: Column) {
@@ -303,7 +312,7 @@ impl TableViewData for FilesState {
         self.descending_sort = val;
     }
 
-    fn draw_cell(&self, printer: &Printer, entry: &Self::Row, col: Column) {
+    fn draw_cell(&self, printer: &Printer, entry: &Self::RowValue, col: Column) {
         match (col, *entry) {
             (Column::Filename, DirEntry::Dir(id)) => {
                 let dir = &self.dirs_info[id];

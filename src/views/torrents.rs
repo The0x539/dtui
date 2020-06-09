@@ -35,7 +35,7 @@ impl Default for Column {
 }
 
 #[derive(Clone, Debug, serde::Deserialize, Query)]
-struct Torrent {
+pub(crate) struct Torrent {
     hash: InfoHash,
     name: String,
     state: TorrentState,
@@ -93,10 +93,18 @@ pub(crate) struct ViewData {
 }
 
 impl TableViewData for ViewData {
+    type Column = Column;
+    type RowIndex = InfoHash;
+    type RowValue = Torrent;
+    type Rows = Vec<Self::RowIndex>;
     impl_table! {
-        sort_column: Column = self.sort_column;
-        rows: Vec<InfoHash> = self.rows;
+        sort_column = self.sort_column;
+        rows = self.rows;
         descending_sort = self.descending_sort;
+    }
+
+    fn get_row_value<'a: 'b, 'b: 'c, 'c>(&'a self, index: &'b Self::RowIndex) -> &'c Self::RowValue {
+        &self.torrents[index]
     }
 
     fn set_sort_column(&mut self, val: Self::Column) {
@@ -130,8 +138,7 @@ impl TableViewData for ViewData {
         ord
     }
 
-    fn draw_cell(&self, printer: &Printer, row: &Self::Row, column: Self::Column) {
-        let tor = &self.torrents[row];
+    fn draw_cell(&self, printer: &Printer, tor: &Self::RowValue, column: Self::Column) {
         match column {
             Column::Name => printer.print((0, 0), &tor.name),
             Column::State => {
