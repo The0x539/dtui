@@ -471,12 +471,45 @@ impl TabData for FilesData {
     async fn update(&mut self, session: &Session) -> deluge_rpc::Result<()> {
         let hash = self.active_torrent.unwrap();
 
-        let query = session.get_torrent_status::<FilesQuery>(hash).await?;
+        let mut query = session.get_torrent_status_diff::<FilesQuery>(hash).await?;
 
-        {
+        if query == Default::default() {
+            return Ok(());
+        }
+
+        if query.files.is_some() {
+            // screw it, send another query
+            return self.reload(session, hash).await;
+        } else {
             let mut state = self.state.write().unwrap();
-            state.build_tree(query);
-            state.rebuild_rows();
+
+            let should_sort = match state.sort_column {
+                Column::Progress if query.file_progress.is_some() => true,
+                Column::Priority if query.file_priorities.is_some() => true,
+                _ => false,
+            };
+
+            if let Some(progress) = query.file_progress.take() {
+                for (idx, val) in progress.into_iter().enumerate() {
+                    state.files_info[idx].progress = val;
+                }
+            }
+
+            if let Some(priorities) = query.file_priorities.take() {
+                for (idx, val) in priorities.into_iter().enumerate() {
+                    state.files_info[idx].priority = val;
+                }
+            }
+
+            // We checked files, and we removed the other two fields.
+            assert_eq!(query, Default::default());
+
+            // Do this always because we had an early return if there were _no_ changes.
+            state.update_dir_values();
+
+            if should_sort {
+                state.sort_stable();
+            }
         }
 
         Ok(())
@@ -484,6 +517,13 @@ impl TabData for FilesData {
 
     async fn reload(&mut self, session: &Session, hash: InfoHash) -> deluge_rpc::Result<()> {
         self.active_torrent = Some(hash);
-        self.update(session).await
+
+        let query = session.get_torrent_status::<FilesQuery>(hash).await?;
+
+        let mut state = self.state.write().unwrap();
+        state.build_tree(query);
+        state.rebuild_rows();
+
+        Ok(())
     }
 }
