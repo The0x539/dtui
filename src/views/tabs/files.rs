@@ -10,13 +10,12 @@ use crate::util;
 use std::sync::{Arc, RwLock};
 use super::TabData;
 use async_trait::async_trait;
-use cursive::view::ScrollBase;
-use cursive::Vec2;
-use cursive::View;
+use cursive::view::ViewWrapper;
 use tokio::time;
+use crate::views::table::{TableViewData, TableView};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Column { Filename, Size, Progress, Priority }
+pub(crate) enum Column { Filename, Size, Progress, Priority }
 impl AsRef<str> for Column {
     fn as_ref(&self) -> &'static str {
         match self {
@@ -51,8 +50,8 @@ struct Dir {
     collapsed: bool,
 }
 
-#[derive(Debug, Clone, Copy)]
-enum DirEntry {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum DirEntry {
     File(usize), // an index into a Vec<File>
     Dir(usize),  // an index into a Slab<Dir>
 }
@@ -73,7 +72,7 @@ struct FilesQuery {
 }
 
 #[derive(Default)]
-struct FilesState {
+pub(crate) struct FilesState {
     rows: Vec<DirEntry>,
     files_info: Vec<File>,
     // TODO: write a simpler Slab with more applicable invariants
@@ -129,40 +128,6 @@ impl FilesState {
         }
 
         false
-    }
-
-    fn compare_dir_entries(&self, a: DirEntry, b: DirEntry) -> Ordering {
-        // "Weak" invariant
-        assert_eq!(self.get_parent(a), self.get_parent(b), "Non-sibling dir entries must not be compared");
-        // "Strong" invariant
-        assert_eq!(self.get_depth(a), self.get_depth(b), "Sibling dir entries must have the same depth");
-
-        match (a, b) {
-            (DirEntry::Dir(_), DirEntry::File(_)) => Ordering::Greater,
-            (DirEntry::File(_), DirEntry::Dir(_)) => Ordering::Less,
-
-            (DirEntry::Dir(a), DirEntry::Dir(b)) => {
-                let (a, b) = (&self.dirs_info[a], &self.dirs_info[b]);
-
-                match self.sort_column {
-                    Column::Filename => a.name.cmp(&b.name).reverse(),
-                    Column::Size => a.size.cmp(&b.size),
-                    Column::Progress => a.progress.partial_cmp(&b.progress).expect("well-behaved floats"),
-                    Column::Priority => Ordering::Equal,
-                }
-            },
-
-            (DirEntry::File(a), DirEntry::File(b)) => {
-                let (a, b) = (&self.files_info[a], &self.files_info[b]);
-
-                match self.sort_column {
-                    Column::Filename => a.name.cmp(&b.name).reverse(),
-                    Column::Size => a.size.cmp(&b.size),
-                    Column::Progress => a.progress.partial_cmp(&b.progress).expect("well-behaved floats"),
-                    Column::Priority => a.priority.cmp(&b.priority),
-                }
-            }
-        }
     }
 
     fn build_tree(&mut self, query: FilesQuery) {
@@ -301,7 +266,7 @@ impl FilesState {
                     .copied()
                     .collect();
 
-                children.sort_unstable_by(|&a, &b| self.compare_dir_entries(a, b));
+                children.sort_unstable_by(|a, b| self.compare_rows(a, b));
 
                 // welcome to recursion land
                 for child in children.into_iter() {
@@ -317,9 +282,33 @@ impl FilesState {
         self.push_entry(&mut rows, DirEntry::Dir(self.root_dir));
         self.rows = rows;
     }
+}
 
-    fn draw_cell(&self, printer: &Printer, entry: DirEntry, col: Column) {
-        match (col, entry) {
+impl TableViewData for FilesState {
+    type Column = Column;
+    type Row = DirEntry;
+    type Rows = Vec<DirEntry>;
+
+    fn sort_column(&self) -> Self::Column { self.sort_column }
+    fn set_sort_column(&mut self, val: Self::Column) {
+        self.sort_column = val;
+        self.rebuild_rows();
+    }
+
+    fn descending_sort(&self) -> bool { self.descending_sort }
+    fn set_descending_sort(&mut self, val: bool) {
+        if val != self.descending_sort {
+            self.rebuild_rows();
+        }
+        self.descending_sort = val;
+    }
+
+    fn rows(&self) -> &Self::Rows { &self.rows }
+    fn rows_mut(&mut self) -> &mut Self::Rows { &mut self.rows }
+    fn set_rows(&mut self, val: Self::Rows) { self.rows = val; }
+
+    fn draw_cell(&self, printer: &Printer, entry: &Self::Row, col: Column) {
+        match (col, *entry) {
             (Column::Filename, DirEntry::Dir(id)) => {
                 let dir = &self.dirs_info[id];
                 let c = if dir.collapsed { '▸' } else { '▾' };
@@ -358,89 +347,48 @@ impl FilesState {
         }
     }
 
-    fn draw_row(&self, columns: &[(Column, usize)], printer: &Printer, entry: DirEntry) {
-        let mut x = 0;
-        for (column, width) in columns {
-            self.draw_cell(&printer.offset((x, 0)).cropped((*width, 1)), entry, *column);
-            x += width + 1;
-        }
-    }
+    fn compare_rows(&self, a: &DirEntry, b: &DirEntry) -> Ordering {
+        let (a, b) = (*a, *b);
+        // "Weak" invariant
+        assert_eq!(self.get_parent(a), self.get_parent(b), "Non-sibling dir entries must not be compared");
+        // "Strong" invariant
+        assert_eq!(self.get_depth(a), self.get_depth(b), "Sibling dir entries must have the same depth");
 
-    /*
-    fn click_column(&mut self, column: Column) {
-        if column == self.sort_column {
-            self.descending_sort = !self.descending_sort;
-        } else {
-            self.sort_column = column;
-            self.descending_sort = true;
+        match (a, b) {
+            (DirEntry::Dir(_), DirEntry::File(_)) => Ordering::Greater,
+            (DirEntry::File(_), DirEntry::Dir(_)) => Ordering::Less,
+
+            (DirEntry::Dir(a), DirEntry::Dir(b)) => {
+                let (a, b) = (&self.dirs_info[a], &self.dirs_info[b]);
+
+                match self.sort_column {
+                    Column::Filename => a.name.cmp(&b.name).reverse(),
+                    Column::Size => a.size.cmp(&b.size),
+                    Column::Progress => a.progress.partial_cmp(&b.progress).expect("well-behaved floats"),
+                    Column::Priority => Ordering::Equal,
+                }
+            },
+
+            (DirEntry::File(a), DirEntry::File(b)) => {
+                let (a, b) = (&self.files_info[a], &self.files_info[b]);
+
+                match self.sort_column {
+                    Column::Filename => a.name.cmp(&b.name).reverse(),
+                    Column::Size => a.size.cmp(&b.size),
+                    Column::Progress => a.progress.partial_cmp(&b.progress).expect("well-behaved floats"),
+                    Column::Priority => a.priority.cmp(&b.priority),
+                }
+            }
         }
-        // TODO: would figuring out how to do stuff in-place be meaningfully cheaper?
-        self.rebuild_rows();
     }
-    */
 }
 
 pub(super) struct FilesView {
-    state: Arc<RwLock<FilesState>>,
-    columns: Vec<(Column, usize)>,
-    scrollbase: ScrollBase,
+    inner: TableView<FilesState>,
 }
 
-impl View for FilesView {
-    // TODO: figure out what this, the torrents tab, and the files tab have in common.
-    // Move that to shared code.
-    fn draw(&self, printer: &Printer) {
-        let Vec2 { x: w, y: h } = printer.size;
-
-        let data = self.state.read().unwrap();
-
-        let mut x = 0;
-        for (column, width) in &self.columns {
-            let mut name = String::from(column.as_ref());
-
-            if *column == data.sort_column {
-                name.push_str(if data.descending_sort { " v" } else { " ^" });
-            }
-
-            printer.cropped((x+width, 1)).print((x, 0), &name);
-            printer.print_hline((x, 1), *width, "─");
-            x += width;
-            if x == w - 1 {
-                printer.print((x, 1), "─");
-                break;
-            }
-            printer.print_vline((x, 0), h, "│");
-            printer.print((x, 1), "┼");
-            x += 1;
-        }
-        printer.print((0, 1), "╶");
-
-        self.scrollbase.draw(&printer.offset((0, 2)), |p, i| {
-            if let Some(entry) = data.rows.get(i) {
-                p.with_selection(
-                    false, // TODO: clicking on rows to do stuff
-                    |p| data.draw_row(&self.columns, p, *entry),
-                );
-            }
-        });
-    }
-
-    fn required_size(&mut self, constraint: Vec2) -> Vec2 {
-        constraint
-    }
-
-    fn layout(&mut self, size: Vec2) {
-        self.columns[0].1 = size.x - 34;
-        self.columns[1].1 = 10;
-        self.columns[2].1 = 10;
-        self.columns[3].1 = 10;
-        let sb = &mut self.scrollbase;
-        sb.view_height = size.y - 2;
-        sb.content_height = self.state.read().unwrap().rows.len();
-        sb.start_line = sb.start_line.min(sb.content_height.saturating_sub(sb.view_height));
-    }
-
-    fn take_focus(&mut self, _: cursive::direction::Direction) -> bool { true }
+impl ViewWrapper for FilesView {
+    cursive::wrap_impl!(self.inner: TableView<FilesState>);
 }
 
 #[derive(Default)]
@@ -454,19 +402,14 @@ impl TabData for FilesData {
     type V = FilesView;
 
     fn view() -> (Self::V, Self) {
-        let state = Arc::new(RwLock::new(FilesState::default()));
-        let view = {
-            FilesView {
-                state: state.clone(),
-                scrollbase: ScrollBase::default(),
-                columns: vec![
-                    (Column::Filename, 10),
-                    (Column::Size, 10),
-                    (Column::Progress, 10),
-                    (Column::Priority, 10),
-                ],
-            }
-        };
+        let columns = vec![
+            (Column::Filename, 10),
+            (Column::Size, 10),
+            (Column::Progress, 10),
+            (Column::Priority, 10),
+        ];
+        let view = FilesView { inner: TableView::new(columns) };
+        let state = view.inner.data.clone();
         let data = FilesData { state, active_torrent: None };
         (view, data)
     }
