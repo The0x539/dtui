@@ -12,3 +12,4 @@ pub(crate) mod tabs;
 // traits
 pub(crate) mod scroll;
 pub(crate) mod thread;
+pub(crate) mod table;

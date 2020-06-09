@@ -14,6 +14,8 @@ use tokio::time;
 use async_trait::async_trait;
 use super::thread::ViewThread;
 
+use super::table::{TableViewData, TableView};
+
 use crate::util::fmt_bytes;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -91,7 +93,29 @@ struct ViewData {
     descending_sort: bool,
 }
 
-impl ViewData {
+impl TableViewData for ViewData {
+    type Column = Column;
+    type Row = InfoHash;
+    type Rows = Vec<InfoHash>;
+
+    fn sort_column(&self) -> Self::Column { self.sort_column }
+    fn set_sort_column(&mut self, val: Self::Column) {
+        self.sort_column = val;
+        self.sort_stable();
+    }
+
+    fn descending_sort(&self) -> bool { self.descending_sort }
+    fn set_descending_sort(&mut self, val: bool) {
+        if val != self.descending_sort {
+            self.rows.reverse();
+        }
+        self.descending_sort = val;
+    }
+
+    fn rows(&self) -> &Self::Rows { &self.rows }
+    fn rows_mut(&mut self) -> &mut Self::Rows { &mut self.rows }
+    fn set_rows(&mut self, val: Self::Rows) { self.rows = val; }
+
     fn compare_rows(&self, a: &InfoHash, b: &InfoHash) -> std::cmp::Ordering {
         let (ta, tb) = (&self.torrents[a], &self.torrents[b]);
 
@@ -111,49 +135,9 @@ impl ViewData {
         ord
     }
 
-    fn binary_search(&self, hash: &InfoHash) -> std::result::Result<usize, usize> {
-        self.rows.binary_search_by(|hash2| self.compare_rows(hash2, hash))
-    }
-
-    fn sort_unstable(&mut self) {
-        // TODO: use take_mut crate?
-        let mut rows = std::mem::replace(&mut self.rows, Vec::new());
-        rows.sort_unstable_by(|a, b| self.compare_rows(a, b));
-        self.rows = rows;
-    }
-
-    fn sort_stable(&mut self) {
-        // TODO: use take_mut crate?
-        let mut rows = std::mem::replace(&mut self.rows, Vec::new());
-        rows.sort_by(|a, b| self.compare_rows(a, b));
-        self.rows = rows;
-    }
-
-    fn toggle_visibility(&mut self, hash: InfoHash) {
-        match self.binary_search(&hash) {
-            Ok(idx) => {
-                self.rows.remove(idx);
-            },
-            Err(idx) => {
-                self.rows.insert(idx, hash);
-            },
-        }
-    }
-
-    fn click_column(&mut self, column: Column) {
-        if column == self.sort_column {
-            self.descending_sort = !self.descending_sort;
-            self.rows.reverse();
-        } else {
-            self.sort_column = column;
-            self.descending_sort = true;
-            self.sort_stable();
-        }
-    }
-
-    fn draw_cell(&self, printer: &Printer, hash: &InfoHash, col: Column) {
-        let tor = &self.torrents[hash];
-        match col {
+    fn draw_cell(&self, printer: &Printer, row: &Self::Row, column: Self::Column) {
+        let tor = &self.torrents[row];
+        match column {
             Column::Name => printer.print((0, 0), &tor.name),
             Column::State => {
                 let status = match tor.state {
@@ -179,12 +163,21 @@ impl ViewData {
             Column::Speed => printer.print((0, 0), &(fmt_bytes(tor.upload_payload_rate) + "/s")),
         };
     }
+}
 
-    fn draw_row(&self, printer: &Printer, columns: &[(Column, usize)], hash: &InfoHash) {
-        let mut x = 0;
-        for (column, width) in columns {
-            self.draw_cell(&printer.offset((x, 0)).cropped((*width, 1)), hash, *column);
-            x += width + 1;
+impl ViewData {
+    fn binary_search(&self, hash: &InfoHash) -> std::result::Result<usize, usize> {
+        self.rows.binary_search_by(|hash2| self.compare_rows(hash2, hash))
+    }
+
+    fn toggle_visibility(&mut self, hash: InfoHash) {
+        match self.binary_search(&hash) {
+            Ok(idx) => {
+                self.rows.remove(idx);
+            },
+            Err(idx) => {
+                self.rows.insert(idx, hash);
+            },
         }
     }
 }
