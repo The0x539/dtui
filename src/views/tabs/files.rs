@@ -315,6 +315,7 @@ impl FilesState {
         rows.clear();
         self.push_entry(&mut rows, DirEntry::Dir(self.root_dir));
         self.rows = rows;
+        self.sort_stable();
     }
 
     fn compare_dirs(&self, a: usize, b: usize) -> Ordering {
@@ -358,12 +359,12 @@ impl TableViewData for FilesState {
 
     fn set_sort_column(&mut self, val: Column) {
         self.sort_column = val;
-        self.rebuild_rows();
+        self.sort_stable();
     }
 
     fn set_descending_sort(&mut self, val: bool) {
         if val != self.descending_sort {
-            self.rebuild_rows();
+            self.sort_stable();
         }
         self.descending_sort = val;
     }
@@ -420,12 +421,16 @@ impl TableViewData for FilesState {
         assert_eq!(self.get_parent(a), self.get_parent(b));
         assert_eq!(self.get_depth(a), self.get_depth(b));
 
-        match (a, b) {
+        let mut ord = match (a, b) {
             (DirEntry::Dir(_), DirEntry::File(_)) => Ordering::Greater,
             (DirEntry::File(_), DirEntry::Dir(_)) => Ordering::Less,
             (DirEntry::Dir(a), DirEntry::Dir(b)) => self.compare_dirs(a, b),
             (DirEntry::File(a), DirEntry::File(b)) => self.compare_files(a, b),
-        }
+        };
+
+        if self.descending_sort { ord = ord.reverse(); }
+
+        ord
     }
 }
 
