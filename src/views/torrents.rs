@@ -1,9 +1,7 @@
 use cursive::traits::*;
-use deluge_rpc::*;
+use deluge_rpc::{Session, Query, InfoHash, FilterKey, FilterDict, TorrentState};
 use cursive::Printer;
-use cursive::vec::Vec2;
-use cursive::event::{Event, EventResult, MouseEvent, MouseButton};
-use cursive::view::ScrollBase;
+use cursive::event::{Event, EventResult};
 use tokio::sync::{RwLock as AsyncRwLock, broadcast, watch};
 use std::sync::{Arc, RwLock};
 use cursive::utils::Counter;
@@ -13,13 +11,14 @@ use fnv::FnvHashMap;
 use tokio::time;
 use async_trait::async_trait;
 use super::thread::ViewThread;
+use cursive::view::ViewWrapper;
 
 use super::table::{TableViewData, TableView};
 
 use crate::util::fmt_bytes;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Column { Name, State, Size, Speed }
+pub(crate) enum Column { Name, State, Size, Speed }
 impl AsRef<str> for Column {
     fn as_ref(&self) -> &'static str {
         match self {
@@ -86,7 +85,7 @@ impl Torrent {
 }
 
 #[derive(Debug, Default, Clone)]
-struct ViewData {
+pub(crate) struct ViewData {
     rows: Vec<InfoHash>,
     torrents: FnvHashMap<InfoHash, Torrent>,
     sort_column: Column,
@@ -183,12 +182,9 @@ impl ViewData {
 }
 
 pub(crate) struct TorrentsView {
-    data: Arc<RwLock<ViewData>>,
-    columns: Vec<(Column, usize)>,
-    scrollbase: ScrollBase,
+    inner: TableView<ViewData>,
     selected_send: watch::Sender<Option<InfoHash>>,
     thread: JoinHandle<deluge_rpc::Result<()>>,
-    selected: Option<InfoHash>,
 }
 
 struct TorrentsViewThread {
@@ -384,41 +380,15 @@ impl TorrentsView {
             (Column::Size, 15),
             (Column::Speed, 15),
         ];
-        let data = {
-            let data = ViewData {
-                descending_sort: true,
-                ..ViewData::default()
-            };
-            Arc::new(RwLock::new(data))
-        };
-        let thread_obj = TorrentsViewThread::new(session.clone(), data.clone(), filters_recv);
+        let inner = TableView::new(columns);
+        let thread_obj = TorrentsViewThread::new(session.clone(), inner.data.clone(), filters_recv);
         let thread = tokio::spawn(thread_obj.run(shutdown));
         selected_send.broadcast(None).unwrap();
         Self {
-            data,
-            columns,
+            inner,
             selected_send,
-            selected: None,
             thread,
-            scrollbase: ScrollBase::default(),
         }
-    }
-
-    fn click_header(&mut self, mut x: usize) {
-        for (column, width) in &self.columns {
-            if x < *width {
-                self.data.write().unwrap().click_column(*column);
-                return;
-            } else if x == *width {
-                // a column separator was clicked
-                return;
-            }
-            x -= width + 1
-        }
-    }
-
-    pub fn width(&self) -> usize {
-        self.columns.iter().map(|(_, w)| w+1).sum::<usize>()
     }
 
     pub fn take_thread(&mut self) -> JoinHandle<deluge_rpc::Result<()>> {
@@ -428,108 +398,16 @@ impl TorrentsView {
     }
 }
 
-impl View for TorrentsView {
-    fn draw(&self, printer: &Printer) {
-        let Vec2 { x: w, y: h } = printer.size;
+impl ViewWrapper for TorrentsView {
+    cursive::wrap_impl!(self.inner: TableView<ViewData>);
 
-        let data = self.data.read().unwrap();
-
-        let mut x = 0;
-        for (column, width) in &self.columns {
-            let mut name = String::from(column.as_ref());
-
-            if *column == data.sort_column {
-                name.push_str(if data.descending_sort { " v" } else { " ^" });
-            }
-
-            printer.cropped((x+width, 1)).print((x, 0), &name);
-            printer.print_hline((x, 1), *width, "─");
-            x += width;
-            if x == w - 1 {
-                printer.print((x, 1), "─");
-                break;
-            }
-            printer.print_vline((x, 0), h, "│");
-            printer.print((x, 1), "┼");
-            x += 1;
+    fn wrap_on_event(&mut self, event: Event) -> EventResult {
+        let prev_sel = self.inner.selected;
+        let result = self.inner.on_event(event);
+        let sel = self.inner.selected;
+        if sel != prev_sel {
+            self.selected_send.broadcast(sel).unwrap();
         }
-        printer.print((0, 1), "╶");
-
-        self.scrollbase.draw(&printer.offset((0, 2)), |p, i| {
-            if let Some(hash) = data.rows.get(i) {
-                p.with_selection(
-                    self.selected.contains(hash),
-                    |p| data.draw_row(p, &self.columns, hash),
-                );
-            }
-        });
-    }
-
-    fn required_size(&mut self, constraint: Vec2) -> Vec2 {
-        constraint
-    }
-
-    fn layout(&mut self, constraint: Vec2) {
-        self.columns[0].1 = constraint.x - 49;
-
-        let sb = &mut self.scrollbase;
-        sb.view_height = constraint.y - 2;
-        sb.content_height = self.data.read().unwrap().rows.len();
-        sb.start_line = sb.start_line.min(sb.content_height.saturating_sub(sb.view_height));
-    }
-
-    fn take_focus(&mut self, _: cursive::direction::Direction) -> bool { true }
-
-    fn on_event(&mut self, event: Event) -> EventResult {
-        match event {
-            Event::Mouse { offset, position, event } => match event {
-                MouseEvent::WheelUp => {
-                    self.scrollbase.scroll_up(1);
-                    EventResult::Consumed(None)
-                },
-                MouseEvent::WheelDown => {
-                    self.scrollbase.scroll_down(1);
-                    EventResult::Consumed(None)
-                },
-                MouseEvent::Press(MouseButton::Left)=> {
-                    let mut pos = position.saturating_sub(offset);
-
-                    if pos.y == 0 {
-                        self.click_header(pos.x);
-                    }
-
-                    pos.y = pos.y.saturating_sub(2);
-
-                    if self.scrollbase.content_height > self.scrollbase.view_height {
-                        if self.scrollbase.start_drag(pos, self.width()) {
-                            return EventResult::Consumed(None);
-                        }
-                    }
-
-                    if pos.y < self.scrollbase.view_height {
-                        let i = pos.y + self.scrollbase.start_line;
-                        if let Some(hash) = self.data.read().unwrap().rows.get(i) {
-                            self.selected = Some(*hash);
-                            self.selected_send.broadcast(self.selected).unwrap();
-                            return EventResult::Consumed(None);
-                        }
-                    }
-
-                    EventResult::Ignored
-                },
-                MouseEvent::Hold(MouseButton::Left) => {
-                    let mut pos = position.saturating_sub(offset);
-                    pos.y = pos.y.saturating_sub(2);
-                    self.scrollbase.drag(pos);
-                    EventResult::Consumed(None)
-                },
-                MouseEvent::Release(MouseButton::Left) => {
-                    self.scrollbase.release_grab();
-                    EventResult::Consumed(None)
-                }
-                _ => EventResult::Ignored,
-            },
-            _ => EventResult::Ignored,
-        }
+        result
     }
 }

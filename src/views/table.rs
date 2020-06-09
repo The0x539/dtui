@@ -9,7 +9,7 @@ use cursive::Vec2;
 use cursive::event::{Event, EventResult, MouseEvent, MouseButton};
 use cursive::direction::Direction;
 
-pub(super) trait TableViewData: Default {
+pub(crate) trait TableViewData: Default {
     type Column: Copy + Eq + AsRef<str>;
     type Row: Copy + Eq;
     type Rows: DerefMut<Target = [Self::Row]> + Default;
@@ -67,15 +67,15 @@ pub(super) trait TableViewData: Default {
     }
 }
 
-pub(super) struct TableView<T: TableViewData> {
-    data: Arc<RwLock<T>>,
-    columns: Vec<(T::Column, usize)>,
+pub(crate) struct TableView<T: TableViewData> {
+    pub data: Arc<RwLock<T>>,
+    pub columns: Vec<(T::Column, usize)>,
     scrollbase: ScrollBase,
-    selected: Option<T::Row>,
+    pub selected: Option<T::Row>,
 }
 
 impl<T: TableViewData> TableView<T> {
-    fn new(columns: Vec<(T::Column, usize)>) -> Self {
+    pub fn new(columns: Vec<(T::Column, usize)>) -> Self {
         Self {
             data: Arc::new(RwLock::new(T::default())),
             columns,
@@ -122,10 +122,10 @@ impl<T: TableViewData> View for TableView<T> where Self: 'static {
             }
 
             printer.cropped((x + width, 1)).print((x, 0), &name);
-            printer.print_hline((x, 1), *width, "");
+            printer.print_hline((x, 1), *width, "─");
             x += width;
             if x == w - 1 {
-                printer.print((x, 1), "");
+                printer.print((x, 1), "X");
                 break;
             }
             printer.print_vline((x, 0), h, "│");
