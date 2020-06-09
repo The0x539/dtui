@@ -151,7 +151,8 @@ impl ViewData {
         }
     }
 
-    fn draw_cell(&self, printer: &Printer, tor: &Torrent, col: Column) {
+    fn draw_cell(&self, printer: &Printer, hash: &InfoHash, col: Column) {
+        let tor = &self.torrents[hash];
         match col {
             Column::Name => printer.print((0, 0), &tor.name),
             Column::State => {
@@ -179,10 +180,10 @@ impl ViewData {
         };
     }
 
-    fn draw_row(&self, printer: &Printer, columns: &[(Column, usize)], torrent: &Torrent) {
+    fn draw_row(&self, printer: &Printer, columns: &[(Column, usize)], hash: &InfoHash) {
         let mut x = 0;
         for (column, width) in columns {
-            self.draw_cell(&printer.offset((x, 0)).cropped((*width, 1)), torrent, *column);
+            self.draw_cell(&printer.offset((x, 0)).cropped((*width, 1)), hash, *column);
             x += width + 1;
         }
     }
@@ -465,7 +466,7 @@ impl View for TorrentsView {
             if let Some(hash) = data.rows.get(i) {
                 p.with_selection(
                     self.selected.contains(hash),
-                    |p| data.draw_row(p, &self.columns, &data.torrents[&hash]),
+                    |p| data.draw_row(p, &self.columns, hash),
                 );
             }
         });
