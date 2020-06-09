@@ -285,27 +285,23 @@ impl FilesState {
 }
 
 impl TableViewData for FilesState {
-    type Column = Column;
-    type Row = DirEntry;
-    type Rows = Vec<DirEntry>;
+    impl_table! {
+        sort_column: Column = self.sort_column;
+        rows: Vec<DirEntry> = self.rows;
+        descending_sort = self.descending_sort;
+    }
 
-    fn sort_column(&self) -> Self::Column { self.sort_column }
-    fn set_sort_column(&mut self, val: Self::Column) {
+    fn set_sort_column(&mut self, val: Column) {
         self.sort_column = val;
         self.rebuild_rows();
     }
 
-    fn descending_sort(&self) -> bool { self.descending_sort }
     fn set_descending_sort(&mut self, val: bool) {
         if val != self.descending_sort {
             self.rebuild_rows();
         }
         self.descending_sort = val;
     }
-
-    fn rows(&self) -> &Self::Rows { &self.rows }
-    fn rows_mut(&mut self) -> &mut Self::Rows { &mut self.rows }
-    fn set_rows(&mut self, val: Self::Rows) { self.rows = val; }
 
     fn draw_cell(&self, printer: &Printer, entry: &Self::Row, col: Column) {
         match (col, *entry) {

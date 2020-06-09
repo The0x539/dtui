@@ -67,6 +67,24 @@ pub(crate) trait TableViewData: Default {
     }
 }
 
+macro_rules! impl_table {
+    (
+        sort_column: $col_ty:ty = self.$col:ident;
+        rows: Vec<$row_ty:ty> = self.$rows:ident; // this is all I need; sue me
+        descending_sort = self.$sort:ident;
+    ) => {
+        type Column = $col_ty;
+        type Row = $row_ty;
+        type Rows = Vec<Self::Row>;
+
+        fn sort_column(&self) -> Self::Column { self.$col }
+        fn descending_sort(&self) -> bool { self.$sort }
+        fn rows(&self) -> &Self::Rows { &self.$rows }
+        fn rows_mut(&mut self) -> &mut Self::Rows { &mut self.$rows }
+        fn set_rows(&mut self, val: Self::Rows) { self.$rows = val; }
+    }
+}
+
 pub(crate) struct TableView<T: TableViewData> {
     pub data: Arc<RwLock<T>>,
     pub columns: Vec<(T::Column, usize)>,

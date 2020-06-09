@@ -93,27 +93,23 @@ pub(crate) struct ViewData {
 }
 
 impl TableViewData for ViewData {
-    type Column = Column;
-    type Row = InfoHash;
-    type Rows = Vec<InfoHash>;
+    impl_table! {
+        sort_column: Column = self.sort_column;
+        rows: Vec<InfoHash> = self.rows;
+        descending_sort = self.descending_sort;
+    }
 
-    fn sort_column(&self) -> Self::Column { self.sort_column }
     fn set_sort_column(&mut self, val: Self::Column) {
         self.sort_column = val;
         self.sort_stable();
     }
 
-    fn descending_sort(&self) -> bool { self.descending_sort }
     fn set_descending_sort(&mut self, val: bool) {
         if val != self.descending_sort {
             self.rows.reverse();
         }
         self.descending_sort = val;
     }
-
-    fn rows(&self) -> &Self::Rows { &self.rows }
-    fn rows_mut(&mut self) -> &mut Self::Rows { &mut self.rows }
-    fn set_rows(&mut self, val: Self::Rows) { self.rows = val; }
 
     fn compare_rows(&self, a: &InfoHash, b: &InfoHash) -> std::cmp::Ordering {
         let (ta, tb) = (&self.torrents[a], &self.torrents[b]);
