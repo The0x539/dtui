@@ -178,6 +178,14 @@ impl ViewData {
             self.sort_stable();
         }
     }
+
+    fn draw_row(&self, printer: &Printer, columns: &[(Column, usize)], torrent: &Torrent) {
+        let mut x = 0;
+        for (column, width) in columns {
+            draw_cell(&printer.offset((x, 0)).cropped((*width, 1)), torrent, *column);
+            x += width + 1;
+        }
+    }
 }
 
 pub(crate) struct TorrentsView {
@@ -415,14 +423,6 @@ impl TorrentsView {
         }
     }
 
-    fn draw_row(&self, printer: &Printer, torrent: &Torrent) {
-        let mut x = 0;
-        for (column, width) in &self.columns {
-            draw_cell(&printer.offset((x, 0)).cropped((*width, 1)), torrent, *column);
-            x += width + 1;
-        }
-    }
-
     pub fn width(&self) -> usize {
         self.columns.iter().map(|(_, w)| w+1).sum::<usize>()
     }
@@ -465,7 +465,7 @@ impl View for TorrentsView {
             if let Some(hash) = data.rows.get(i) {
                 p.with_selection(
                     self.selected.contains(hash),
-                    |p| self.draw_row(p, &data.torrents[&hash]),
+                    |p| data.draw_row(p, &self.columns, &data.torrents[&hash]),
                 );
             }
         });
