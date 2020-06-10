@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 use deluge_rpc::{FilePriority, Query, Session, InfoHash};
 use serde::Deserialize;
 use slab::Slab;
@@ -31,7 +29,7 @@ impl Default for Column { fn default() -> Self { Self::Filename } }
 
 struct File {
     parent: usize,
-    index: usize,
+    //index: usize,
     depth: usize,
     name: String,
     size: u64,
@@ -234,7 +232,6 @@ impl FilesState {
 
             let f = File {
                 parent: cwd,
-                index: file.index,
                 size: file.size,
                 name: String::from(file_name),
                 depth,
