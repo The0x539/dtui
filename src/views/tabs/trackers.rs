@@ -2,7 +2,8 @@ use async_trait::async_trait;
 use super::{column, TabData};
 use deluge_rpc::{Query, Session, InfoHash};
 use cursive::align::HAlign;
-use cursive::views::{LinearLayout, TextContent, Button};
+use cursive::views::{LinearLayout, TextContent, Button, DummyView};
+use cursive::traits::Resizable;
 use serde::Deserialize;
 use crate::util;
 
@@ -35,14 +36,20 @@ impl TabData for TrackersData {
             "Next Announce:",
             "Private Torrent:",
         ];
-        let (col_view, col_content) = column(&rows, HAlign::Center);
+        let (mut col_view, col_content) = column(&rows, HAlign::Center);
 
         let button = Button::new("Edit Trackers", |_| todo!());
 
-        let view = LinearLayout::vertical().child(col_view).child(button);
+        let left_col = LinearLayout::vertical()
+            .child(col_view.remove_child(0).unwrap())
+            .child(DummyView.fixed_height(1))
+            .child(button);
+
+        col_view.insert_child(0, left_col);
+
         let data = TrackersData { active_torrent: None, content: col_content };
 
-        (view, data)
+        (col_view, data)
     }
 
     async fn update(&mut self, session: &Session) -> deluge_rpc::Result<()> {
