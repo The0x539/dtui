@@ -204,9 +204,11 @@ impl TabData for PeersData {
 
         let query = session.get_torrent_status::<PeersQuery>(hash).await?;
 
-        if query.peers.is_empty() && !self.was_empty {
-            self.was_empty = true;
-            self.state.write().unwrap().clear();
+        if query.peers.is_empty() {
+            if !self.was_empty {
+                self.was_empty = true;
+                self.state.write().unwrap().clear();
+            }
         } else {
             self.was_empty = false;
             self.state.write().unwrap().update(query.peers);
