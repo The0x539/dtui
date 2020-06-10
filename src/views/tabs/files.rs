@@ -377,7 +377,7 @@ impl FilesState {
         self.push_children(&mut new_entries, dir);
 
         let idx = self.rows
-            .binary_search_by(|b| self.compare_rows(&dir, &b))
+            .binary_search_by(|b| self.compare_rows(&b, &dir))
             .unwrap();
 
         self.rows.splice(idx+1..idx+1, new_entries);
