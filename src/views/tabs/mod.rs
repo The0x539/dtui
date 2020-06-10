@@ -2,7 +2,7 @@ use std::sync::{Arc, RwLock};
 use deluge_rpc::{Session, InfoHash};
 use super::thread::ViewThread;
 use async_trait::async_trait;
-use tokio::sync::{RwLock as AsyncRwLock, watch};
+use tokio::sync::{RwLock as AsyncRwLock, watch, broadcast};
 use tokio::time;
 use cursive_tabs::TabPanel;
 use tokio::task::{self, JoinHandle};
@@ -59,6 +59,10 @@ pub(self) trait TabData {
     async fn update(&mut self, session: &Session) -> deluge_rpc::Result<()>;
 
     async fn reload(&mut self, session: &Session, hash: InfoHash) -> deluge_rpc::Result<()>;
+
+    async fn on_event(&mut self, _session: &Session, _event: deluge_rpc::Event) -> deluge_rpc::Result<()> {
+        Ok(())
+    }
 }
 
 mod status;
@@ -73,6 +77,8 @@ struct TorrentTabsViewThread {
     active_tab_recv: watch::Receiver<Tab>,
     active_tab: Tab,
     should_reload: bool,
+    events_recv: broadcast::Receiver<deluge_rpc::Event>,
+    latest_event: Option<deluge_rpc::Event>,
 
     status_data: status::StatusData,
     details_data: details::DetailsData,
@@ -97,7 +103,6 @@ impl ViewThread for TorrentTabsViewThread {
         let tick = time::Instant::now() + time::Duration::from_secs(1);
 
         if let Some(hash) = self.selected {
-
             if self.should_reload {
                 self.should_reload = false;
                 match self.active_tab {
@@ -105,6 +110,14 @@ impl ViewThread for TorrentTabsViewThread {
                     Tab::Details => self.details_data.reload(&self.session, hash),
                     Tab::Options => self.options_data.reload(&self.session, hash),
                     Tab::Files => self.files_data.reload(&self.session, hash),
+                    _ => Box::pin(async { deluge_rpc::Result::Ok(()) }),
+                }.await?;
+            } else if let Some(event) = self.latest_event.take() {
+                match self.active_tab {
+                    Tab::Status => self.status_data.on_event(&self.session, event),
+                    Tab::Details => self.details_data.on_event(&self.session, event),
+                    Tab::Options => self.options_data.on_event(&self.session, event),
+                    Tab::Files => self.files_data.on_event(&self.session, event),
                     _ => Box::pin(async { deluge_rpc::Result::Ok(()) }),
                 }.await?;
             } else {
@@ -120,10 +133,12 @@ impl ViewThread for TorrentTabsViewThread {
 
         let new_selection = self.selected_recv.recv();
         let new_active_tab = self.active_tab_recv.recv();
+        let new_event = self.events_recv.recv();
 
         let should_reload = &mut self.should_reload;
         let selected = &mut self.selected;
         let active_tab = &mut self.active_tab;
+        let latest_event = &mut self.latest_event;
 
         tokio::select! {
             hash = new_selection => {
@@ -134,6 +149,9 @@ impl ViewThread for TorrentTabsViewThread {
                 *should_reload = true;
                 *active_tab = tab.unwrap();
             },
+            event = new_event => {
+                *latest_event = Some(event.unwrap());
+            }
             _ = time::delay_until(tick) => (),
         }
 
@@ -162,6 +180,12 @@ impl TorrentTabsView {
         let peers_tab = TextView::new("Torrent peers (todo)");
         let trackers_tab = TextView::new("Torrent trackers (todo)");
 
+        let evs = deluge_rpc::events![TorrentFileRenamed, TorrentFolderRenamed];
+        let f = session.set_event_interest(&evs);
+        task::block_in_place(|| futures::executor::block_on(f)).unwrap();
+
+        let events_recv = session.subscribe_events();
+
         let thread_obj = TorrentTabsViewThread {
             session,
             selected_recv,
@@ -169,6 +193,8 @@ impl TorrentTabsView {
             active_tab_recv,
             active_tab,
             should_reload: true,
+            events_recv,
+            latest_event: None,
             status_data,
             details_data,
             options_data,
