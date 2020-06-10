@@ -99,6 +99,7 @@ impl ViewThread for TorrentTabsViewThread {
         if let Some(hash) = self.selected {
 
             if self.should_reload {
+                self.should_reload = false;
                 match self.active_tab {
                     Tab::Status => self.status_data.reload(&self.session, hash),
                     Tab::Details => self.details_data.reload(&self.session, hash),

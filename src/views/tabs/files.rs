@@ -12,6 +12,8 @@ use super::TabData;
 use async_trait::async_trait;
 use cursive::view::ViewWrapper;
 use crate::views::table::{TableViewData, TableView};
+use cursive::event::{Event, EventResult};
+use cursive::traits::View;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Column { Filename, Size, Progress, Priority }
@@ -55,7 +57,7 @@ pub(crate) enum DirEntry {
     Dir(usize),  // an index into a Slab<Dir>
 }
 
-#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize, serde::Serialize)]
 struct QueryFile {
     index: usize,
     offset: u64,
@@ -342,6 +344,44 @@ impl FilesState {
             Column::Priority => a.priority.cmp(&b.priority),
         }
     }
+
+    fn collapse_dir(&mut self, dir: DirEntry) {
+        let id = match dir {
+            DirEntry::Dir(id) => id,
+            DirEntry::File(_) => return,
+        };
+
+        self.dirs_info[id].collapsed = true;
+
+        // I'm getting really tired of this design pattern.
+        let mut rows = std::mem::replace(&mut self.rows, Vec::new());
+
+        // TODO: surely I can set things up to do this more efficiently
+        rows.drain_filter(|row| self.is_ancestor(dir, *row));
+
+        self.rows = rows;
+    }
+
+    fn uncollapse_dir(&mut self, dir: DirEntry) {
+        let id = match dir {
+            DirEntry::Dir(id) => id,
+            DirEntry::File(_) => return,
+        };
+
+        self.dirs_info[id].collapsed = false;
+
+        // yep, I could definitely keep track of descendant _entries_, not just leaves
+        let upper_bound = self.dirs_info.len() + self.dirs_info[id].descendants.len();
+        let mut new_entries = Vec::with_capacity(upper_bound);
+
+        self.push_children(&mut new_entries, dir);
+
+        let idx = self.rows
+            .binary_search_by(|b| self.compare_rows(&dir, &b))
+            .unwrap();
+
+        self.rows.splice(idx+1..idx+1, new_entries);
+    }
 }
 
 impl TableViewData for FilesState {
@@ -443,6 +483,24 @@ pub(super) struct FilesView {
 
 impl ViewWrapper for FilesView {
     cursive::wrap_impl!(self.inner: TableView<FilesState>);
+
+    fn wrap_on_event(&mut self, event: Event) -> EventResult {
+        let result = self.inner.on_event(event);
+
+        if self.inner.check_double_clicked() {
+            if let Some(DirEntry::Dir(id)) = self.inner.selected {
+                let dir = DirEntry::Dir(id);
+                let mut data = self.inner.data.write().unwrap();
+                if data.dirs_info[id].collapsed {
+                    data.uncollapse_dir(dir);
+                } else {
+                    data.collapse_dir(dir);
+                }
+            }
+        }
+
+        result
+    }
 }
 
 #[derive(Default)]
@@ -477,39 +535,38 @@ impl TabData for FilesData {
             return Ok(());
         }
 
-        if query.files.is_some() {
-            // screw it, send another query
-            return self.reload(session, hash).await;
-        } else {
-            let mut state = self.state.write().unwrap();
+        // Deluge is dumb, so this is always Some.
+        // TODO: set up an on_event trait method, and just reload on any relevant rename
+        query.files.take();
 
-            let should_sort = match state.sort_column {
-                Column::Progress if query.file_progress.is_some() => true,
-                Column::Priority if query.file_priorities.is_some() => true,
-                _ => false,
-            };
+        let mut state = self.state.write().unwrap();
 
-            if let Some(progress) = query.file_progress.take() {
-                for (idx, val) in progress.into_iter().enumerate() {
-                    state.files_info[idx].progress = val;
-                }
+        let should_sort = match state.sort_column {
+            Column::Progress if query.file_progress.is_some() => true,
+            Column::Priority if query.file_priorities.is_some() => true,
+            _ => false,
+        };
+
+        if let Some(progress) = query.file_progress.take() {
+            for (idx, val) in progress.into_iter().enumerate() {
+                state.files_info[idx].progress = val;
             }
+        }
 
-            if let Some(priorities) = query.file_priorities.take() {
-                for (idx, val) in priorities.into_iter().enumerate() {
-                    state.files_info[idx].priority = val;
-                }
+        if let Some(priorities) = query.file_priorities.take() {
+            for (idx, val) in priorities.into_iter().enumerate() {
+                state.files_info[idx].priority = val;
             }
+        }
 
-            // We checked files, and we removed the other two fields.
-            assert_eq!(query, Default::default());
+        // We checked files, and we removed the other two fields.
+        assert_eq!(query, Default::default());
 
-            // Do this always because we had an early return if there were _no_ changes.
-            state.update_dir_values();
+        // Do this always because we had an early return if there were _no_ changes.
+        state.update_dir_values();
 
-            if should_sort {
-                state.sort_stable();
-            }
+        if should_sort {
+            state.sort_stable();
         }
 
         Ok(())

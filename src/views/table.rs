@@ -85,10 +85,12 @@ macro_rules! impl_table {
 }
 
 pub(crate) struct TableView<T: TableViewData> {
+    // TODO: better encapsulation
     pub data: Arc<RwLock<T>>,
     pub columns: Vec<(T::Column, usize)>,
     scrollbase: ScrollBase,
     pub selected: Option<T::RowIndex>,
+    pub was_double_clicked: bool,
 }
 
 impl<T: TableViewData> TableView<T> {
@@ -98,20 +100,22 @@ impl<T: TableViewData> TableView<T> {
             columns,
             scrollbase: ScrollBase::default(),
             selected: None,
+            was_double_clicked: false,
         }
     }
 
-    fn click_header(&mut self, mut x: usize) {
+    fn click_header(&mut self, mut x: usize) -> EventResult {
         for (column, width) in &self.columns {
             if x < *width {
                 self.data.write().unwrap().click_column(*column);
-                return;
+                return EventResult::Consumed(None);
             } else if x == *width {
                 // a column separator was clicked; do nothing
-                return;
+                return EventResult::Ignored;
             }
             x -= width + 1;
         }
+        return EventResult::Ignored;
     }
 
     fn width(&self) -> usize {
@@ -120,6 +124,15 @@ impl<T: TableViewData> TableView<T> {
             .map(|(_, w)| w + 1)
             .sum::<usize>()
             //.saturating_sub(1)
+    }
+
+    pub fn check_double_clicked(&mut self) -> bool {
+        if self.was_double_clicked {
+            self.was_double_clicked = false;
+            true
+        } else {
+            false
+        }
     }
 }
 
@@ -183,6 +196,7 @@ impl<T: TableViewData> View for TableView<T> where Self: 'static {
     fn take_focus(&mut self, _: Direction) -> bool { true }
 
     fn on_event(&mut self, event: Event) -> EventResult {
+        self.was_double_clicked = false;
         match event {
             Event::Mouse { offset, position, event } => match event {
                 MouseEvent::WheelUp => {
@@ -197,7 +211,9 @@ impl<T: TableViewData> View for TableView<T> where Self: 'static {
                     let mut pos = position.saturating_sub(offset);
 
                     if pos.y == 0 {
-                        self.click_header(pos.x);
+                        return self.click_header(pos.x);
+                    } else if pos.y == 1 {
+                        return EventResult::Ignored;
                     }
 
                     pos.y = pos.y.saturating_sub(2);
@@ -211,6 +227,7 @@ impl<T: TableViewData> View for TableView<T> where Self: 'static {
                     if pos.y < self.scrollbase.view_height {
                         let i = pos.y + self.scrollbase.start_line;
                         if let Some(row) = self.data.read().unwrap().rows().get(i) {
+                            self.was_double_clicked = self.selected.contains(row);
                             self.selected = Some(*row);
                             return EventResult::Consumed(None);
                         }
