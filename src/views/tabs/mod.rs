@@ -9,7 +9,7 @@ use tokio::task::{self, JoinHandle};
 use cursive::traits::*;
 use cursive::view::ViewWrapper;
 use cursive::align::HAlign;
-use cursive::vec::Vec2;
+use cursive::vec ::Vec2;
 use cursive::views::{
     TextView,
     LinearLayout,
@@ -70,6 +70,7 @@ mod details;
 mod options;
 mod files;
 mod peers;
+mod trackers;
 
 struct TorrentTabsViewThread {
     session: Arc<Session>,
@@ -86,6 +87,7 @@ struct TorrentTabsViewThread {
     options_data: options::OptionsData,
     files_data: files::FilesData,
     peers_data: peers::PeersData,
+    trackers_data: trackers::TrackersData,
 }
 
 pub(crate) struct TorrentTabsView {
@@ -113,7 +115,7 @@ impl ViewThread for TorrentTabsViewThread {
                     Tab::Options => self.options_data.reload(&self.session, hash),
                     Tab::Files => self.files_data.reload(&self.session, hash),
                     Tab::Peers => self.peers_data.reload(&self.session, hash),
-                    _ => Box::pin(async { deluge_rpc::Result::Ok(()) }),
+                    Tab::Trackers => self.trackers_data.reload(&self.session, hash),
                 }.await?;
             } else if let Some(event) = self.latest_event.take() {
                 match self.active_tab {
@@ -122,7 +124,7 @@ impl ViewThread for TorrentTabsViewThread {
                     Tab::Options => self.options_data.on_event(&self.session, event),
                     Tab::Files => self.files_data.on_event(&self.session, event),
                     Tab::Peers => self.peers_data.on_event(&self.session, event),
-                    _ => Box::pin(async { deluge_rpc::Result::Ok(()) }),
+                    Tab::Trackers => self.trackers_data.on_event(&self.session, event),
                 }.await?;
             } else {
                 match self.active_tab {
@@ -131,7 +133,7 @@ impl ViewThread for TorrentTabsViewThread {
                     Tab::Options => self.options_data.update(&self.session),
                     Tab::Files => self.files_data.update(&self.session),
                     Tab::Peers => self.peers_data.update(&self.session),
-                    _ => Box::pin(async { deluge_rpc::Result::Ok(()) }),
+                    Tab::Trackers => self.trackers_data.update(&self.session),
                 }.await?;
             }
         }
@@ -175,6 +177,7 @@ impl TorrentTabsView {
         let (options_tab, options_data) = options::OptionsData::view();
         let (files_tab, files_data) = files::FilesData::view();
         let (peers_tab, peers_data) = peers::PeersData::view();
+        let (trackers_tab, trackers_data) = trackers::TrackersData::view();
 
         let options_field_names = options_data.names.clone();
         let current_options_recv = options_data.current_options_recv.clone();
@@ -182,8 +185,6 @@ impl TorrentTabsView {
 
         let active_tab = Tab::Status;
         let (active_tab_send, active_tab_recv) = watch::channel(active_tab);
-
-        let trackers_tab = TextView::new("Torrent trackers (todo)");
 
         let evs = deluge_rpc::events![TorrentFileRenamed, TorrentFolderRenamed];
         let f = session.set_event_interest(&evs);
@@ -205,6 +206,7 @@ impl TorrentTabsView {
             options_data,
             files_data,
             peers_data,
+            trackers_data,
         };
         let thread = task::spawn(thread_obj.run(shutdown));
 
