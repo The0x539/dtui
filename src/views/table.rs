@@ -32,13 +32,13 @@ pub(crate) trait TableViewData: Default {
     fn compare_rows(&self, a: &Self::RowIndex, b: &Self::RowIndex) -> Ordering;
 
     fn sort_unstable(&mut self) {
-        let mut rows = std::mem::replace(self.rows_mut(), Self::Rows::default());
+        let mut rows = std::mem::take(self.rows_mut());
         rows.sort_unstable_by(|a, b| self.compare_rows(a, b));
         self.set_rows(rows);
     }
 
     fn sort_stable(&mut self) {
-        let mut rows = std::mem::replace(self.rows_mut(), Self::Rows::default());
+        let mut rows = std::mem::take(self.rows_mut());
         rows.sort_by(|a, b| self.compare_rows(a, b));
         self.set_rows(rows);
     }

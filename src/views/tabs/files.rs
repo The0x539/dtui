@@ -262,8 +262,8 @@ impl FilesState {
         self.update_dir_values();
     }
 
-    fn update_dir_values_owned(self) -> Self {
-        let mut dirs_info = self.dirs_info;
+    fn update_dir_values(&mut self) {
+        let mut dirs_info = std::mem::take(&mut self.dirs_info);
         let files_info = &self.files_info;
 
         for (_, dir) in dirs_info.iter_mut() {
@@ -285,11 +285,7 @@ impl FilesState {
                 .get_if_all_same();
         }
 
-        Self { dirs_info, ..self }
-    }
-
-    fn update_dir_values(&mut self) {
-        take_mut::take_or_recover(self, Self::default, Self::update_dir_values_owned);
+        self.dirs_info = dirs_info;
     }
 
     fn push_entry(&self, rows: &mut Vec<DirEntry>, entry: DirEntry) {
@@ -322,7 +318,7 @@ impl FilesState {
     }
 
     fn rebuild_rows(&mut self) {
-        let mut rows = std::mem::replace(&mut self.rows, Vec::new());
+        let mut rows = std::mem::take(&mut self.rows);
         rows.clear();
         self.push_children(&mut rows, DirEntry::Dir(self.root_dir));
         self.rows = rows;
@@ -360,7 +356,7 @@ impl FilesState {
         self.dirs_info[id].collapsed = true;
 
         // I'm getting really tired of this design pattern.
-        let mut rows = std::mem::replace(&mut self.rows, Vec::new());
+        let mut rows = std::mem::take(&mut self.rows);
 
         // TODO: surely I can set things up to do this more efficiently
         rows.drain_filter(|row| self.is_ancestor(dir, *row));
