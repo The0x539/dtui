@@ -532,13 +532,12 @@ impl TabData for FilesData {
 
         let mut query = session.get_torrent_status_diff::<FilesQuery>(hash).await?;
 
+        // Deluge is dumb, so this is always Some.
+        query.files.take();
+
         if query == Default::default() {
             return Ok(());
         }
-
-        // Deluge is dumb, so this is always Some.
-        // TODO: set up an on_event trait method, and just reload on any relevant rename
-        query.files.take();
 
         let mut state = self.state.write().unwrap();
 
