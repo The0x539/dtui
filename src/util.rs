@@ -97,3 +97,14 @@ pub fn fdate_or_dash(t: i64) -> String {
         fdate(t)
     }
 }
+
+pub trait GetIfAllSame: Iterator {
+    fn get_if_all_same(self) -> Option<Self::Item>;
+}
+
+impl<T: Eq, I: Iterator<Item = T>> GetIfAllSame for I {
+    fn get_if_all_same(mut self) -> Option<T> {
+        let val = self.next()?;
+        self.all(|v| v == val).then_some(val)
+    }
+}

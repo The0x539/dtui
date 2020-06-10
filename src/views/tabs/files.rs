@@ -6,7 +6,7 @@ use slab::Slab;
 use std::collections::HashMap;
 use std::cmp::Ordering;
 use cursive::Printer;
-use crate::util;
+use crate::util::{self, GetIfAllSame};
 use std::sync::{Arc, RwLock};
 use super::TabData;
 use async_trait::async_trait;
@@ -48,6 +48,7 @@ struct Dir {
     descendants: Vec<usize>,
     size: u64,
     progress: f64,
+    priority: Option<FilePriority>,
     collapsed: bool,
 }
 
@@ -277,6 +278,11 @@ impl FilesState {
             }
 
             dir.progress /= dir.descendants.len() as f64;
+
+            dir.priority = dir.descendants
+                .iter()
+                .map(|id| files_info[*id].priority)
+                .get_if_all_same();
         }
 
         Self { dirs_info, ..self }
@@ -330,7 +336,7 @@ impl FilesState {
             Column::Filename => a.name.cmp(&b.name).reverse(),
             Column::Size => a.size.cmp(&b.size),
             Column::Progress => a.progress.partial_cmp(&b.progress).expect("well-behaved floats"),
-            Column::Priority => Ordering::Equal,
+            Column::Priority => a.priority.cmp(&b.priority),
         }
     }
 
@@ -437,7 +443,16 @@ impl TableViewData for FilesState {
                 printer.print((0, 0), &progress.to_string());
             },
 
-            (Column::Priority, DirEntry::Dir(_)) => (),
+            (Column::Priority, DirEntry::Dir(id)) => {
+                let priority = self.dirs_info[id].priority;
+                let s = priority.map_or("Mixed", |p| match p {
+                    FilePriority::Skip => "Skip",
+                    FilePriority::Low => "Low",
+                    FilePriority::Normal => "Normal",
+                    FilePriority::High => "High",
+                });
+                printer.print((0, 0), s);
+            },
 
             (Column::Priority, DirEntry::File(id)) => {
                 let priority = self.files_info[id].priority;
