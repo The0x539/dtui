@@ -123,7 +123,7 @@ impl<T: TableViewData> TableView<T> {
             .iter()
             .map(|(_, w)| w + 1)
             .sum::<usize>()
-            //.saturating_sub(1)
+            .saturating_sub(1)
     }
 
     pub fn check_double_clicked(&mut self) -> bool {
