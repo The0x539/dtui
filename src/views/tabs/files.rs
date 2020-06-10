@@ -406,10 +406,11 @@ impl TableViewData for FilesState {
     }
 
     fn set_descending_sort(&mut self, val: bool) {
-        if val != self.descending_sort {
+        let old_val = self.descending_sort;
+        self.descending_sort = val;
+        if val != old_val {
             self.sort_stable();
         }
-        self.descending_sort = val;
     }
 
     fn draw_cell(&self, printer: &Printer, entry: &DirEntry, col: Column) {
