@@ -93,11 +93,10 @@ pub(super) trait TableCallback<T: TableViewData> = Fn(
 type BoxedTableCallback<T> = Box<dyn TableCallback<T>>;
 
 pub(crate) struct TableView<T: TableViewData> {
-    // TODO: better encapsulation
-    pub data: Arc<RwLock<T>>,
+    data: Arc<RwLock<T>>,
     columns: Vec<(T::Column, usize)>,
     scrollbase: ScrollBase,
-    pub selected: Option<T::RowIndex>,
+    selected: Option<T::RowIndex>,
     double_click_primed: bool,
     on_selection_change: Option<BoxedTableCallback<T>>,
     on_double_click: Option<BoxedTableCallback<T>>,
@@ -120,6 +119,10 @@ impl<T: TableViewData> TableView<T> {
             on_right_click: None,
             */
         }
+    }
+
+    pub fn get_data(&self) -> Arc<RwLock<T>> {
+        self.data.clone()
     }
 
     pub(super) fn set_on_selection_change(&mut self, f: impl TableCallback<T>) {

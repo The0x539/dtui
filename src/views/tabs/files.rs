@@ -522,7 +522,7 @@ impl TabData for FilesData {
             cursive::event::Callback::dummy()
         });
 
-        let state = view.inner.data.clone();
+        let state = view.inner.get_data();
         let data = FilesData { state, active_torrent: None };
         (view, data)
     }

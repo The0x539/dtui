@@ -388,7 +388,7 @@ impl TorrentsView {
             cursive::event::Callback::dummy()
         });
 
-        let thread_obj = TorrentsViewThread::new(session.clone(), inner.data.clone(), filters_recv);
+        let thread_obj = TorrentsViewThread::new(session.clone(), inner.get_data(), filters_recv);
         let thread = tokio::spawn(thread_obj.run(shutdown));
         Self { inner, thread }
     }

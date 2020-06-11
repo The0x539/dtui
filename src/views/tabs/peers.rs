@@ -193,7 +193,7 @@ impl TabData for PeersData {
         ];
 
         let view = TableView::new(columns);
-        let state = view.data.clone();
+        let state = view.get_data();
         let data = PeersData { state, active_torrent: None, was_empty: true };
 
         (view, data)
