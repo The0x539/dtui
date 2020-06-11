@@ -10,6 +10,8 @@ use super::TabData;
 use async_trait::async_trait;
 use cursive::view::ViewWrapper;
 use crate::views::table::{TableViewData, TableView};
+use itertools::Itertools;
+use crate::menu;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Column { Filename, Size, Progress, Priority }
@@ -54,6 +56,15 @@ pub(crate) enum DirEntry {
     Dir(usize),  // an index into a Slab<Dir>
 }
 
+impl DirEntry {
+    pub fn is_dir(&self) -> bool {
+        match self {
+            Self::File(_) => false,
+            Self::Dir(_) => true,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Deserialize, serde::Serialize)]
 struct QueryFile {
     index: usize,
@@ -71,6 +82,7 @@ struct FilesQuery {
 
 #[derive(Default)]
 pub(crate) struct FilesState {
+    active_torrent: Option<InfoHash>,
     rows: Vec<DirEntry>,
     files_info: Vec<File>,
     // TODO: write a simpler Slab with more applicable invariants
@@ -108,6 +120,33 @@ impl FilesState {
             DirEntry::Dir(id) => self.dirs_info[id].parent,
             DirEntry::File(id) => Some(self.files_info[id].parent),
         }
+    }
+
+    fn get_base_name(&self, entry: DirEntry) -> &str {
+        match entry {
+            DirEntry::Dir(id) => &self.dirs_info[id].name,
+            DirEntry::File(id) => &self.files_info[id].name,
+        }
+    }
+
+    fn get_full_path(&self, entry: DirEntry) -> String {
+        let mut segments = Vec::with_capacity(self.get_depth(entry));
+
+        if entry.is_dir() {
+            segments.push("");
+        }
+
+        segments.push(self.get_base_name(entry));
+
+        let mut parent = self.get_parent(entry);
+        while let Some(id) = parent {
+            if id != self.root_dir {
+                segments.push(&self.dirs_info[id].name);
+            }
+            parent = self.dirs_info[id].parent;
+        }
+
+        segments.into_iter().rev().join("/")
     }
 
     fn is_ancestor(&self, ancestor: DirEntry, entry: DirEntry) -> bool {
@@ -521,6 +560,18 @@ impl TabData for FilesData {
             }
             cursive::event::Callback::dummy()
         });
+        view.inner.set_on_right_click(|data: &mut FilesState, entry: &DirEntry, position, _| {
+            let hash = data.active_torrent.unwrap();
+            let _full_path = data.get_full_path(*entry);
+            match *entry {
+                DirEntry::Dir(_id) => {
+                    todo!("why is this happening")
+                },
+                DirEntry::File(id) => {
+                    menu::files_tab_file_menu(hash, id, position)
+                },
+            }
+        });
 
         let state = view.inner.get_data();
         let data = FilesData { state, active_torrent: None };
@@ -578,6 +629,7 @@ impl TabData for FilesData {
         let query = session.get_torrent_status::<FilesQuery>(hash).await?;
 
         let mut state = self.state.write().unwrap();
+        state.active_torrent = self.active_torrent;
         state.build_tree(query);
         state.rebuild_rows();
 

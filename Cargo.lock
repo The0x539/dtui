@@ -410,6 +410,7 @@ dependencies = [
  "epochs",
  "fnv",
  "futures",
+ "itertools",
  "ryu",
  "serde",
  "slab",
@@ -417,6 +418,12 @@ dependencies = [
  "tokio",
  "uuid",
 ]
+
+[[package]]
+name = "either"
+version = "1.5.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bb1f6b1ce1c140482ea30ddd3335fc0024ac7ee112895426e0a629a6c20adfe3"
 
 [[package]]
 name = "enum-kinds"
@@ -640,6 +647,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b2b3ea6ff95e175473f8ffe6a7eb7c00d054240321b84c57051175fe3c1e075e"
 dependencies = [
  "libc",
+]
+
+[[package]]
+name = "itertools"
+version = "0.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "284f18f85651fe11e8a991b2adb42cb078325c996ed026d994719efcfca1d54b"
+dependencies = [
+ "either",
 ]
 
 [[package]]
@@ -1068,8 +1084,7 @@ checksum = "26412eb97c6b088a6997e05f69403a802a92d520de2f8e63c2b65f9e0f47c4e8"
 [[package]]
 name = "rencode"
 version = "0.2.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "39d66459afb27b9b15c921744bda6c7b5faa7d9bd6273c65622833977e83e586"
+source = "git+https://github.com/The0x539/rust-rencode.git?branch=trunk#955acd9e08114bb332a8bf201eefe57072df5af5"
 dependencies = [
  "byteorder",
  "serde",
