@@ -11,15 +11,31 @@ use std::rc::Rc;
 
 use deluge_rpc::{Session, TorrentOptions, FilePriority, Query, InfoHash};
 
+trait CursiveWithSession {
+    fn session(&mut self) -> &Session;
+}
+
+impl CursiveWithSession for Cursive {
+    fn session(&mut self) -> &Session {
+        self.user_data::<Arc<Session>>()
+            .expect("must actually contain a Session")
+    }
+}
+
+fn make_session_cb(
+    f: impl Fn(&Session) -> deluge_rpc::Result<()> + 'static,
+) -> Box<dyn Fn(&mut Cursive) -> ()> {
+    Box::new(move |siv: &mut Cursive| f(siv.session()).unwrap())
+}
+
 pub fn add_torrent(siv: &mut Cursive) {
     let edit_view = EditView::new()
         .on_submit(|siv, text| {
             let options = TorrentOptions::default();
             let http_headers = None;
-            let session: Arc<Session> = siv.take_user_data().unwrap();
-            let f = session.add_torrent_url(text, &options, http_headers);
-            block_on(f).unwrap();
-            siv.set_user_data(session);
+
+            let fut = siv.session().add_torrent_url(text, &options, http_headers);
+            block_on(fut).unwrap();
         });
     siv.add_layer(Dialog::around(edit_view).min_width(80));
 }
@@ -47,18 +63,14 @@ async fn set_single_file_priority(
     session.set_torrent_options(&[hash], &options).await
 }
 
-
 pub fn files_tab_file_menu(
     hash: InfoHash,
     index: usize,
     position: Vec2,
 ) -> Callback {
-    let make_cb = move |priority: FilePriority| move |siv: &mut Cursive| {
-        let session: Arc<Session> = siv.take_user_data().unwrap();
-        let f = set_single_file_priority(&session, hash, index, priority);
-        block_on(f).unwrap();
-        siv.set_user_data(session);
-    };
+    let make_cb = move |priority: FilePriority| make_session_cb(move |session| {
+        block_on(set_single_file_priority(session, hash, index, priority))
+    });
 
     let cb = move |siv: &mut Cursive| {
         let menu_tree = MenuTree::new()
