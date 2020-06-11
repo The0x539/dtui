@@ -1,9 +1,10 @@
 use cursive::Cursive;
-use cursive::views::{EditView, Dialog, MenuPopup};
+use cursive::views::{EditView, ResizedView, Dialog, MenuPopup};
 use cursive::traits::*;
 use cursive::event::Callback;
 use cursive::Vec2;
 use cursive::menu::MenuTree;
+use cursive::views::LayerPosition;
 use futures::executor::block_on;
 use serde::Deserialize;
 use std::sync::Arc;
@@ -32,16 +33,42 @@ macro_rules! session_cb {
     }
 }
 
-pub fn add_torrent(siv: &mut Cursive) {
-    let edit_view = EditView::new()
-        .on_submit(|siv, text| {
-            let options = TorrentOptions::default();
-            let http_headers = None;
+fn add_torrent(siv: &mut Cursive, text: &str) {
+    let options = TorrentOptions::default();
+    let http_headers = None;
 
-            let fut = siv.session().add_torrent_url(text, &options, http_headers);
-            block_on(fut).unwrap();
-        });
-    siv.add_layer(Dialog::around(edit_view).min_width(80));
+    let fut = siv.session().add_torrent_url(text, &options, http_headers);
+    block_on(fut).unwrap();
+
+    siv.pop_layer();
+}
+
+fn add_via_button(siv: &mut Cursive) {
+    let text = siv
+        .screen()
+        .get(LayerPosition::FromFront(0))
+        .unwrap()
+        .downcast_ref::<ResizedView<Dialog>>()
+        .unwrap()
+        .get_inner()
+        .get_content()
+        .downcast_ref::<EditView>()
+        .unwrap()
+        .get_content();
+
+    add_torrent(siv, text.as_str());
+}
+
+pub fn add_torrent_dialog(siv: &mut Cursive) {
+    let edit_view = EditView::new().on_submit(add_torrent);
+
+    let dialog = Dialog::around(edit_view)
+        .title("Add Torrent")
+        .dismiss_button("Cancel")
+        .button("Add", add_via_button)
+        .min_width(80);
+
+    siv.add_layer(dialog);
 }
 
 async fn set_single_file_priority(

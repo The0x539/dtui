@@ -89,7 +89,7 @@ async fn main() -> deluge_rpc::Result<()> {
     siv.menubar()
         .add_subtree("File",
             MenuTree::new()
-                .leaf("Add torrent", menu::add_torrent)
+                .leaf("Add torrent", menu::add_torrent_dialog)
                 .leaf("Create torrent", |_| ())
                 .delimiter()
                 .leaf("Quit and shutdown daemon", menu::quit_and_shutdown_daemon)
