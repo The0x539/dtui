@@ -93,40 +93,29 @@ pub(crate) struct FilesState {
     descending_sort: bool,
 }
 
+macro_rules! getter {
+    ($f:ident: $ty:ty = $field:ident;) => {
+        fn $f(&self, entry: DirEntry) -> $ty {
+            match entry {
+                // The .into() allows "coercion" from T to Some(T)
+                DirEntry::Dir(id) => self.dirs_info[id].$field.into(),
+                DirEntry::File(id) => self.files_info[id].$field.into(),
+            }
+        }
+    };
+}
+
+macro_rules! getters {
+    ($($f:ident: $ty:ty = $field:ident;)*) => { $(getter!{$f: $ty = $field;})* }
+}
+
 impl FilesState {
-    fn get_size(&self, entry: DirEntry) -> u64 {
-        match entry {
-            DirEntry::Dir(id) => self.dirs_info[id].size,
-            DirEntry::File(id) => self.files_info[id].size,
-        }
-    }
-
-    fn get_progress(&self, entry: DirEntry) -> f64 {
-        match entry {
-            DirEntry::Dir(id) => self.dirs_info[id].progress,
-            DirEntry::File(id) => self.files_info[id].progress,
-        }
-    }
-
-    fn get_depth(&self, entry: DirEntry) -> usize {
-        match entry {
-            DirEntry::Dir(id) => self.dirs_info[id].depth,
-            DirEntry::File(id) => self.files_info[id].depth,
-        }
-    }
-
-    fn get_parent(&self, entry: DirEntry) -> Option<usize> {
-        match entry {
-            DirEntry::Dir(id) => self.dirs_info[id].parent,
-            DirEntry::File(id) => Some(self.files_info[id].parent),
-        }
-    }
-
-    fn get_priority(&self, entry: DirEntry) -> Option<FilePriority> {
-        match entry {
-            DirEntry::Dir(id) => self.dirs_info[id].priority,
-            DirEntry::File(id) => Some(self.files_info[id].priority),
-        }
+    getters! {
+        get_size: u64 = size;
+        get_progress: f64 = progress;
+        get_depth: usize = depth;
+        get_parent: Option<usize> = parent;
+        get_priority: Option<FilePriority> = priority;
     }
 
     fn get_base_name(&self, entry: DirEntry) -> &str {
