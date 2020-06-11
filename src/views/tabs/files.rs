@@ -94,19 +94,20 @@ pub(crate) struct FilesState {
 }
 
 macro_rules! getter {
-    ($f:ident: $ty:ty = $field:ident;) => {
+    ($f:ident: $ty:ty = $field:ident$(.$method:ident())?;) => {
         fn $f(&self, entry: DirEntry) -> $ty {
             match entry {
-                // The .into() allows "coercion" from T to Some(T)
-                DirEntry::Dir(id) => self.dirs_info[id].$field.into(),
-                DirEntry::File(id) => self.files_info[id].$field.into(),
+                DirEntry::Dir(id) => self.dirs_info[id].$field$(.$method())?,
+                DirEntry::File(id) => self.files_info[id].$field$(.$method())?,
             }
         }
     };
 }
 
 macro_rules! getters {
-    ($($f:ident: $ty:ty = $field:ident;)*) => { $(getter!{$f: $ty = $field;})* }
+    ($($f:ident: $ty:ty = $field:ident$(.$method:ident())?;)*) => {
+        $(getter!{$f: $ty = $field$(.$method())?;})*
+    }
 }
 
 impl FilesState {
@@ -114,15 +115,9 @@ impl FilesState {
         get_size: u64 = size;
         get_progress: f64 = progress;
         get_depth: usize = depth;
-        get_parent: Option<usize> = parent;
-        get_priority: Option<FilePriority> = priority;
-    }
-
-    fn get_base_name(&self, entry: DirEntry) -> &str {
-        match entry {
-            DirEntry::Dir(id) => &self.dirs_info[id].name,
-            DirEntry::File(id) => &self.files_info[id].name,
-        }
+        get_parent: Option<usize> = parent.into();
+        get_priority: Option<FilePriority> = priority.into();
+        get_base_name: &str = name.as_str();
     }
 
     fn get_full_path(&self, entry: DirEntry) -> String {
