@@ -510,7 +510,7 @@ impl TabData for FilesData {
             (Column::Priority, 10),
         ];
         let mut view = FilesView { inner: TableView::new(columns) };
-        view.inner.set_on_double_click(|data: &mut FilesState, entry: &DirEntry| {
+        view.inner.set_on_double_click(|data: &mut FilesState, entry: &DirEntry, _, _| {
             if let DirEntry::Dir(id) = *entry {
                 let dir = DirEntry::Dir(id);
                 if data.dirs_info[id].collapsed {

@@ -84,7 +84,12 @@ macro_rules! impl_table {
     }
 }
 
-pub(super) trait TableCallback<T: TableViewData> = Fn(&mut T, &<T as TableViewData>::RowIndex) -> Callback + 'static;
+pub(super) trait TableCallback<T: TableViewData> = Fn(
+    &mut T,
+    &<T as TableViewData>::RowIndex,
+    Vec2,
+    Vec2,
+) -> Callback + 'static;
 type BoxedTableCallback<T> = Box<dyn TableCallback<T>>;
 
 pub(crate) struct TableView<T: TableViewData> {
@@ -151,6 +156,22 @@ impl<T: TableViewData> TableView<T> {
             .map(|(_, w)| w + 1)
             .sum::<usize>()
             .saturating_sub(1)
+    }
+
+    fn run_cb(
+        res: EventResult,
+        cb: &Option<BoxedTableCallback<T>>,
+        data: &mut T,
+        row: &T::RowIndex,
+        position: Vec2,
+        offset: Vec2,
+    ) -> EventResult {
+        if let Some(f) = cb {
+            let cb = f(data, row, position, offset);
+            res.and(EventResult::Consumed(Some(cb)))
+        } else {
+            res
+        }
     }
 }
 
@@ -269,13 +290,23 @@ impl<T: TableViewData> View for TableView<T> where Self: 'static {
                             self.selected = Some(row);
 
                             if selection_changed {
-                                if let Some(f) = &self.on_selection_change {
-                                    res = res.and(EventResult::Consumed(Some(f(&mut data, &row))));
-                                }
+                                res = Self::run_cb(
+                                    res,
+                                    &self.on_selection_change,
+                                    &mut data,
+                                    &row,
+                                    position,
+                                    offset,
+                                );
                             } else if double_clicked {
-                                if let Some(f) = &self.on_double_click {
-                                    res = res.and(EventResult::Consumed(Some(f(&mut data, &row))));
-                                }
+                                res = Self::run_cb(
+                                    res,
+                                    &self.on_double_click,
+                                    &mut data,
+                                    &row,
+                                    position,
+                                    offset,
+                                );
                             }
 
                             return res;
