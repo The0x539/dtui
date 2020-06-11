@@ -100,9 +100,7 @@ pub(crate) struct TableView<T: TableViewData> {
     double_click_primed: bool,
     on_selection_change: Option<BoxedTableCallback<T>>,
     on_double_click: Option<BoxedTableCallback<T>>,
-    /*
     on_right_click: Option<BoxedTableCallback<T>>,
-    */
 }
 
 impl<T: TableViewData> TableView<T> {
@@ -115,9 +113,7 @@ impl<T: TableViewData> TableView<T> {
             double_click_primed: false,
             on_selection_change: None,
             on_double_click: None,
-            /*
             on_right_click: None,
-            */
         }
     }
 
@@ -133,11 +129,9 @@ impl<T: TableViewData> TableView<T> {
         self.on_double_click = Some(Box::new(f));
     }
 
-    /*
     pub(super) fn set_on_right_click(&mut self, f: impl TableCallback<T>) {
         self.on_right_click = Some(Box::new(f));
     }
-    */
 
     fn click_header(&mut self, mut x: usize) -> EventResult {
         for (column, width) in &self.columns {
@@ -314,6 +308,21 @@ impl<T: TableViewData> View for TableView<T> where Self: 'static {
 
                             return res;
                         }
+                    }
+                },
+                MouseEvent::Press(MouseButton::Right) if position.y >= offset.y + 2 => {
+                    let pos = position.saturating_sub(offset + (0, 2));
+                    let i = pos.y + self.scrollbase.start_line;
+                    let mut data = self.data.write().unwrap();
+                    if let Some(&row) = data.rows().get(i) {
+                        return Self::run_cb(
+                            EventResult::Consumed(None),
+                            &self.on_right_click,
+                            &mut data,
+                            &row,
+                            position,
+                            offset,
+                        );
                     }
                 },
                 MouseEvent::Hold(MouseButton::Left) if position.y >= offset.y + 2 => {
