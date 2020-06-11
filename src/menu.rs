@@ -89,8 +89,7 @@ pub fn files_tab_file_menu(
 }
 
 pub fn quit_and_shutdown_daemon(siv: &mut Cursive) {
-    let session: Arc<Session> = siv.take_user_data().unwrap();
-    let f = session.shutdown();
-    block_on(f).unwrap();
+    let fut = siv.session().shutdown();
+    block_on(fut).unwrap();
     siv.quit();
 }
