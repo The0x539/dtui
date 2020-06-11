@@ -122,6 +122,13 @@ impl FilesState {
         }
     }
 
+    fn get_priority(&self, entry: DirEntry) -> Option<FilePriority> {
+        match entry {
+            DirEntry::Dir(id) => self.dirs_info[id].priority,
+            DirEntry::File(id) => Some(self.files_info[id].priority),
+        }
+    }
+
     fn get_base_name(&self, entry: DirEntry) -> &str {
         match entry {
             DirEntry::Dir(id) => &self.dirs_info[id].name,
@@ -473,26 +480,15 @@ impl TableViewData for FilesState {
                 printer.print((0, 0), &progress.to_string());
             },
 
-            (Column::Priority, DirEntry::Dir(id)) => {
-                let priority = self.dirs_info[id].priority;
+            (Column::Priority, entry) => {
+                let priority = self.get_priority(entry);
                 let s = priority.map_or("Mixed", |p| match p {
+                    // TODO: this is missing from deluge_rpc
                     FilePriority::Skip => "Skip",
                     FilePriority::Low => "Low",
                     FilePriority::Normal => "Normal",
                     FilePriority::High => "High",
                 });
-                printer.print((0, 0), s);
-            },
-
-            (Column::Priority, DirEntry::File(id)) => {
-                let priority = self.files_info[id].priority;
-                // TODO: this is missing from deluge_rpc
-                let s = match priority {
-                    FilePriority::Skip => "Skip",
-                    FilePriority::Low => "Low",
-                    FilePriority::Normal => "Normal",
-                    FilePriority::High => "High",
-                };
                 printer.print((0, 0), s);
             },
         }
