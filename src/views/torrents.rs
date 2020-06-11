@@ -383,7 +383,7 @@ impl TorrentsView {
         ];
         selected_send.broadcast(None).unwrap();
         let mut inner = TableView::new(columns);
-        inner.set_on_selection_change(move |_: &ViewData, sel: &InfoHash| {
+        inner.set_on_selection_change(move |_: &mut ViewData, sel: &InfoHash| {
             selected_send.broadcast(Some(*sel)).unwrap();
             cursive::event::Callback::dummy()
         });

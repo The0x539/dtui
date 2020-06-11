@@ -84,7 +84,7 @@ macro_rules! impl_table {
     }
 }
 
-pub(super) trait TableCallback<T: TableViewData> = Fn(&T, &<T as TableViewData>::RowIndex) -> Callback + 'static;
+pub(super) trait TableCallback<T: TableViewData> = Fn(&mut T, &<T as TableViewData>::RowIndex) -> Callback + 'static;
 type BoxedTableCallback<T> = Box<dyn TableCallback<T>>;
 
 pub(crate) struct TableView<T: TableViewData> {
@@ -93,11 +93,10 @@ pub(crate) struct TableView<T: TableViewData> {
     columns: Vec<(T::Column, usize)>,
     scrollbase: ScrollBase,
     pub selected: Option<T::RowIndex>,
-    was_double_clicked: bool,
-
+    double_click_primed: bool,
     on_selection_change: Option<BoxedTableCallback<T>>,
-    /*
     on_double_click: Option<BoxedTableCallback<T>>,
+    /*
     on_right_click: Option<BoxedTableCallback<T>>,
     */
 }
@@ -109,10 +108,10 @@ impl<T: TableViewData> TableView<T> {
             columns,
             scrollbase: ScrollBase::default(),
             selected: None,
-            was_double_clicked: false,
+            double_click_primed: false,
             on_selection_change: None,
-            /*
             on_double_click: None,
+            /*
             on_right_click: None,
             */
         }
@@ -122,11 +121,11 @@ impl<T: TableViewData> TableView<T> {
         self.on_selection_change = Some(Box::new(f));
     }
 
-    /*
     pub(super) fn set_on_double_click(&mut self, f: impl TableCallback<T>) {
         self.on_double_click = Some(Box::new(f));
     }
 
+    /*
     pub(super) fn set_on_right_click(&mut self, f: impl TableCallback<T>) {
         self.on_right_click = Some(Box::new(f));
     }
@@ -152,15 +151,6 @@ impl<T: TableViewData> TableView<T> {
             .map(|(_, w)| w + 1)
             .sum::<usize>()
             .saturating_sub(1)
-    }
-
-    pub fn check_double_clicked(&mut self) -> bool {
-        if self.was_double_clicked {
-            self.was_double_clicked = false;
-            true
-        } else {
-            false
-        }
     }
 }
 
@@ -224,16 +214,28 @@ impl<T: TableViewData> View for TableView<T> where Self: 'static {
     fn take_focus(&mut self, _: Direction) -> bool { true }
 
     fn on_event(&mut self, event: Event) -> EventResult {
-        self.was_double_clicked = false;
+        // Un-prime double click on anything appropriate
+        match event {
+            Event::Mouse { position, offset, event } => {
+                if position.saturating_sub(offset).y < 2 {
+                    self.double_click_primed = false;
+                } else if event.button() != Some(MouseButton::Left) {
+                    self.double_click_primed = false;
+                }
+            }
+            Event::Refresh | Event::WindowResize => (),
+            _ => self.double_click_primed = false,
+        }
+
         match event {
             Event::Mouse { offset, position, event } => match event {
                 MouseEvent::WheelUp => {
                     self.scrollbase.scroll_up(1);
-                    EventResult::Consumed(None)
+                    return EventResult::Consumed(None);
                 },
                 MouseEvent::WheelDown => {
                     self.scrollbase.scroll_down(1);
-                    EventResult::Consumed(None)
+                    return EventResult::Consumed(None);
                 },
                 MouseEvent::Press(MouseButton::Left) => {
                     let mut pos = position.saturating_sub(offset);
@@ -246,45 +248,66 @@ impl<T: TableViewData> View for TableView<T> where Self: 'static {
 
                     pos.y = pos.y.saturating_sub(2);
 
-                    if self.scrollbase.content_height > self.scrollbase.view_height {
-                        if self.scrollbase.start_drag(pos, self.width()) {
-                            return EventResult::Consumed(None);
-                        }
+                    let self_width = self.width(); // c'mon, borrow checker
+                    let sb = &mut self.scrollbase;
+
+                    if sb.content_height > sb.view_height && sb.start_drag(pos, self_width) {
+                        return EventResult::Consumed(None);
                     }
 
-                    if pos.y < self.scrollbase.view_height {
-                        let i = pos.y + self.scrollbase.start_line;
-                        let data = self.data.read().unwrap();
-                        if let Some(row) = data.rows().get(i) {
-                            self.was_double_clicked = self.selected.contains(row);
+                    if pos.y < sb.view_height {
+                        let i = pos.y + sb.start_line;
+                        let mut data = self.data.write().unwrap();
+                        if let Some(&row) = data.rows().get(i) {
+
                             let mut res = EventResult::Consumed(None);
 
-                            if !self.selected.contains(row) {
+                            let selection_changed = !self.selected.contains(&row);
+                            let double_clicked = self.double_click_primed && !selection_changed;
+
+                            self.double_click_primed = !double_clicked;
+                            self.selected = Some(row);
+
+                            if selection_changed {
                                 if let Some(f) = &self.on_selection_change {
-                                    res = res.and(EventResult::Consumed(Some(f(&data, row))));
+                                    res = res.and(EventResult::Consumed(Some(f(&mut data, &row))));
                                 }
-                                self.selected = Some(*row);
+                            } else if double_clicked {
+                                if let Some(f) = &self.on_double_click {
+                                    res = res.and(EventResult::Consumed(Some(f(&mut data, &row))));
+                                }
                             }
 
                             return res;
                         }
                     }
-
-                    EventResult::Ignored
                 },
-                MouseEvent::Hold(MouseButton::Left) => {
-                    let mut pos = position.saturating_sub(offset);
-                    pos.y = pos.y.saturating_sub(2);
+                MouseEvent::Hold(MouseButton::Left) if position.y >= offset.y + 2 => {
+                    let pos = position.saturating_sub(offset + (0, 2));
                     self.scrollbase.drag(pos);
-                    EventResult::Consumed(None)
+                    self.double_click_primed = false;
+                    return EventResult::Consumed(None);
                 },
                 MouseEvent::Release(MouseButton::Left) => {
-                    self.scrollbase.release_grab();
-                    EventResult::Consumed(None)
-                }
-                _ => EventResult::Ignored,
+                    if self.scrollbase.is_dragging() {
+                        self.scrollbase.release_grab();
+                        self.double_click_primed = false;
+                    } else if position.y < offset.y + 2 {
+                        self.double_click_primed = false;
+                    } else {
+                        let pos = position.saturating_sub(offset + (0, 2));
+                        let i = pos.y + self.scrollbase.start_line;
+                        let data = self.data.read().unwrap();
+                        self.double_click_primed &= self.selected.as_ref() == data.rows().get(i);
+                    }
+
+                    return EventResult::Consumed(None);
+                },
+                _ => (),
             },
-            _ => EventResult::Ignored,
+            _ => (),
         }
+
+        EventResult::Ignored
     }
 }
