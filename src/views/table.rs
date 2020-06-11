@@ -6,7 +6,7 @@ use cursive::Printer;
 use cursive::View;
 use cursive::view::ScrollBase;
 use cursive::Vec2;
-use cursive::event::{Event, EventResult, MouseEvent, MouseButton};
+use cursive::event::{Event, EventResult, MouseEvent, MouseButton, Callback};
 use cursive::direction::Direction;
 
 pub(crate) trait TableViewData: Default {
@@ -84,13 +84,22 @@ macro_rules! impl_table {
     }
 }
 
+pub(super) trait TableCallback<T: TableViewData> = Fn(&T, &<T as TableViewData>::RowIndex) -> Callback + 'static;
+type BoxedTableCallback<T> = Box<dyn TableCallback<T>>;
+
 pub(crate) struct TableView<T: TableViewData> {
     // TODO: better encapsulation
     pub data: Arc<RwLock<T>>,
-    pub columns: Vec<(T::Column, usize)>,
+    columns: Vec<(T::Column, usize)>,
     scrollbase: ScrollBase,
     pub selected: Option<T::RowIndex>,
-    pub was_double_clicked: bool,
+    was_double_clicked: bool,
+
+    on_selection_change: Option<BoxedTableCallback<T>>,
+    /*
+    on_double_click: Option<BoxedTableCallback<T>>,
+    on_right_click: Option<BoxedTableCallback<T>>,
+    */
 }
 
 impl<T: TableViewData> TableView<T> {
@@ -101,8 +110,27 @@ impl<T: TableViewData> TableView<T> {
             scrollbase: ScrollBase::default(),
             selected: None,
             was_double_clicked: false,
+            on_selection_change: None,
+            /*
+            on_double_click: None,
+            on_right_click: None,
+            */
         }
     }
+
+    pub(super) fn set_on_selection_change(&mut self, f: impl TableCallback<T>) {
+        self.on_selection_change = Some(Box::new(f));
+    }
+
+    /*
+    pub(super) fn set_on_double_click(&mut self, f: impl TableCallback<T>) {
+        self.on_double_click = Some(Box::new(f));
+    }
+
+    pub(super) fn set_on_right_click(&mut self, f: impl TableCallback<T>) {
+        self.on_right_click = Some(Box::new(f));
+    }
+    */
 
     fn click_header(&mut self, mut x: usize) -> EventResult {
         for (column, width) in &self.columns {
@@ -207,7 +235,7 @@ impl<T: TableViewData> View for TableView<T> where Self: 'static {
                     self.scrollbase.scroll_down(1);
                     EventResult::Consumed(None)
                 },
-                MouseEvent::Press(MouseButton::Left)=> {
+                MouseEvent::Press(MouseButton::Left) => {
                     let mut pos = position.saturating_sub(offset);
 
                     if pos.y == 0 {
@@ -226,10 +254,19 @@ impl<T: TableViewData> View for TableView<T> where Self: 'static {
 
                     if pos.y < self.scrollbase.view_height {
                         let i = pos.y + self.scrollbase.start_line;
-                        if let Some(row) = self.data.read().unwrap().rows().get(i) {
+                        let data = self.data.read().unwrap();
+                        if let Some(row) = data.rows().get(i) {
                             self.was_double_clicked = self.selected.contains(row);
-                            self.selected = Some(*row);
-                            return EventResult::Consumed(None);
+                            let mut res = EventResult::Consumed(None);
+
+                            if !self.selected.contains(row) {
+                                if let Some(f) = &self.on_selection_change {
+                                    res = res.and(EventResult::Consumed(Some(f(&data, row))));
+                                }
+                                self.selected = Some(*row);
+                            }
+
+                            return res;
                         }
                     }
 

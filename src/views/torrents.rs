@@ -1,7 +1,6 @@
 use cursive::traits::*;
 use deluge_rpc::{Session, Query, InfoHash, FilterKey, FilterDict, TorrentState};
 use cursive::Printer;
-use cursive::event::{Event, EventResult};
 use tokio::sync::{RwLock as AsyncRwLock, broadcast, watch};
 use std::sync::{Arc, RwLock};
 use cursive::utils::Counter;
@@ -186,7 +185,6 @@ impl ViewData {
 
 pub(crate) struct TorrentsView {
     inner: TableView<ViewData>,
-    selected_send: watch::Sender<Option<InfoHash>>,
     thread: JoinHandle<deluge_rpc::Result<()>>,
 }
 
@@ -383,15 +381,16 @@ impl TorrentsView {
             (Column::Size, 15),
             (Column::Speed, 15),
         ];
-        let inner = TableView::new(columns);
+        selected_send.broadcast(None).unwrap();
+        let mut inner = TableView::new(columns);
+        inner.set_on_selection_change(move |_: &ViewData, sel: &InfoHash| {
+            selected_send.broadcast(Some(*sel)).unwrap();
+            cursive::event::Callback::dummy()
+        });
+
         let thread_obj = TorrentsViewThread::new(session.clone(), inner.data.clone(), filters_recv);
         let thread = tokio::spawn(thread_obj.run(shutdown));
-        selected_send.broadcast(None).unwrap();
-        Self {
-            inner,
-            selected_send,
-            thread,
-        }
+        Self { inner, thread }
     }
 
     pub fn take_thread(&mut self) -> JoinHandle<deluge_rpc::Result<()>> {
@@ -403,14 +402,4 @@ impl TorrentsView {
 
 impl ViewWrapper for TorrentsView {
     cursive::wrap_impl!(self.inner: TableView<ViewData>);
-
-    fn wrap_on_event(&mut self, event: Event) -> EventResult {
-        let prev_sel = self.inner.selected;
-        let result = self.inner.on_event(event);
-        let sel = self.inner.selected;
-        if sel != prev_sel {
-            self.selected_send.broadcast(sel).unwrap();
-        }
-        result
-    }
 }

@@ -2,6 +2,7 @@
 #![feature(bool_to_option)]
 #![feature(option_result_contains)]
 #![feature(drain_filter)]
+#![feature(trait_alias)]
 
 use deluge_rpc::*;
 use tokio::sync::{RwLock as AsyncRwLock, watch};
