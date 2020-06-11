@@ -22,10 +22,14 @@ impl CursiveWithSession for Cursive {
     }
 }
 
-fn make_session_cb(
-    f: impl Fn(&Session) -> deluge_rpc::Result<()> + 'static,
-) -> Box<dyn Fn(&mut Cursive) -> ()> {
-    Box::new(move |siv: &mut Cursive| f(siv.session()).unwrap())
+macro_rules! session_cb {
+    ($session:ident; $($stmt:stmt)*) => {
+        {
+            let f = move |$session: &Session| { $($stmt)* };
+            let cb = move |siv: &mut Cursive| f(siv.session()).unwrap();
+            Box::new(cb)
+        }
+    }
 }
 
 pub fn add_torrent(siv: &mut Cursive) {
@@ -68,9 +72,10 @@ pub fn files_tab_file_menu(
     index: usize,
     position: Vec2,
 ) -> Callback {
-    let make_cb = move |priority: FilePriority| make_session_cb(move |session| {
+    let make_cb = move |priority: FilePriority| session_cb! {
+        session;
         block_on(set_single_file_priority(session, hash, index, priority))
-    });
+    };
 
     let cb = move |siv: &mut Cursive| {
         let menu_tree = MenuTree::new()
