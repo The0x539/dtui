@@ -315,8 +315,20 @@ impl<T: TableViewData> View for TableView<T> where Self: 'static {
                     let i = pos.y + self.scrollbase.start_line;
                     let mut data = self.data.write().unwrap();
                     if let Some(&row) = data.rows().get(i) {
+                        let mut res = EventResult::Consumed(None);
+                        if !self.selected.contains(&row) {
+                            self.selected = Some(row);
+                            res = Self::run_cb(
+                                res,
+                                &self.on_selection_change,
+                                &mut data,
+                                &row,
+                                position,
+                                offset,
+                            );
+                        }
                         return Self::run_cb(
-                            EventResult::Consumed(None),
+                            res,
                             &self.on_right_click,
                             &mut data,
                             &row,
