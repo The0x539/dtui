@@ -23,14 +23,23 @@ impl CursiveWithSession for Cursive {
     }
 }
 
-macro_rules! session_cb {
-    ($session:ident; $($stmt:stmt)*) => {
-        {
-            let f = move |$session: &Session| { $($stmt)* };
-            let cb = move |siv: &mut Cursive| f(siv.session()).unwrap();
-            Box::new(cb)
-        }
-    }
+fn get_dialog(siv: &mut Cursive) -> Option<&Dialog> {
+    let dialog = siv
+        .screen()
+        .get(LayerPosition::FromFront(0))?
+        .downcast_ref::<Dialog>()?;
+
+    Some(dialog)
+}
+
+fn get_edit_dialog_contents(siv: &mut Cursive) -> Option<Rc<String>> {
+    let text = get_dialog(siv)?
+        .get_content()
+        .downcast_ref::<ResizedView<EditView>>()?
+        .get_inner()
+        .get_content();
+
+    Some(text)
 }
 
 fn add_torrent(siv: &mut Cursive, text: &str) {
@@ -43,30 +52,18 @@ fn add_torrent(siv: &mut Cursive, text: &str) {
     siv.pop_layer();
 }
 
-fn add_via_button(siv: &mut Cursive) {
-    let text = siv
-        .screen()
-        .get(LayerPosition::FromFront(0))
-        .unwrap()
-        .downcast_ref::<ResizedView<Dialog>>()
-        .unwrap()
-        .get_inner()
-        .get_content()
-        .downcast_ref::<EditView>()
-        .unwrap()
-        .get_content();
-
-    add_torrent(siv, text.as_str());
-}
-
 pub fn add_torrent_dialog(siv: &mut Cursive) {
-    let edit_view = EditView::new().on_submit(add_torrent);
+    let edit_view = EditView::new()
+        .on_submit(add_torrent)
+        .min_width(80);
 
     let dialog = Dialog::around(edit_view)
         .title("Add Torrent")
         .dismiss_button("Cancel")
-        .button("Add", add_via_button)
-        .min_width(80);
+        .button("Add", |siv| {
+            let text = get_edit_dialog_contents(siv).unwrap();
+            add_torrent(siv, text.as_str());
+        });
 
     siv.add_layer(dialog);
 }
@@ -94,19 +91,47 @@ async fn set_single_file_priority(
     session.set_torrent_options(&[hash], &options).await
 }
 
+fn rename_file(siv: &mut Cursive, hash: InfoHash, index: usize, new_name: &str) {
+    let renames = &[(index as u64, new_name)];
+    let fut = siv.session().rename_files(hash, renames);
+    block_on(fut).unwrap();
+    siv.pop_layer();
+}
+
+fn rename_file_dialog(siv: &mut Cursive, hash: InfoHash, index: usize, old_name: &str) {
+    let edit_view = EditView::new()
+        .content(old_name)
+        .with(|v| v.set_cursor(old_name.len()))
+        .on_submit(move |siv, new_name| rename_file(siv, hash, index, new_name))
+        .min_width(80);
+
+    let dialog = Dialog::around(edit_view)
+        .dismiss_button("Cancel")
+        .title("Rename File")
+        .button("Rename", move |siv| {
+            let new_name = get_edit_dialog_contents(siv).unwrap();
+            rename_file(siv, hash, index, &new_name);
+        });
+
+    siv.add_layer(dialog);
+}
+
 pub fn files_tab_file_menu(
     hash: InfoHash,
     index: usize,
+    old_name: &str,
     position: Vec2,
 ) -> Callback {
-    let make_cb = move |priority: FilePriority| session_cb! {
-        session;
-        block_on(set_single_file_priority(session, hash, index, priority))
+    let make_cb = move |priority| move |siv: &mut Cursive| {
+        let fut = set_single_file_priority(siv.session(), hash, index, priority);
+        block_on(fut).unwrap();
     };
 
+    let old_name = Rc::from(old_name);
     let cb = move |siv: &mut Cursive| {
+        let old_name = Rc::clone(&old_name);
         let menu_tree = MenuTree::new()
-            .leaf("Rename", |_| todo!())
+            .leaf("Rename", move |siv| rename_file_dialog(siv, hash, index, &old_name))
             .delimiter()
             .leaf("Skip",   make_cb(FilePriority::Skip))
             .leaf("Low",    make_cb(FilePriority::Low))

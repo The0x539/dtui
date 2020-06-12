@@ -542,13 +542,13 @@ impl TabData for FilesData {
         });
         view.inner.set_on_right_click(|data: &mut FilesState, entry: &DirEntry, position, _| {
             let hash = data.active_torrent.unwrap();
-            let _full_path = data.get_full_path(*entry);
+            let full_path = data.get_full_path(*entry);
             match *entry {
                 DirEntry::Dir(_id) => {
                     todo!("why is this happening")
                 },
                 DirEntry::File(id) => {
-                    menu::files_tab_file_menu(hash, id, position)
+                    menu::files_tab_file_menu(hash, id, &full_path, position)
                 },
             }
         });
