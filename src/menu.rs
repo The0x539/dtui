@@ -91,6 +91,31 @@ async fn set_single_file_priority(
     session.set_torrent_options(&[hash], &options).await
 }
 
+async fn set_multi_file_priority(
+    session: &Session,
+    hash: InfoHash,
+    indices: &[usize],
+    priority: FilePriority,
+) -> deluge_rpc::Result<()> {
+    #[derive(Debug, Clone, Deserialize, Query)]
+    struct FilePriorities { file_priorities: Vec<FilePriority> }
+
+    let mut priorities = {
+        let response = session.get_torrent_status::<FilePriorities>(hash).await;
+        response?.file_priorities
+    };
+    for index in indices {
+        priorities[*index] = priority;
+    }
+
+    let options = TorrentOptions {
+        file_priorities: Some(priorities),
+        ..TorrentOptions::default()
+    };
+
+    session.set_torrent_options(&[hash], &options).await
+}
+
 fn rename_file(siv: &mut Cursive, hash: InfoHash, index: usize, new_name: &str) {
     let renames = &[(index as u64, new_name)];
     let fut = siv.session().rename_files(hash, renames);
@@ -116,6 +141,31 @@ fn rename_file_dialog(siv: &mut Cursive, hash: InfoHash, index: usize, old_name:
     siv.add_layer(dialog);
 }
 
+fn rename_folder(siv: &mut Cursive, hash: InfoHash, old_name: &str, new_name: &str) {
+    let fut = siv.session().rename_folder(hash, old_name, new_name);
+    block_on(fut).unwrap();
+    siv.pop_layer();
+}
+
+fn rename_folder_dialog(siv: &mut Cursive, hash: InfoHash, name: Rc<str>) {
+    let name_clone = name.clone();
+    let edit_view = EditView::new()
+        .content(name.as_ref())
+        .with(|v| v.set_cursor(name.len()))
+        .on_submit(move |siv, new_name| rename_folder(siv, hash, &name_clone, new_name))
+        .min_width(80);
+
+    let dialog = Dialog::around(edit_view)
+        .dismiss_button("Cancel")
+        .title("Rename Folder")
+        .button("Rename", move |siv| {
+            let new_name = get_edit_dialog_contents(siv).unwrap();
+            rename_folder(siv, hash, &name, &new_name);
+        });
+
+    siv.add_layer(dialog);
+}
+
 pub fn files_tab_file_menu(
     hash: InfoHash,
     index: usize,
@@ -132,6 +182,39 @@ pub fn files_tab_file_menu(
         let old_name = Rc::clone(&old_name);
         let menu_tree = MenuTree::new()
             .leaf("Rename", move |siv| rename_file_dialog(siv, hash, index, &old_name))
+            .delimiter()
+            .leaf("Skip",   make_cb(FilePriority::Skip))
+            .leaf("Low",    make_cb(FilePriority::Low))
+            .leaf("Normal", make_cb(FilePriority::Normal))
+            .leaf("High",   make_cb(FilePriority::High));
+
+        let menu_popup = MenuPopup::new(Rc::new(menu_tree));
+
+        siv.screen_mut().add_layer_at(cursive::XY::absolute(position), menu_popup);
+    };
+    Callback::from_fn(cb)
+}
+
+pub fn files_tab_folder_menu(
+    hash: InfoHash,
+    files: &[usize],
+    name: &str,
+    position: Vec2,
+) -> Callback {
+    let files = Rc::from(files);
+    let make_cb = move |priority| {
+        let files = Rc::clone(&files);
+        move |siv: &mut Cursive| {
+            let fut = set_multi_file_priority(siv.session(), hash, &files, priority);
+            block_on(fut).unwrap();
+        }
+    };
+
+    let name = Rc::<str>::from(name);
+    let cb = move |siv: &mut Cursive| {
+        let name = name.clone();
+        let menu_tree = MenuTree::new()
+            .leaf("Rename", move |siv| rename_folder_dialog(siv, hash, name.clone()))
             .delimiter()
             .leaf("Skip",   make_cb(FilePriority::Skip))
             .leaf("Low",    make_cb(FilePriority::Low))

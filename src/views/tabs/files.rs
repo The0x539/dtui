@@ -544,8 +544,9 @@ impl TabData for FilesData {
             let hash = data.active_torrent.unwrap();
             let full_path = data.get_full_path(*entry);
             match *entry {
-                DirEntry::Dir(_id) => {
-                    todo!("why is this happening")
+                DirEntry::Dir(id) => {
+                    let files = &data.dirs_info[id].descendants;
+                    menu::files_tab_folder_menu(hash, files, &full_path, position)
                 },
                 DirEntry::File(id) => {
                     menu::files_tab_file_menu(hash, id, &full_path, position)
