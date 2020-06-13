@@ -6,6 +6,7 @@ use cursive::event::{Event, EventResult, Callback, AnyCb};
 use cursive::view::Selector;
 use std::rc::Rc;
 use cursive::Cursive;
+use crate::form::Form;
 
 use std::{
     convert::From,
@@ -87,6 +88,23 @@ pub(crate) struct SpinView<T: Spinnable, B: RangeBounds<T>> {
     on_modify: Option<Rc<dyn Fn(&mut Cursive, T)>>,
 }
 
+impl<T, B> Default for SpinView<T, B>
+where
+    T: Spinnable + Default,
+    B: RangeBounds<T> + Default,
+{
+    fn default() -> Self {
+        Self {
+            bounds: B::default(),
+            val: T::default(),
+            own_id: String::new(),
+            edit_id: String::new(),
+            inner: LinearLayout::vertical(),
+            on_modify: None,
+        }
+    }
+}
+
 impl<T: Spinnable, B: RangeBounds<T>> SpinView<T, B> where Self: 'static {
     pub(crate) fn new(title: Option<&str>, label: Option<&str>, bounds: B) -> Self {
         
@@ -138,7 +156,6 @@ impl<T: Spinnable, B: RangeBounds<T>> SpinView<T, B> where Self: 'static {
         Self { bounds, val, own_id, edit_id, inner, on_modify: None }
     }
 
-    #[allow(dead_code)]
     pub fn get_val(&self) -> T { self.val }
 
     pub fn set_val(&mut self, new_val: T) -> Callback {
@@ -231,3 +248,19 @@ where Self: 'static {
         }
     }
 }
+
+impl<T, B> Form for SpinView<T, B>
+where
+    T: Spinnable,
+    B: RangeBounds<T>,
+    Self: 'static + Default,
+{
+    type Data = T;
+
+    fn replacement() -> Self { Self::default() }
+
+    fn into_data(self) -> Self::Data {
+        self.get_val()
+    }
+}
+

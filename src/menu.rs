@@ -1,14 +1,15 @@
 use cursive::Cursive;
-use cursive::views::{EditView, ResizedView, Dialog, MenuPopup};
+use cursive::views::{EditView, MenuPopup};
 use cursive::traits::*;
 use cursive::event::Callback;
 use cursive::Vec2;
 use cursive::menu::MenuTree;
-use cursive::views::LayerPosition;
 use futures::executor::block_on;
 use serde::Deserialize;
 use std::sync::Arc;
 use std::rc::Rc;
+
+use crate::form::Form;
 
 use deluge_rpc::{Session, TorrentOptions, FilePriority, Query, InfoHash};
 
@@ -23,47 +24,19 @@ impl CursiveWithSession for Cursive {
     }
 }
 
-fn get_dialog(siv: &mut Cursive) -> Option<&Dialog> {
-    let dialog = siv
-        .screen()
-        .get(LayerPosition::FromFront(0))?
-        .downcast_ref::<Dialog>()?;
-
-    Some(dialog)
-}
-
-fn get_edit_dialog_contents(siv: &mut Cursive) -> Option<Rc<String>> {
-    let text = get_dialog(siv)?
-        .get_content()
-        .downcast_ref::<ResizedView<EditView>>()?
-        .get_inner()
-        .get_content();
-
-    Some(text)
-}
-
-fn add_torrent(siv: &mut Cursive, text: &str) {
+fn add_torrent(siv: &mut Cursive, text: impl AsRef<str>) {
     let options = TorrentOptions::default();
     let http_headers = None;
 
-    let fut = siv.session().add_torrent_url(text, &options, http_headers);
+    let fut = siv.session().add_torrent_url(text.as_ref(), &options, http_headers);
     block_on(fut).unwrap();
-
-    siv.pop_layer();
 }
 
 pub fn add_torrent_dialog(siv: &mut Cursive) {
-    let edit_view = EditView::new()
-        .on_submit(add_torrent)
-        .min_width(80);
-
-    let dialog = Dialog::around(edit_view)
-        .title("Add Torrent")
-        .dismiss_button("Cancel")
-        .button("Add", |siv| {
-            let text = get_edit_dialog_contents(siv).unwrap();
-            add_torrent(siv, text.as_str());
-        });
+    let dialog = EditView::new()
+        .min_width(80)
+        .into_dialog("Cancel", "Add", add_torrent)
+        .title("Add Torrent");
 
     siv.add_layer(dialog);
 }
@@ -116,27 +89,19 @@ async fn set_multi_file_priority(
     session.set_torrent_options(&[hash], &options).await
 }
 
-fn rename_file(siv: &mut Cursive, hash: InfoHash, index: usize, new_name: &str) {
-    let renames = &[(index as u64, new_name)];
+fn rename_file(siv: &mut Cursive, hash: InfoHash, index: usize, new_name: impl AsRef<str>) {
+    let renames = &[(index as u64, new_name.as_ref())];
     let fut = siv.session().rename_files(hash, renames);
     block_on(fut).unwrap();
-    siv.pop_layer();
 }
 
 fn rename_file_dialog(siv: &mut Cursive, hash: InfoHash, index: usize, old_name: &str) {
-    let edit_view = EditView::new()
+    let dialog = EditView::new()
         .content(old_name)
         .with(|v| v.set_cursor(old_name.len()))
-        .on_submit(move |siv, new_name| rename_file(siv, hash, index, new_name))
-        .min_width(80);
-
-    let dialog = Dialog::around(edit_view)
-        .dismiss_button("Cancel")
-        .title("Rename File")
-        .button("Rename", move |siv| {
-            let new_name = get_edit_dialog_contents(siv).unwrap();
-            rename_file(siv, hash, index, &new_name);
-        });
+        .min_width(80)
+        .into_dialog("Cancel", "Rename", move |siv, new_name| rename_file(siv, hash, index, new_name))
+        .title("Rename File");
 
     siv.add_layer(dialog);
 }
@@ -144,24 +109,15 @@ fn rename_file_dialog(siv: &mut Cursive, hash: InfoHash, index: usize, old_name:
 fn rename_folder(siv: &mut Cursive, hash: InfoHash, old_name: &str, new_name: &str) {
     let fut = siv.session().rename_folder(hash, old_name, new_name);
     block_on(fut).unwrap();
-    siv.pop_layer();
 }
 
 fn rename_folder_dialog(siv: &mut Cursive, hash: InfoHash, name: Rc<str>) {
-    let name_clone = name.clone();
-    let edit_view = EditView::new()
+    let dialog = EditView::new()
         .content(name.as_ref())
         .with(|v| v.set_cursor(name.len()))
-        .on_submit(move |siv, new_name| rename_folder(siv, hash, &name_clone, new_name))
-        .min_width(80);
-
-    let dialog = Dialog::around(edit_view)
-        .dismiss_button("Cancel")
-        .title("Rename Folder")
-        .button("Rename", move |siv| {
-            let new_name = get_edit_dialog_contents(siv).unwrap();
-            rename_folder(siv, hash, &name, &new_name);
-        });
+        .min_width(80)
+        .into_dialog("Cancel", "Rename", move |siv, new_name| rename_folder(siv, hash, &name, &new_name))
+        .title("Rename Folder");
 
     siv.add_layer(dialog);
 }

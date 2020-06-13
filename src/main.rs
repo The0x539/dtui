@@ -26,6 +26,7 @@ use views::{
 pub mod util;
 
 mod themes;
+mod form;
 mod menu;
 
 #[tokio::main]
