@@ -8,6 +8,7 @@ use futures::executor::block_on;
 use serde::Deserialize;
 use std::sync::Arc;
 use std::rc::Rc;
+use std::future::Future;
 
 use crate::form::Form;
 
@@ -15,6 +16,8 @@ use deluge_rpc::{Session, TorrentOptions, FilePriority, Query, InfoHash};
 
 trait CursiveWithSession {
     fn session(&mut self) -> &Session;
+    fn with_session<'a, T, F: FnOnce(&'a Session) -> T>(&'a mut self, f: F) -> T;
+    fn with_session_blocking<'a, T: Future, F: FnOnce(&'a Session) -> T>(&'a mut self, f: F) -> T::Output;
 }
 
 impl CursiveWithSession for Cursive {
@@ -22,14 +25,24 @@ impl CursiveWithSession for Cursive {
         self.user_data::<Arc<Session>>()
             .expect("must actually contain a Session")
     }
+
+    fn with_session<'a, T, F: FnOnce(&'a Session) -> T>(&'a mut self, f: F) -> T {
+        f(self.session())
+    }
+
+    fn with_session_blocking<'a, T: Future, F: FnOnce(&'a Session) -> T>(&'a mut self, f: F) -> T::Output {
+        block_on(self.with_session(f))
+    }
 }
 
 fn add_torrent(siv: &mut Cursive, text: impl AsRef<str>) {
+    let text: &str = text.as_ref();
     let options = TorrentOptions::default();
     let http_headers = None;
 
-    let fut = siv.session().add_torrent_url(text.as_ref(), &options, http_headers);
-    block_on(fut).unwrap();
+    siv.with_session_blocking(|ses| {
+        ses.add_torrent_url(text, &options, http_headers)
+    }).unwrap();
 }
 
 pub fn add_torrent_dialog(siv: &mut Cursive) {
@@ -96,8 +109,9 @@ fn rename_file_dialog(siv: &mut Cursive, hash: InfoHash, index: usize, old_name:
         .min_width(80)
         .into_dialog("Cancel", "Rename", move |siv, new_name| {
             let renames = &[(index as u64, new_name.as_str())];
-            let fut = siv.session().rename_files(hash, renames);
-            block_on(fut).unwrap();
+            siv.with_session_blocking(|ses| {
+                ses.rename_files(hash, renames)
+            }).unwrap();
         })
         .title("Rename File");
 
@@ -110,8 +124,9 @@ fn rename_folder_dialog(siv: &mut Cursive, hash: InfoHash, old_name: Rc<str>) {
         .with(|v| v.set_cursor(old_name.len()))
         .min_width(80)
         .into_dialog("Cancel", "Rename", move |siv, new_name| {
-            let fut = siv.session().rename_folder(hash, &old_name, &new_name);
-            block_on(fut).unwrap();
+            siv.with_session_blocking(|ses| {
+                ses.rename_folder(hash, &old_name, &new_name)
+            }).unwrap();
         })
         .title("Rename Folder");
 
@@ -125,8 +140,9 @@ pub fn files_tab_file_menu(
     position: Vec2,
 ) -> Callback {
     let make_cb = move |priority| move |siv: &mut Cursive| {
-        let fut = set_single_file_priority(siv.session(), hash, index, priority);
-        block_on(fut).unwrap();
+        siv.with_session_blocking(move |ses| {
+            set_single_file_priority(ses, hash, index, priority)
+        }).unwrap();
     };
 
     let old_name = Rc::from(old_name);
