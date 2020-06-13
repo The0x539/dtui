@@ -89,34 +89,30 @@ async fn set_multi_file_priority(
     session.set_torrent_options(&[hash], &options).await
 }
 
-fn rename_file(siv: &mut Cursive, hash: InfoHash, index: usize, new_name: impl AsRef<str>) {
-    let renames = &[(index as u64, new_name.as_ref())];
-    let fut = siv.session().rename_files(hash, renames);
-    block_on(fut).unwrap();
-}
-
 fn rename_file_dialog(siv: &mut Cursive, hash: InfoHash, index: usize, old_name: &str) {
     let dialog = EditView::new()
         .content(old_name)
         .with(|v| v.set_cursor(old_name.len()))
         .min_width(80)
-        .into_dialog("Cancel", "Rename", move |siv, new_name| rename_file(siv, hash, index, new_name))
+        .into_dialog("Cancel", "Rename", move |siv, new_name| {
+            let renames = &[(index as u64, new_name.as_str())];
+            let fut = siv.session().rename_files(hash, renames);
+            block_on(fut).unwrap();
+        })
         .title("Rename File");
 
     siv.add_layer(dialog);
 }
 
-fn rename_folder(siv: &mut Cursive, hash: InfoHash, old_name: &str, new_name: &str) {
-    let fut = siv.session().rename_folder(hash, old_name, new_name);
-    block_on(fut).unwrap();
-}
-
-fn rename_folder_dialog(siv: &mut Cursive, hash: InfoHash, name: Rc<str>) {
+fn rename_folder_dialog(siv: &mut Cursive, hash: InfoHash, old_name: Rc<str>) {
     let dialog = EditView::new()
-        .content(name.as_ref())
-        .with(|v| v.set_cursor(name.len()))
+        .content(old_name.as_ref())
+        .with(|v| v.set_cursor(old_name.len()))
         .min_width(80)
-        .into_dialog("Cancel", "Rename", move |siv, new_name| rename_folder(siv, hash, &name, &new_name))
+        .into_dialog("Cancel", "Rename", move |siv, new_name| {
+            let fut = siv.session().rename_folder(hash, &old_name, &new_name);
+            block_on(fut).unwrap();
+        })
         .title("Rename Folder");
 
     siv.add_layer(dialog);
