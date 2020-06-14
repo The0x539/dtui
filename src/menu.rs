@@ -26,6 +26,12 @@ trait CursiveWithSession {
     }
 }
 
+macro_rules! wsbu {
+    ($f:expr) => {
+        move |siv: &mut Cursive| siv.with_session_blocking($f).unwrap()
+    }
+}
+
 impl CursiveWithSession for Cursive {
     fn session(&mut self) -> &Session {
         self.user_data::<Arc<Session>>()
@@ -186,6 +192,33 @@ pub fn files_tab_folder_menu(
             .leaf("Low",    make_cb(FilePriority::Low))
             .leaf("Normal", make_cb(FilePriority::Normal))
             .leaf("High",   make_cb(FilePriority::High));
+
+        let menu_popup = MenuPopup::new(Rc::new(menu_tree));
+
+        siv.screen_mut().add_layer_at(cursive::XY::absolute(position), menu_popup);
+    };
+    Callback::from_fn(cb)
+}
+
+pub fn torrent_context_menu(hash: InfoHash, position: Vec2) -> Callback {
+    let cb = move |siv: &mut Cursive| {
+        let hash_slice = [hash];
+        let menu_tree = MenuTree::new()
+            .leaf("Pause", wsbu!(|ses| ses.pause_torrent(hash)))
+            .leaf("Resume", wsbu!(|ses| ses.resume_torrent(hash)))
+            .delimiter()
+            .subtree("Options", MenuTree::new().delimiter())
+            .delimiter()
+            .subtree("Queue", MenuTree::new().delimiter())
+            .delimiter()
+            .leaf("Update Tracker", wsbu!(|s| s.force_reannounce(&hash_slice)))
+            .leaf("Edit Trackers", |_| todo!())
+            .delimiter()
+            .leaf("Remove Torrent", |_| todo!())
+            .delimiter()
+            .leaf("Force Re-check", wsbu!(|s| s.force_recheck(&hash_slice)))
+            .leaf("Move Download Folder", |_| todo!())
+            .subtree("Label", MenuTree::new().delimiter());
 
         let menu_popup = MenuPopup::new(Rc::new(menu_tree));
 

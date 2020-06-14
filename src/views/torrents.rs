@@ -11,6 +11,7 @@ use tokio::time;
 use async_trait::async_trait;
 use super::thread::ViewThread;
 use cursive::view::ViewWrapper;
+use crate::menu;
 
 use super::table::{TableViewData, TableView};
 
@@ -386,6 +387,9 @@ impl TorrentsView {
         inner.set_on_selection_change(move |_: &mut _, sel: &InfoHash, _, _| {
             selected_send.broadcast(Some(*sel)).unwrap();
             cursive::event::Callback::dummy()
+        });
+        inner.set_on_right_click(|_: &mut _, sel: &InfoHash, position, _| {
+            menu::torrent_context_menu(*sel, position)
         });
 
         let thread_obj = TorrentsViewThread::new(session.clone(), inner.get_data(), filters_recv);
