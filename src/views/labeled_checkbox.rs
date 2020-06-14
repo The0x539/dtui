@@ -4,6 +4,8 @@ use cursive::Printer;
 use cursive::event::EventResult;
 use cursive::Cursive;
 
+use crate::form::Form;
+
 pub struct LabeledCheckbox {
     inner: PaddedView<Checkbox>,
     label: String,
@@ -92,5 +94,20 @@ impl LabeledCheckbox {
 
     pub fn with_checked(mut self, checked: bool) -> Self {
         self.set_checked(checked); self
+    }
+}
+
+impl Form for LabeledCheckbox {
+    type Data = bool;
+
+    fn replacement() -> Self {
+        Self {
+            inner: PaddedView::lrtb(0, 0, 0, 0, Checkbox::new()),
+            label: String::new(),
+        }
+    }
+
+    fn into_data(self) -> Self::Data {
+        self.is_checked()
     }
 }

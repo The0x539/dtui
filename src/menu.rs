@@ -12,6 +12,8 @@ use std::future::Future;
 
 use crate::form::Form;
 
+use crate::views::remove_torrent::RemoveTorrentPrompt;
+
 use deluge_rpc::{Session, TorrentOptions, FilePriority, Query, InfoHash};
 
 trait CursiveWithSession {
@@ -193,6 +195,16 @@ pub fn files_tab_folder_menu(
     Callback::from_fn(cb)
 }
 
+fn remove_torrent_dialog(siv: &mut Cursive, hash: InfoHash, name: impl AsRef<str>) {
+    let dialog = RemoveTorrentPrompt::new_single(name.as_ref())
+        .into_dialog("Cancel", "OK", move |siv, remove_data| {
+            wsbu!(siv, |ses| ses.remove_torrent(hash, remove_data));
+        })
+        .title("Remove Torrent");
+
+    siv.add_layer(dialog);
+}
+
 pub fn torrent_context_menu(hash: InfoHash, name: &str, position: Vec2) -> Callback {
     let name = Rc::<str>::from(name); // ugh, I hate doing this
     let cb = move |siv: &mut Cursive| {
@@ -209,7 +221,7 @@ pub fn torrent_context_menu(hash: InfoHash, name: &str, position: Vec2) -> Callb
             .leaf("Update Tracker", wsbu!(|s| s.force_reannounce(&hash_slice)))
             .leaf("Edit Trackers", |_| todo!())
             .delimiter()
-            .leaf("Remove Torrent", |_| todo!())
+            .leaf("Remove Torrent", move |siv| remove_torrent_dialog(siv, hash, &name))
             .delimiter()
             .leaf("Force Re-check", wsbu!(|s| s.force_recheck(&hash_slice)))
             .leaf("Move Download Folder", |_| todo!())

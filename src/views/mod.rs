@@ -12,5 +12,6 @@ pub(crate) mod statusbar;
 pub(crate) mod spin;
 pub(crate) mod linear_panel;
 pub(crate) mod labeled_checkbox;
+pub(crate) mod remove_torrent;
 
 pub(crate) mod tabs;
