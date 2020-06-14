@@ -16,15 +16,6 @@ use deluge_rpc::{Session, TorrentOptions, FilePriority, Query, InfoHash};
 
 trait CursiveWithSession {
     fn session(&mut self) -> &Session;
-    fn with_session<'a, T, F: FnOnce(&'a Session) -> T>(&'a mut self, f: F) -> T;
-    fn with_session_blocking<'a, T: Future, F: FnOnce(&'a Session) -> T>(&'a mut self, f: F) -> T::Output;
-}
-
-impl CursiveWithSession for Cursive {
-    fn session(&mut self) -> &Session {
-        self.user_data::<Arc<Session>>()
-            .expect("must actually contain a Session")
-    }
 
     fn with_session<'a, T, F: FnOnce(&'a Session) -> T>(&'a mut self, f: F) -> T {
         f(self.session())
@@ -32,6 +23,13 @@ impl CursiveWithSession for Cursive {
 
     fn with_session_blocking<'a, T: Future, F: FnOnce(&'a Session) -> T>(&'a mut self, f: F) -> T::Output {
         block_on(self.with_session(f))
+    }
+}
+
+impl CursiveWithSession for Cursive {
+    fn session(&mut self) -> &Session {
+        self.user_data::<Arc<Session>>()
+            .expect("must actually contain a Session")
     }
 }
 
