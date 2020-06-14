@@ -27,9 +27,13 @@ trait CursiveWithSession {
 }
 
 macro_rules! wsbu {
+    ($siv:expr, $f:expr) => {
+        $siv.with_session_blocking($f).unwrap()
+    };
+
     ($f:expr) => {
-        move |siv: &mut Cursive| siv.with_session_blocking($f).unwrap()
-    }
+        move |siv: &mut Cursive| wsbu!(siv, $f)
+    };
 }
 
 impl CursiveWithSession for Cursive {
@@ -44,9 +48,7 @@ fn add_torrent(siv: &mut Cursive, text: impl AsRef<str>) {
     let options = TorrentOptions::default();
     let http_headers = None;
 
-    siv.with_session_blocking(|ses| {
-        ses.add_torrent_url(text, &options, http_headers)
-    }).unwrap();
+    wsbu!(siv, |ses| ses.add_torrent_url(text, &options, http_headers));
 }
 
 pub fn add_torrent_dialog(siv: &mut Cursive) {
@@ -113,9 +115,7 @@ fn rename_file_dialog(siv: &mut Cursive, hash: InfoHash, index: usize, old_name:
         .min_width(80)
         .into_dialog("Cancel", "Rename", move |siv, new_name| {
             let renames = &[(index as u64, new_name.as_str())];
-            siv.with_session_blocking(|ses| {
-                ses.rename_files(hash, renames)
-            }).unwrap();
+            wsbu!(siv, |ses| ses.rename_files(hash, renames));
         })
         .title("Rename File");
 
@@ -128,9 +128,7 @@ fn rename_folder_dialog(siv: &mut Cursive, hash: InfoHash, old_name: Rc<str>) {
         .with(|v| v.set_cursor(old_name.len()))
         .min_width(80)
         .into_dialog("Cancel", "Rename", move |siv, new_name| {
-            siv.with_session_blocking(|ses| {
-                ses.rename_folder(hash, &old_name, &new_name)
-            }).unwrap();
+            wsbu!(siv, |ses| ses.rename_folder(hash, &old_name, &new_name));
         })
         .title("Rename Folder");
 
@@ -143,11 +141,9 @@ pub fn files_tab_file_menu(
     old_name: &str,
     position: Vec2,
 ) -> Callback {
-    let make_cb = move |priority| move |siv: &mut Cursive| {
-        siv.with_session_blocking(move |ses| {
-            set_single_file_priority(ses, hash, index, priority)
-        }).unwrap();
-    };
+    let make_cb = move |priority| wsbu!(|ses| {
+        set_single_file_priority(ses, hash, index, priority)
+    });
 
     let old_name = Rc::from(old_name);
     let cb = move |siv: &mut Cursive| {
@@ -228,7 +224,6 @@ pub fn torrent_context_menu(hash: InfoHash, position: Vec2) -> Callback {
 }
 
 pub fn quit_and_shutdown_daemon(siv: &mut Cursive) {
-    let fut = siv.session().shutdown();
-    block_on(fut).unwrap();
+    wsbu!(siv, Session::shutdown);
     siv.quit();
 }
