@@ -40,14 +40,28 @@ pub(crate) struct FiltersView {
 struct FiltersViewThread {
     session: Arc<Session>,
     categories: Arc<RwLock<Categories>>,
+    filters_recv: watch::Receiver<FilterDict>,
 }
 
 impl FiltersViewThread {
     fn new(
         session: Arc<Session>,
         categories: Arc<RwLock<Categories>>,
+        filters_recv: watch::Receiver<FilterDict>,
     ) -> Self {
-        Self { session, categories }
+        Self { session, categories, filters_recv }
+    }
+
+    fn should_show(&self, key: FilterKey, filter: &(String, u64)) -> bool {
+        let (val, hits) = filter;
+
+        if *hits > 0 || false /* TODO: "show zero hits" pref */ {
+            true
+        } else if self.filters_recv.borrow().get(&key).contains(&val) {
+            true
+        } else {
+            false
+        }
     }
 
     fn replace_tree(&mut self, mut new_tree: FnvHashMap<FilterKey, Vec<(String, u64)>>) {
@@ -64,10 +78,18 @@ impl FiltersViewThread {
         }
 
         for (key, category) in categories.iter_mut() {
-            category.filters = new_tree.remove(key).unwrap();
+            let new_filters = new_tree
+                .remove(key)
+                .unwrap()
+                .into_iter()
+                .filter(|filter| self.should_show(*key, filter));
+
+            category.filters.clear();
+            category.filters.extend(new_filters);
         }
 
-        for (key, filters) in new_tree.into_iter() {
+        for (key, mut filters) in new_tree.into_iter() {
+            filters.retain(|filter| self.should_show(key, filter));
             categories.insert(key, Category { filters, collapsed: false });
         }
 
@@ -85,7 +107,7 @@ impl ViewThread for FiltersViewThread {
     async fn do_update(&mut self) -> deluge_rpc::Result<()> {
         let now = time::Instant::now();
 
-        let new_tree = self.session.get_filter_tree(false, &[]).await?;
+        let new_tree = self.session.get_filter_tree(true, &[]).await?;
         self.replace_tree(new_tree);
 
         time::delay_until(now + time::Duration::from_secs(3)).await;
@@ -98,10 +120,11 @@ impl FiltersView {
     pub(crate) fn new(
         session: Arc<Session>,
         filters_send: watch::Sender<FilterDict>,
+        filters_recv: watch::Receiver<FilterDict>,
         shutdown: Arc<AsyncRwLock<()>>,
     ) -> Self {
         let categories = Arc::new(RwLock::new(Categories::new()));
-        let thread_obj = FiltersViewThread::new(session, categories.clone());
+        let thread_obj = FiltersViewThread::new(session, categories.clone(), filters_recv);
         let thread = tokio::spawn(thread_obj.run(shutdown));
         Self {
             active_filters: FilterDict::default(),
@@ -116,7 +139,7 @@ impl FiltersView {
             .iter()
             .filter(|(key, val)| match (key, val.as_str()) {
                 (FilterKey::Owner, "") => false,
-                (FilterKey::Owner, "All") => true,
+                (FilterKey::Owner, "All") => true, // in case All is the name of a user
                 (_, "All") => false,
                 _ => true,
             })
@@ -152,8 +175,24 @@ impl FiltersView {
                 *x = !*x;
             },
             Some(Row::Child(key, idx)) => {
-                let filter = categories[&key].filters[idx].0.clone();
-                self.active_filters.insert(key, filter);
+                let filters = &mut categories.get_mut(&key).unwrap().filters;
+
+                let filter = filters[idx].0.clone();
+                let old = self.active_filters.insert(key, filter);
+
+                // Remove the empty category immediately, rather than waiting for the next update.
+                // TODO: "show zero hits" pref
+                if let Some(val) = old {
+                    if (key, val.as_str()) != (FilterKey::Owner, "") {
+                        for i in 0..filters.len() {
+                            if filters[i].0 == val {
+                                if filters[i].1 == 0 { filters.remove(i); }
+                                break;
+                            }
+                        }
+                    }
+                }
+
                 let new_dict = self.get_active_filters();
                 self.filters_send
                     .broadcast(new_dict)

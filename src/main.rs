@@ -52,7 +52,7 @@ async fn main() -> deluge_rpc::Result<()> {
             .with_name("torrents")
     };
     let filters = {
-        FiltersView::new(session.clone(), filters_send, shutdown.clone())
+        FiltersView::new(session.clone(), filters_send, filters_recv.clone(), shutdown.clone())
             .with_name("filters")
             .into_scroll_wrapper()
     };
