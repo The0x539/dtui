@@ -3,7 +3,7 @@ use cursive::Printer;
 use fnv::FnvHashMap;
 use cursive::event::{Event, EventResult, MouseEvent, MouseButton};
 use cursive::vec::Vec2;
-use tokio::sync::{RwLock as AsyncRwLock, watch};
+use tokio::sync::{RwLock as AsyncRwLock, watch, broadcast};
 use std::collections::BTreeMap;
 use deluge_rpc::{FilterKey, FilterDict, Session};
 use tokio::task::JoinHandle;
@@ -41,6 +41,7 @@ struct FiltersViewThread {
     session: Arc<Session>,
     categories: Arc<RwLock<Categories>>,
     filters_recv: watch::Receiver<FilterDict>,
+    events_recv: broadcast::Receiver<deluge_rpc::Event>,
 }
 
 impl FiltersViewThread {
@@ -49,7 +50,8 @@ impl FiltersViewThread {
         categories: Arc<RwLock<Categories>>,
         filters_recv: watch::Receiver<FilterDict>,
     ) -> Self {
-        Self { session, categories, filters_recv }
+        let events_recv = session.subscribe_events();
+        Self { session, categories, filters_recv, events_recv }
     }
 
     fn should_show(&self, key: FilterKey, filter: &(String, u64)) -> bool {
@@ -104,13 +106,30 @@ impl FiltersViewThread {
 
 #[async_trait]
 impl ViewThread for FiltersViewThread {
+    async fn init(&mut self) -> deluge_rpc::Result<()> {
+        let interested = deluge_rpc::events![TorrentAdded, TorrentRemoved, TorrentStateChanged];
+        self.session.set_event_interest(&interested).await?;
+
+        Ok(())
+    }
+
     async fn do_update(&mut self) -> deluge_rpc::Result<()> {
-        let now = time::Instant::now();
+        let tick = time::Instant::now() + time::Duration::from_secs(3);
 
         let new_tree = self.session.get_filter_tree(true, &[]).await?;
         self.replace_tree(new_tree);
 
-        time::delay_until(now + time::Duration::from_secs(3)).await;
+        loop {
+            let ev_fut = self.events_recv.recv();
+            use deluge_rpc::EventKind::*;
+            tokio::select! {
+                event = ev_fut => match event.unwrap().into() {
+                    TorrentAdded | TorrentRemoved | TorrentStateChanged => break,
+                    _ => continue,
+                },
+                _ = time::delay_until(tick) => break,
+            }
+        }
 
         Ok(())
     }
