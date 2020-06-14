@@ -325,7 +325,8 @@ impl TorrentsViewThread {
 #[async_trait]
 impl ViewThread for TorrentsViewThread {
     async fn init(&mut self) -> deluge_rpc::Result<()> {
-        self.session.set_event_interest(&deluge_rpc::events![TorrentAdded, TorrentRemoved]).await?;
+        let interested = deluge_rpc::events![TorrentAdded, TorrentRemoved, TorrentStateChanged];
+        self.session.set_event_interest(&interested).await?;
 
         let initial_torrents = self.session.get_torrents_status::<Torrent>(None).await?;
         // TODO: do this more efficiently
@@ -359,6 +360,15 @@ impl ViewThread for TorrentsViewThread {
                     },
                     deluge_rpc::Event::TorrentRemoved(hash) => {
                         self.remove_torrent(hash);
+                    },
+                    deluge_rpc::Event::TorrentStateChanged(hash, state) => {
+                        let mut delta = FnvHashMap::default();
+                        let diff = TorrentDiff {
+                            state: Some(state),
+                            ..TorrentDiff::default()
+                        };
+                        delta.insert(hash, diff);
+                        self.apply_delta(delta);
                     },
                     _ => (),
                 }
