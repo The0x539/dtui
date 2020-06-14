@@ -6,6 +6,7 @@ use serde::Deserialize;
 use deluge_rpc::{Session, Query};
 use tokio::task::JoinHandle;
 use tokio::sync::RwLock as AsyncRwLock;
+use tokio::time;
 use std::sync::{Arc, RwLock};
 use std::fmt::{Display, Formatter, self};
 use super::thread::ViewThread;
@@ -96,6 +97,8 @@ impl StatusBarViewThread {
 #[async_trait]
 impl ViewThread for StatusBarViewThread {
     async fn do_update(&mut self) -> deluge_rpc::Result<()> {
+        let tick = time::Instant::now() + time::Duration::from_secs(1);
+
         let (status, config, ip, space) = tokio::try_join!(
             self.session.get_session_status::<StatusQuery>(),
             self.session.get_config_values::<ConfigQuery>(),
@@ -103,25 +106,29 @@ impl ViewThread for StatusBarViewThread {
             self.session.get_free_space(None),
         )?;
 
-        let mut data = self.data.write().unwrap();
+        /* stupid async borrow checker */ {
+            let mut data = self.data.write().unwrap();
 
-        data.ip = Some(ip);
-        data.free_space = space;
+            data.ip = Some(ip);
+            data.free_space = space;
 
-        data.num_peers = status.num_peers_connected;
-        data.download_rate = status.payload_download_rate as u64;
-        data.upload_rate = status.payload_upload_rate as u64;
-        data.dht_nodes = status.dht_nodes;
+            data.num_peers = status.num_peers_connected;
+            data.download_rate = status.payload_download_rate as u64;
+            data.upload_rate = status.payload_upload_rate as u64;
+            data.dht_nodes = status.dht_nodes;
 
-        data.protocol_traffic.0 = (status.download_rate - status.payload_download_rate) as u64;
-        data.protocol_traffic.0 = (status.upload_rate - status.payload_upload_rate) as u64;
+            data.protocol_traffic.0 = (status.download_rate - status.payload_download_rate) as u64;
+            data.protocol_traffic.0 = (status.upload_rate - status.payload_upload_rate) as u64;
 
-        data.max_peers = match config.max_connections_global {
-            n if n > 0 => Some(n as u64),
-            _ => None
-        };
-        data.max_download_rate = config.max_download_speed;
-        data.max_upload_rate = config.max_upload_speed;
+            data.max_peers = match config.max_connections_global {
+                n if n > 0 => Some(n as u64),
+                _ => None
+            };
+            data.max_download_rate = config.max_download_speed;
+            data.max_upload_rate = config.max_upload_speed;
+        }
+
+        time::delay_until(tick).await;
 
         Ok(())
     }
