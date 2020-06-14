@@ -263,10 +263,15 @@ impl TorrentsViewThread {
 
         let mut data = self.data.write().unwrap();
 
-        data.rows = data.torrents
+        let torrents = std::mem::take(&mut data.torrents);
+
+        let iter = torrents
             .iter()
-            .filter_map(|(hash, torrent)| torrent.matches_filters(&self.filters).then_some(*hash))
-            .collect();
+            .filter_map(|(hash, torrent)| torrent.matches_filters(&self.filters).then_some(*hash));
+
+        data.rows.clear();
+        data.rows.extend(iter);
+        data.torrents = torrents;
 
         data.sort_unstable();
     }
