@@ -49,6 +49,8 @@ pub(crate) struct Torrent {
     tracker_status: String,
 }
 
+type TorrentDiff = <Torrent as Query>::Diff;
+
 impl Torrent {
     pub fn matches_filters(&self, filters: &FilterDict) -> bool {
         for (key, val) in filters.iter() {
@@ -216,13 +218,13 @@ impl TorrentsViewThread {
         }
     }
 
-    fn apply_delta(&mut self, delta: FnvHashMap<InfoHash, <Torrent as Query>::Diff>) {
+    fn apply_delta(&mut self, delta: FnvHashMap<InfoHash, TorrentDiff>) {
         let mut toggled_rows = Vec::new();
         let mut should_sort = false;
 
         let mut data = self.data.write().unwrap();
 
-        for (hash, diff) in delta.into_iter() {
+        for (hash, diff) in delta {
             let sorting_changed = match data.sort_column {
                 Column::Name => diff.name.is_some(),
                 Column::State => diff.state.is_some(),
@@ -230,18 +232,18 @@ impl TorrentsViewThread {
                 Column::Speed => diff.upload_payload_rate.is_some(),
             };
 
-            if diff == Default::default() {
-                continue;
-            } else if let Some(torrent) = data.torrents.get_mut(&hash) {
-                let did_match = torrent.matches_filters(&self.filters);
-                torrent.update(diff);
-                let does_match = torrent.matches_filters(&self.filters);
+            if let Some(torrent) = data.torrents.get_mut(&hash) {
+                if diff != TorrentDiff::default() {
+                    let did_match = torrent.matches_filters(&self.filters);
+                    torrent.update(diff);
+                    let does_match = torrent.matches_filters(&self.filters);
 
-                if did_match != does_match {
-                    toggled_rows.push(hash);
+                    if did_match != does_match {
+                        toggled_rows.push(hash);
+                    }
+
+                    should_sort |= does_match && sorting_changed;
                 }
-
-                should_sort |= does_match && sorting_changed;
             } else {
                 self.missed_torrents.push(hash);
             }
@@ -358,7 +360,7 @@ impl ViewThread for TorrentsViewThread {
             }
         }
 
-        let delta = self.session.get_torrents_status_diff::<Torrent>(Some(&self.filters)).await?;
+        let delta = self.session.get_torrents_status_diff::<Torrent>(None).await?;
         self.apply_delta(delta);
 
         while let Some(hash) = self.missed_torrents.pop() {
