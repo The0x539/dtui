@@ -1,5 +1,5 @@
 use cursive::Cursive;
-use cursive::views::{EditView, MenuPopup};
+use cursive::views::{TextArea, MenuPopup};
 use cursive::traits::*;
 use cursive::event::Callback;
 use cursive::Vec2;
@@ -52,8 +52,7 @@ fn add_torrent(siv: &mut Cursive, text: impl AsRef<str>) {
 }
 
 pub fn add_torrent_dialog(siv: &mut Cursive) {
-    let dialog = EditView::new()
-        .min_width(80)
+    let dialog = TextArea::new()
         .into_dialog("Cancel", "Add", add_torrent)
         .title("Add Torrent");
 
@@ -109,10 +108,9 @@ async fn set_multi_file_priority(
 }
 
 fn rename_file_dialog(siv: &mut Cursive, hash: InfoHash, index: usize, old_name: &str) {
-    let dialog = EditView::new()
+    let dialog = TextArea::new()
         .content(old_name)
         .with(|v| v.set_cursor(old_name.len()))
-        .min_width(80)
         .into_dialog("Cancel", "Rename", move |siv, new_name| {
             let renames = &[(index as u64, new_name.as_str())];
             wsbu!(siv, |ses| ses.rename_files(hash, renames));
@@ -123,10 +121,9 @@ fn rename_file_dialog(siv: &mut Cursive, hash: InfoHash, index: usize, old_name:
 }
 
 fn rename_folder_dialog(siv: &mut Cursive, hash: InfoHash, old_name: Rc<str>) {
-    let dialog = EditView::new()
+    let dialog = TextArea::new()
         .content(old_name.as_ref())
         .with(|v| v.set_cursor(old_name.len()))
-        .min_width(80)
         .into_dialog("Cancel", "Rename", move |siv, new_name| {
             wsbu!(siv, |ses| ses.rename_folder(hash, &old_name, &new_name));
         })
