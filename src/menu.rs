@@ -193,8 +193,10 @@ pub fn files_tab_folder_menu(
     Callback::from_fn(cb)
 }
 
-pub fn torrent_context_menu(hash: InfoHash, position: Vec2) -> Callback {
+pub fn torrent_context_menu(hash: InfoHash, name: &str, position: Vec2) -> Callback {
+    let name = Rc::<str>::from(name); // ugh, I hate doing this
     let cb = move |siv: &mut Cursive| {
+        let name = Rc::clone(&name);
         let hash_slice = [hash];
         let menu_tree = MenuTree::new()
             .leaf("Pause", wsbu!(|ses| ses.pause_torrent(hash)))

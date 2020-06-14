@@ -388,8 +388,9 @@ impl TorrentsView {
             selected_send.broadcast(Some(*sel)).unwrap();
             cursive::event::Callback::dummy()
         });
-        inner.set_on_right_click(|_: &mut _, sel: &InfoHash, position, _| {
-            menu::torrent_context_menu(*sel, position)
+        inner.set_on_right_click(|data: &mut ViewData, sel: &InfoHash, position, _| {
+            let name = &data.torrents[sel].name;
+            menu::torrent_context_menu(*sel, name, position)
         });
 
         let thread_obj = TorrentsViewThread::new(session.clone(), inner.get_data(), filters_recv);
