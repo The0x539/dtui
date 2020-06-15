@@ -194,15 +194,15 @@ impl<T: TableViewData> View for TableView<T> where Self: 'static {
             printer.cropped((x + width, 1)).print((x, 0), &name);
             printer.print_hline((x, 1), *width, "─");
             x += width;
-            if x == w - 1 {
-                printer.print((x, 1), "X");
+            if x == w {
+                printer.print((0, 1), "╶");
+                printer.print((x - 1, 1), "╴");
                 break;
             }
             printer.print_vline((x, 0), h, "│");
             printer.print((x, 1), "┼");
             x += 1;
         }
-        printer.print((0, 1), "╶");
 
         self.scrollbase.draw(&printer.offset((0, 2)), |p, i| {
             if let Some(row) = data.rows().get(i) {
