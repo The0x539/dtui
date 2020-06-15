@@ -121,6 +121,10 @@ impl<T: TableViewData> TableView<T> {
         self.data.clone()
     }
 
+    pub fn get_selection(&self) -> Option<&T::RowIndex> {
+        self.selected.as_ref()
+    }
+
     pub(super) fn set_on_selection_change(&mut self, f: impl TableCallback<T>) {
         self.on_selection_change = Some(Box::new(f));
     }
