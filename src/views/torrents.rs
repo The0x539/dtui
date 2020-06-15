@@ -198,12 +198,14 @@ struct TorrentsViewThread {
     filters_recv: watch::Receiver<FilterDict>,
     events_recv: broadcast::Receiver<deluge_rpc::Event>,
     missed_torrents: Vec<InfoHash>,
+    selection: Arc<RwLock<Option<InfoHash>>>,
 }
 
 impl TorrentsViewThread {
     fn new(
         session: Arc<Session>,
         data: Arc<RwLock<ViewData>>,
+        selection: Arc<RwLock<Option<InfoHash>>>,
         filters_recv: watch::Receiver<FilterDict>,
     ) -> Self {
         let events_recv = session.subscribe_events();
@@ -215,6 +217,7 @@ impl TorrentsViewThread {
             filters_recv,
             events_recv,
             missed_torrents: Vec::new(),
+            selection,
         }
     }
 
@@ -309,6 +312,11 @@ impl TorrentsViewThread {
     }
 
     fn remove_torrent(&mut self, hash: InfoHash) {
+        let mut selection = self.selection.write().unwrap();
+        if *selection == Some(hash) {
+            *selection = None;
+        }
+
         let mut data = self.data.write().unwrap();
         let tor = &data.torrents[&hash];
 
@@ -389,7 +397,7 @@ impl ViewThread for TorrentsViewThread {
 impl TorrentsView {
     pub(crate) fn new(
         session: Arc<Session>,
-        selected_send: watch::Sender<Option<InfoHash>>,
+        selection: Arc<RwLock<Option<InfoHash>>>,
         filters_recv: watch::Receiver<FilterDict>,
         shutdown: Arc<AsyncRwLock<()>>,
     ) -> Self {
@@ -399,10 +407,10 @@ impl TorrentsView {
             (Column::Size, 15),
             (Column::Speed, 15),
         ];
-        selected_send.broadcast(None).unwrap();
+        let selection_clone = Arc::clone(&selection);
         let mut inner = TableView::new(columns);
         inner.set_on_selection_change(move |_: &mut _, sel: &InfoHash, _, _| {
-            selected_send.broadcast(Some(*sel)).unwrap();
+            selection_clone.write().unwrap().replace(*sel);
             cursive::event::Callback::dummy()
         });
         inner.set_on_right_click(|data: &mut ViewData, sel: &InfoHash, position, _| {
@@ -410,7 +418,7 @@ impl TorrentsView {
             menu::torrent_context_menu(*sel, name, position)
         });
 
-        let thread_obj = TorrentsViewThread::new(session.clone(), inner.get_data(), filters_recv);
+        let thread_obj = TorrentsViewThread::new(session.clone(), inner.get_data(), selection, filters_recv);
         let thread = tokio::spawn(thread_obj.run(shutdown));
         Self { inner, thread }
     }

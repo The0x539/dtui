@@ -74,8 +74,7 @@ mod trackers;
 
 struct TorrentTabsViewThread {
     session: Arc<Session>,
-    selected_recv: watch::Receiver<Option<InfoHash>>,
-    selected: Option<InfoHash>,
+    selection: Arc<RwLock<Option<InfoHash>>>,
     active_tab_recv: watch::Receiver<Tab>,
     active_tab: Tab,
     should_reload: bool,
@@ -106,7 +105,12 @@ impl ViewThread for TorrentTabsViewThread {
     async fn do_update(&mut self) -> deluge_rpc::Result<()> {
         let tick = time::Instant::now() + time::Duration::from_secs(1);
 
-        if let Some(hash) = self.selected {
+        let opt_hash = {
+            let lock = self.selection.read().unwrap();
+            *lock
+        };
+
+        if let Some(hash) = opt_hash {
             if self.should_reload {
                 self.should_reload = false;
                 match self.active_tab {
@@ -138,20 +142,16 @@ impl ViewThread for TorrentTabsViewThread {
             }
         }
 
-        let new_selection = self.selected_recv.recv();
+        let new_selection = futures::future::pending::<()>(); // TODO: unit channel for "there's a new selection"
         let new_active_tab = self.active_tab_recv.recv();
         let new_event = self.events_recv.recv();
 
         let should_reload = &mut self.should_reload;
-        let selected = &mut self.selected;
         let active_tab = &mut self.active_tab;
         let latest_event = &mut self.latest_event;
 
         tokio::select! {
-            hash = new_selection => {
-                *should_reload = true;
-                *selected = hash.unwrap();
-            },
+            _ = new_selection => (),
             tab = new_active_tab => {
                 *should_reload = true;
                 *active_tab = tab.unwrap();
@@ -169,7 +169,7 @@ impl ViewThread for TorrentTabsViewThread {
 impl TorrentTabsView {
     pub(crate) fn new(
         session: Arc<Session>,
-        selected_recv: watch::Receiver<Option<InfoHash>>,
+        selection: Arc<RwLock<Option<InfoHash>>>,
         shutdown: Arc<AsyncRwLock<()>>,
     ) -> Self {
         let (status_tab, status_data) = status::StatusData::view();
@@ -194,8 +194,7 @@ impl TorrentTabsView {
 
         let thread_obj = TorrentTabsViewThread {
             session,
-            selected_recv,
-            selected: None,
+            selection,
             active_tab_recv,
             active_tab,
             should_reload: true,

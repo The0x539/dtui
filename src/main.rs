@@ -11,7 +11,7 @@ use cursive::traits::*;
 use cursive::views::{LinearLayout, Panel};
 use cursive::direction::Orientation;
 use cursive::menu::MenuTree;
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 
 pub mod views;
 use views::{
@@ -45,10 +45,10 @@ async fn main() -> deluge_rpc::Result<()> {
     let shutdown_write_handle = shutdown.write().await;
 
     let (filters_send, filters_recv) = watch::channel(FilterDict::default());
-    let (selected_send, selected_recv) = watch::channel(None);
+    let selection = Arc::new(RwLock::new(None));
 
     let torrents = {
-        TorrentsView::new(session.clone(), selected_send, filters_recv.clone(), shutdown.clone())
+        TorrentsView::new(session.clone(), selection.clone(), filters_recv.clone(), shutdown.clone())
             .with_name("torrents")
     };
     let filters = {
@@ -65,7 +65,7 @@ async fn main() -> deluge_rpc::Result<()> {
         .child(Panel::new(filters).title("Filters"))
         .child(Panel::new(torrents).title("Torrents"));
 
-    let torrent_tabs = TorrentTabsView::new(session.clone(), selected_recv.clone(), shutdown.clone())
+    let torrent_tabs = TorrentTabsView::new(session.clone(), selection.clone(), shutdown.clone())
         .with_name("tabs");
 
     let main_ui = LinearLayout::new(Orientation::Vertical)
