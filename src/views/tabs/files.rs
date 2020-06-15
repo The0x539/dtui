@@ -6,7 +6,7 @@ use std::cmp::Ordering;
 use cursive::Printer;
 use crate::util::{self, GetIfAllSame};
 use std::sync::{Arc, RwLock};
-use super::TabData;
+use super::{TabData, BuildableTabData};
 use async_trait::async_trait;
 use cursive::view::ViewWrapper;
 use crate::views::table::{TableViewData, TableView};
@@ -519,46 +519,6 @@ pub(super) struct FilesData {
 
 #[async_trait]
 impl TabData for FilesData {
-    type V = FilesView;
-
-    fn view() -> (Self::V, Self) {
-        let columns = vec![
-            (Column::Filename, 10),
-            (Column::Size, 10),
-            (Column::Progress, 10),
-            (Column::Priority, 10),
-        ];
-        let mut view = FilesView { inner: TableView::new(columns) };
-        view.inner.set_on_double_click(|data: &mut FilesState, entry: &DirEntry, _, _| {
-            if let DirEntry::Dir(id) = *entry {
-                let dir = DirEntry::Dir(id);
-                if data.dirs_info[id].collapsed {
-                    data.uncollapse_dir(dir);
-                } else {
-                    data.collapse_dir(dir);
-                }
-            }
-            cursive::event::Callback::dummy()
-        });
-        view.inner.set_on_right_click(|data: &mut FilesState, entry: &DirEntry, position, _| {
-            let hash = data.active_torrent.unwrap();
-            let full_path = data.get_full_path(*entry);
-            match *entry {
-                DirEntry::Dir(id) => {
-                    let files = &data.dirs_info[id].descendants;
-                    menu::files_tab_folder_menu(hash, files, &full_path, position)
-                },
-                DirEntry::File(id) => {
-                    menu::files_tab_file_menu(hash, id, &full_path, position)
-                },
-            }
-        });
-
-        let state = view.inner.get_data();
-        let data = FilesData { state, active_torrent: None };
-        (view, data)
-    }
-
     async fn update(&mut self, session: &Session) -> deluge_rpc::Result<()> {
         let hash = self.active_torrent.unwrap();
 
@@ -629,5 +589,47 @@ impl TabData for FilesData {
             },
             _ => Ok(())
         }
+    }
+}
+
+impl BuildableTabData for FilesData {
+    type V = FilesView;
+
+    fn view() -> (Self::V, Self) {
+        let columns = vec![
+            (Column::Filename, 10),
+            (Column::Size, 10),
+            (Column::Progress, 10),
+            (Column::Priority, 10),
+        ];
+        let mut view = FilesView { inner: TableView::new(columns) };
+        view.inner.set_on_double_click(|data: &mut FilesState, entry: &DirEntry, _, _| {
+            if let DirEntry::Dir(id) = *entry {
+                let dir = DirEntry::Dir(id);
+                if data.dirs_info[id].collapsed {
+                    data.uncollapse_dir(dir);
+                } else {
+                    data.collapse_dir(dir);
+                }
+            }
+            cursive::event::Callback::dummy()
+        });
+        view.inner.set_on_right_click(|data: &mut FilesState, entry: &DirEntry, position, _| {
+            let hash = data.active_torrent.unwrap();
+            let full_path = data.get_full_path(*entry);
+            match *entry {
+                DirEntry::Dir(id) => {
+                    let files = &data.dirs_info[id].descendants;
+                    menu::files_tab_folder_menu(hash, files, &full_path, position)
+                },
+                DirEntry::File(id) => {
+                    menu::files_tab_file_menu(hash, id, &full_path, position)
+                },
+            }
+        });
+
+        let state = view.inner.get_data();
+        let data = FilesData { state, active_torrent: None };
+        (view, data)
     }
 }

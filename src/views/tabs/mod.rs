@@ -51,11 +51,7 @@ impl std::fmt::Display for Tab {
 }
 
 #[async_trait]
-pub(self) trait TabData {
-    type V: View;
-
-    fn view() -> (Self::V, Self) where Self: Sized;
-
+trait TabData: Send {
     async fn update(&mut self, session: &Session) -> deluge_rpc::Result<()>;
 
     async fn reload(&mut self, session: &Session, hash: InfoHash) -> deluge_rpc::Result<()>;
@@ -63,6 +59,12 @@ pub(self) trait TabData {
     async fn on_event(&mut self, _session: &Session, _event: deluge_rpc::Event) -> deluge_rpc::Result<()> {
         Ok(())
     }
+}
+
+trait BuildableTabData: TabData {
+    type V: View;
+
+    fn view() -> (Self::V, Self) where Self: Sized;
 }
 
 mod status;
@@ -111,34 +113,22 @@ impl ViewThread for TorrentTabsViewThread {
         };
 
         if let Some(hash) = opt_hash {
+            let tab: &mut dyn TabData = match self.active_tab {
+                Tab::Status   => &mut self.status_data,
+                Tab::Details  => &mut self.details_data,
+                Tab::Options  => &mut self.options_data,
+                Tab::Files    => &mut self.files_data,
+                Tab::Peers    => &mut self.peers_data,
+                Tab::Trackers => &mut self.trackers_data,
+            };
+
             if self.should_reload {
                 self.should_reload = false;
-                match self.active_tab {
-                    Tab::Status => self.status_data.reload(&self.session, hash),
-                    Tab::Details => self.details_data.reload(&self.session, hash),
-                    Tab::Options => self.options_data.reload(&self.session, hash),
-                    Tab::Files => self.files_data.reload(&self.session, hash),
-                    Tab::Peers => self.peers_data.reload(&self.session, hash),
-                    Tab::Trackers => self.trackers_data.reload(&self.session, hash),
-                }.await?;
+                tab.reload(&self.session, hash).await?;
             } else if let Some(event) = self.latest_event.take() {
-                match self.active_tab {
-                    Tab::Status => self.status_data.on_event(&self.session, event),
-                    Tab::Details => self.details_data.on_event(&self.session, event),
-                    Tab::Options => self.options_data.on_event(&self.session, event),
-                    Tab::Files => self.files_data.on_event(&self.session, event),
-                    Tab::Peers => self.peers_data.on_event(&self.session, event),
-                    Tab::Trackers => self.trackers_data.on_event(&self.session, event),
-                }.await?;
+                tab.on_event(&self.session, event).await?;
             } else {
-                match self.active_tab {
-                    Tab::Status => self.status_data.update(&self.session),
-                    Tab::Details => self.details_data.update(&self.session),
-                    Tab::Options => self.options_data.update(&self.session),
-                    Tab::Files => self.files_data.update(&self.session),
-                    Tab::Peers => self.peers_data.update(&self.session),
-                    Tab::Trackers => self.trackers_data.update(&self.session),
-                }.await?;
+                tab.update(&self.session).await?;
             }
         }
 

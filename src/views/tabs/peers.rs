@@ -7,7 +7,7 @@ use std::cmp::Ordering;
 use cursive::Printer;
 use std::sync::{Arc, RwLock};
 use async_trait::async_trait;
-use super::TabData;
+use super::{TabData, BuildableTabData};
 use crate::util;
 
 fn stupid_bool<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<bool, D::Error> {
@@ -179,26 +179,6 @@ pub(super) struct PeersData {
 
 #[async_trait]
 impl TabData for PeersData {
-    type V = TableView<PeersTableData>;
-
-    fn view() -> (Self::V, Self) {
-        let columns = vec![
-            (Column::Address, 10),
-            (Column::Client, 10),
-            (Column::Country, 10),
-            (Column::IsSeed, 5),
-            (Column::Progress, 8),
-            (Column::DownSpeed, 10),
-            (Column::UpSpeed, 10),
-        ];
-
-        let view = TableView::new(columns);
-        let state = view.get_data();
-        let data = PeersData { state, active_torrent: None, was_empty: true };
-
-        (view, data)
-    }
-
     async fn update(&mut self, session: &Session) -> deluge_rpc::Result<()> {
         let hash = self.active_torrent.unwrap();
 
@@ -235,5 +215,27 @@ impl TabData for PeersData {
         }
 
         Ok(())
+    }
+}
+
+impl BuildableTabData for PeersData {
+    type V = TableView<PeersTableData>;
+
+    fn view() -> (Self::V, Self) {
+        let columns = vec![
+            (Column::Address, 10),
+            (Column::Client, 10),
+            (Column::Country, 10),
+            (Column::IsSeed, 5),
+            (Column::Progress, 8),
+            (Column::DownSpeed, 10),
+            (Column::UpSpeed, 10),
+        ];
+
+        let view = TableView::new(columns);
+        let state = view.get_data();
+        let data = PeersData { state, active_torrent: None, was_empty: true };
+
+        (view, data)
     }
 }

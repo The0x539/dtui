@@ -1,4 +1,4 @@
-use super::{column, TabData};
+use super::{column, TabData, BuildableTabData};
 use deluge_rpc::{Query, InfoHash, Session};
 use serde::Deserialize;
 use cursive::views::{TextContent, LinearLayout, TextView};
@@ -32,37 +32,6 @@ pub(super) struct DetailsData {
 
 #[async_trait]
 impl TabData for DetailsData {
-    type V = LinearLayout;
-
-    fn view() -> (Self::V, Self) {
-        let (top_view, top) = column(&["Name:", "Download Folder:"], HAlign::Left);
-        let (left_view, left) = column(&["Total Size:", "Total Files:", "Hash:"], HAlign::Left);
-        let (right_view, right) = column(&["Added:", "Completed:", "Pieces:"], HAlign::Left);
-        let (bottom_view, bottom) = column(&["Created By:", "Comments:"], HAlign::Left);
-
-        // We know ahead of time how wide the biggest thing on the left side will be. How fortunate.
-        // Unfortunately, the TextView associated with `left` (a TextContent struct) is hard to access.
-        // Rather than figuring that out, likely complicating `column()`'s interface,
-        // we can just set `left`'s content to something just as wide as its eventual real content.
-        const BLANK_INFOHASH: &'static str = "                                        ";
-        const_assert_eq!(BLANK_INFOHASH.len(), 40);
-        left.set_content(BLANK_INFOHASH);
-
-        let middle_view = LinearLayout::horizontal()
-            .child(left_view)
-            .child(TextView::new(" ╷ \n │ \n ╵ "))
-            .child(right_view);
-
-        let view = LinearLayout::vertical()
-            .child(top_view)
-            .child(middle_view)
-            .child(bottom_view);
-
-        let data = DetailsData { active_torrent: None, top, left, right, bottom };
-
-        (view, data)
-    }
-
     async fn update(&mut self, session: &Session) -> deluge_rpc::Result<()> {
         let hash = self.active_torrent.unwrap();
 
@@ -99,3 +68,35 @@ impl TabData for DetailsData {
     }
 }
 
+impl BuildableTabData for DetailsData {
+    type V = LinearLayout;
+
+    fn view() -> (Self::V, Self) {
+        let (top_view, top) = column(&["Name:", "Download Folder:"], HAlign::Left);
+        let (left_view, left) = column(&["Total Size:", "Total Files:", "Hash:"], HAlign::Left);
+        let (right_view, right) = column(&["Added:", "Completed:", "Pieces:"], HAlign::Left);
+        let (bottom_view, bottom) = column(&["Created By:", "Comments:"], HAlign::Left);
+
+        // We know ahead of time how wide the biggest thing on the left side will be. How fortunate.
+        // Unfortunately, the TextView associated with `left` (a TextContent struct) is hard to access.
+        // Rather than figuring that out, likely complicating `column()`'s interface,
+        // we can just set `left`'s content to something just as wide as its eventual real content.
+        const BLANK_INFOHASH: &'static str = "                                        ";
+        const_assert_eq!(BLANK_INFOHASH.len(), 40);
+        left.set_content(BLANK_INFOHASH);
+
+        let middle_view = LinearLayout::horizontal()
+            .child(left_view)
+            .child(TextView::new(" ╷ \n │ \n ╵ "))
+            .child(right_view);
+
+        let view = LinearLayout::vertical()
+            .child(top_view)
+            .child(middle_view)
+            .child(bottom_view);
+
+        let data = DetailsData { active_torrent: None, top, left, right, bottom };
+
+        (view, data)
+    }
+}

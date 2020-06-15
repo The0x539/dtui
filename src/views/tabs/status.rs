@@ -1,4 +1,4 @@
-use super::{column, TabData};
+use super::{column, TabData, BuildableTabData};
 use cursive::traits::Resizable;
 use deluge_rpc::{Query, TorrentState, Session, InfoHash};
 use serde::Deserialize;
@@ -51,49 +51,6 @@ pub(super) struct StatusData {
 
 #[async_trait]
 impl TabData for StatusData {
-    type V = LinearLayout;
-
-    fn view() -> (Self::V, Self) {
-        let (progress_label_send, progress_label_recv) = watch::channel(String::new());
-
-        let progress_val = Counter::new(0);
-        let progress_bar = ProgressBar::new()
-            .max(10000)
-            .with_value(progress_val.clone())
-            .with_label(move |_, _| progress_label_recv.borrow().clone())
-            .full_width();
-
-        let (col1, col2, col3) = (
-            ["Down Speed:", "Up Speed:", "Downloaded:", "Uploaded:"],
-            ["Seeds:", "Peers:", "Share Ratio:", "Availability:", "Seed Rank:"],
-            ["ETA Time:", "Active Time:", "Seeding Time:", "Last Transfer:", "Complete Seen:"],
-        );
-
-        let (col1_view, col1_content) = column(&col1, HAlign::Center);
-        let (col2_view, col2_content) = column(&col2, HAlign::Center);
-        let (col3_view, col3_content) = column(&col3, HAlign::Center);
-
-        let status = LinearLayout::horizontal()
-            .child(col1_view)
-            .child(DummyView.fixed_width(3))
-            .child(col2_view)
-            .child(DummyView.fixed_width(3))
-            .child(col3_view);
-
-        let view = LinearLayout::vertical()
-            .child(progress_bar)
-            .child(status);
-
-        let data = StatusData {
-            active_torrent: None,
-            progress_label_send,
-            progress_val,
-            columns: [col1_content, col2_content, col3_content],
-        };
-
-        (view, data)
-    }
-
     async fn update(&mut self, session: &Session) -> deluge_rpc::Result<()> {
         let hash = self.active_torrent.unwrap();
 
@@ -139,3 +96,47 @@ impl TabData for StatusData {
     }
 }
 
+impl BuildableTabData for StatusData {
+    type V = LinearLayout;
+
+    fn view() -> (Self::V, Self) {
+        let (progress_label_send, progress_label_recv) = watch::channel(String::new());
+
+        let progress_val = Counter::new(0);
+        let progress_bar = ProgressBar::new()
+            .max(10000)
+            .with_value(progress_val.clone())
+            .with_label(move |_, _| progress_label_recv.borrow().clone())
+            .full_width();
+
+        let (col1, col2, col3) = (
+            ["Down Speed:", "Up Speed:", "Downloaded:", "Uploaded:"],
+            ["Seeds:", "Peers:", "Share Ratio:", "Availability:", "Seed Rank:"],
+            ["ETA Time:", "Active Time:", "Seeding Time:", "Last Transfer:", "Complete Seen:"],
+        );
+
+        let (col1_view, col1_content) = column(&col1, HAlign::Center);
+        let (col2_view, col2_content) = column(&col2, HAlign::Center);
+        let (col3_view, col3_content) = column(&col3, HAlign::Center);
+
+        let status = LinearLayout::horizontal()
+            .child(col1_view)
+            .child(DummyView.fixed_width(3))
+            .child(col2_view)
+            .child(DummyView.fixed_width(3))
+            .child(col3_view);
+
+        let view = LinearLayout::vertical()
+            .child(progress_bar)
+            .child(status);
+
+        let data = StatusData {
+            active_torrent: None,
+            progress_label_send,
+            progress_val,
+            columns: [col1_content, col2_content, col3_content],
+        };
+
+        (view, data)
+    }
+}

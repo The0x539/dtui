@@ -1,4 +1,4 @@
-use super::TabData;
+use super::{TabData, BuildableTabData};
 use deluge_rpc::{Query, InfoHash, Session};
 use serde::Deserialize;
 use cursive::views::{EditView, LinearLayout, TextView, DummyView, Button, Panel, EnableableView, TextContent};
@@ -134,6 +134,37 @@ impl OptionsData {
 
 #[async_trait]
 impl TabData for OptionsData {
+    async fn update(&mut self, session: &Session) -> deluge_rpc::Result<()> {
+        let deadline = time::Instant::now() + time::Duration::from_secs(1);
+
+        if task::block_in_place(|| self.pending_options.read().unwrap().is_none()) {
+            let hash = self.active_torrent.unwrap();
+            let options = session.get_torrent_status::<OptionsQuery>(hash).await?;
+            self.owner.set_content(&options.owner);
+            self.current_options_send.broadcast(options).unwrap();
+        } else {
+            let timeout = time::timeout_at(deadline, self.apply_notify.notified());
+            if let Ok(()) = timeout.await {
+                self.apply(session).await?;
+            }
+        }
+
+        Ok(())
+    }
+
+    async fn reload(&mut self, session: &Session, hash: InfoHash) -> deluge_rpc::Result<()> {
+        self.active_torrent = Some(hash);
+        task::block_in_place(|| self.pending_options.write().unwrap().take());
+
+        let options = session.get_torrent_status::<OptionsQuery>(hash).await?;
+        self.owner.set_content(&options.owner);
+        self.current_options_send.broadcast(options).unwrap();
+
+        Ok(())
+    }
+}
+
+impl BuildableTabData for OptionsData {
     type V = LinearLayout;
 
     fn view() -> (Self::V, Self) {
@@ -299,34 +330,4 @@ impl TabData for OptionsData {
         };
         (view, data)
     }
-
-    async fn update(&mut self, session: &Session) -> deluge_rpc::Result<()> {
-        let deadline = time::Instant::now() + time::Duration::from_secs(1);
-
-        if task::block_in_place(|| self.pending_options.read().unwrap().is_none()) {
-            let hash = self.active_torrent.unwrap();
-            let options = session.get_torrent_status::<OptionsQuery>(hash).await?;
-            self.owner.set_content(&options.owner);
-            self.current_options_send.broadcast(options).unwrap();
-        } else {
-            let timeout = time::timeout_at(deadline, self.apply_notify.notified());
-            if let Ok(()) = timeout.await {
-                self.apply(session).await?;
-            }
-        }
-
-        Ok(())
-    }
-
-    async fn reload(&mut self, session: &Session, hash: InfoHash) -> deluge_rpc::Result<()> {
-        self.active_torrent = Some(hash);
-        task::block_in_place(|| self.pending_options.write().unwrap().take());
-
-        let options = session.get_torrent_status::<OptionsQuery>(hash).await?;
-        self.owner.set_content(&options.owner);
-        self.current_options_send.broadcast(options).unwrap();
-
-        Ok(())
-    }
 }
-

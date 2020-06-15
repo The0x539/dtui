@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use super::{column, TabData};
+use super::{column, TabData, BuildableTabData};
 use deluge_rpc::{Query, Session, InfoHash};
 use cursive::align::HAlign;
 use cursive::views::{LinearLayout, TextContent, Button, DummyView};
@@ -26,6 +26,29 @@ pub(super) struct TrackersData {
 
 #[async_trait]
 impl TabData for TrackersData {
+    async fn update(&mut self, session: &Session) -> deluge_rpc::Result<()> {
+        let hash = self.active_torrent.unwrap();
+
+        let query = session.get_torrent_status::<TrackersQuery>(hash).await?;
+
+        self.content.set_content([
+            query.trackers.len().to_string(),
+            query.tracker_host,
+            query.tracker_status,
+            util::ftime_or_dash(query.next_announce),
+            String::from(if query.private { "Yes" } else { "No" }),
+        ].join("\n"));
+
+        Ok(())
+    }
+
+    async fn reload(&mut self, session: &Session, hash: InfoHash) -> deluge_rpc::Result<()> {
+        self.active_torrent = Some(hash);
+        self.update(session).await
+    }
+}
+
+impl BuildableTabData for TrackersData {
     type V = LinearLayout;
 
     fn view() -> (Self::V, Self) {
@@ -50,26 +73,5 @@ impl TabData for TrackersData {
         let data = TrackersData { active_torrent: None, content: col_content };
 
         (col_view, data)
-    }
-
-    async fn update(&mut self, session: &Session) -> deluge_rpc::Result<()> {
-        let hash = self.active_torrent.unwrap();
-
-        let query = session.get_torrent_status::<TrackersQuery>(hash).await?;
-
-        self.content.set_content([
-            query.trackers.len().to_string(),
-            query.tracker_host,
-            query.tracker_status,
-            util::ftime_or_dash(query.next_announce),
-            String::from(if query.private { "Yes" } else { "No" }),
-        ].join("\n"));
-
-        Ok(())
-    }
-
-    async fn reload(&mut self, session: &Session, hash: InfoHash) -> deluge_rpc::Result<()> {
-        self.active_torrent = Some(hash);
-        self.update(session).await
     }
 }
