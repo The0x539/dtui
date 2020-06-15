@@ -187,7 +187,7 @@ impl<T: TableViewData> View for TableView<T> where Self: 'static {
             let mut name = String::from(column.as_ref());
 
             if *column == data.sort_column() {
-                let c = if data.descending_sort() { " v" } else { " ^" };
+                let c = if data.descending_sort() { " ▼" } else { " ▲" };
                 name.push_str(c);
             }
 
