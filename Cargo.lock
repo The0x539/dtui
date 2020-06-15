@@ -356,7 +356,7 @@ dependencies = [
 [[package]]
 name = "deluge-rpc"
 version = "0.7.0"
-source = "git+https://github.com/The0x539/rust-deluge-rpc.git?branch=trunk#eef6ee5c19b989b4332af0f0cdec94329840a99b"
+source = "git+https://github.com/The0x539/rust-deluge-rpc.git?branch=trunk#f84077d0e99c8cd16e681a9d49052aa60aedc182"
 dependencies = [
  "deluge-rpc-macro",
  "enum-kinds",
@@ -1084,7 +1084,7 @@ checksum = "26412eb97c6b088a6997e05f69403a802a92d520de2f8e63c2b65f9e0f47c4e8"
 [[package]]
 name = "rencode"
 version = "0.2.1"
-source = "git+https://github.com/The0x539/rust-rencode.git?branch=trunk#955acd9e08114bb332a8bf201eefe57072df5af5"
+source = "git+https://github.com/The0x539/rust-rencode.git?branch=trunk#86c956b969572be7edab408240b9ecc1b80a468d"
 dependencies = [
  "byteorder",
  "serde",
