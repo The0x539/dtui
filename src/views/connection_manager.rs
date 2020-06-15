@@ -14,7 +14,7 @@ use deluge_rpc::Session;
 
 use cursive::{
     Printer,
-    views::{TextView, Button, LinearLayout, Panel},
+    views::{Button, LinearLayout, Panel, DummyView},
     view::ViewWrapper,
 };
 use serde::{Serialize, Deserialize};
@@ -77,25 +77,6 @@ pub(crate) struct ConnectionTableData {
 }
 
 impl ConnectionTableData {
-    fn new(
-        connections: FnvIndexMap<Uuid, Connection>,
-        current_host: Option<(Uuid, Arc<Session>)>,
-        autoconnect_host: Option<Uuid>,
-    ) -> Self {
-        let rows = connections.keys().copied().collect();
-        let mut obj = Self {
-            rows,
-            connections,
-            current_host: None,
-            autoconnect_host,
-        };
-        if let Some((id, session)) = current_host {
-            obj.current_host = Some(id);
-            obj.connections[&id].session = Some(session);
-        }
-        obj
-    }
-
     fn get_current_host(&self) -> Option<&Connection> {
         Some(&self.connections[&self.current_host?])
     }
@@ -148,11 +129,6 @@ impl TableViewData for ConnectionTableData {
 
 pub(crate) struct ConnectionManagerView {
     inner: LinearLayout,
-    /*
-    table: TableView<ConnectionTableData>,
-    buttons: LinearLayout,
-    checkboxes: (TextView, [LabeledCheckbox; 3]),
-    */
 }
 
 impl ConnectionManagerView {
@@ -162,11 +138,16 @@ impl ConnectionManagerView {
         let autoconnect_host = None; // TODO: read from config
         let hide_dialog = false; // TODO: read from config
 
+        let auto_connect = current_host.as_ref().map(|x| x.0) == autoconnect_host;
+
         let cols = vec![(Column::Status, 9), (Column::Host, 50), (Column::Version, 11)];
         let table = TableView::<ConnectionTableData>::new(cols);
-        let table_data = table.get_data();
         {
+            let table_data = table.get_data();
             let mut data = table_data.write().unwrap();
+
+            data.rows = connections.keys().copied().collect();
+            data.connections = connections;
             data.autoconnect_host = autoconnect_host;
             if let Some((id, session)) = current_host {
                 data.current_host = Some(id);
@@ -174,17 +155,33 @@ impl ConnectionManagerView {
             }
         }
 
+        let buttons = LinearLayout::horizontal()
+            .child(Button::new("Add", |_| ()))
+            .child(Button::new("Edit", |_| ()))
+            .child(Button::new("Remove", |_| ()))
+            .child(Button::new("Refresh", |_| ()))
+            .child(DummyView)
+            .child(Button::new("Stop Daemon", |_| ()));
+
         let startup_options = {
-            let auto_connect_checkbox = LabeledCheckbox::new("Auto-connect to selected daemon");
+            let auto_connect_checkbox = LabeledCheckbox::new("Auto-connect to selected daemon")
+                .with_checked(auto_connect);
+
             let hide_dialog_checkbox = LabeledCheckbox::new("Hide this dialog")
                 .with_checked(hide_dialog);
+
             let content = LinearLayout::vertical()
                 .child(auto_connect_checkbox)
                 .child(hide_dialog_checkbox);
+
             Panel::new(content).title("Startup Options")
         };
 
-        todo!()
+        let inner = LinearLayout::vertical()
+            .child(table)
+            .child(buttons)
+            .child(startup_options);
+        Self { inner }
     }
 }
 
