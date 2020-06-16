@@ -28,6 +28,7 @@ pub mod util;
 mod themes;
 mod form;
 mod menu;
+mod config;
 
 #[tokio::main]
 async fn main() -> deluge_rpc::Result<()> {
