@@ -77,6 +77,7 @@ mod trackers;
 struct TorrentTabsViewThread {
     session: Arc<Session>,
     selection: Arc<RwLock<Option<InfoHash>>>,
+    new_selection_recv: watch::Receiver<()>,
     active_tab_recv: watch::Receiver<Tab>,
     active_tab: Tab,
     should_reload: bool,
@@ -132,7 +133,7 @@ impl ViewThread for TorrentTabsViewThread {
             }
         }
 
-        let new_selection = futures::future::pending::<()>(); // TODO: unit channel for "there's a new selection"
+        let new_selection = self.new_selection_recv.recv();
         let new_active_tab = self.active_tab_recv.recv();
         let new_event = self.events_recv.recv();
 
@@ -141,7 +142,9 @@ impl ViewThread for TorrentTabsViewThread {
         let latest_event = &mut self.latest_event;
 
         tokio::select! {
-            _ = new_selection => (),
+            _ = new_selection => {
+                *should_reload = true;
+            },
             tab = new_active_tab => {
                 *should_reload = true;
                 *active_tab = tab.unwrap();
@@ -160,6 +163,7 @@ impl TorrentTabsView {
     pub(crate) fn new(
         session: Arc<Session>,
         selection: Arc<RwLock<Option<InfoHash>>>,
+        new_selection_recv: watch::Receiver<()>,
         shutdown: Arc<AsyncRwLock<()>>,
     ) -> Self {
         let (status_tab, status_data) = status::StatusData::view();
@@ -185,6 +189,7 @@ impl TorrentTabsView {
         let thread_obj = TorrentTabsViewThread {
             session,
             selection,
+            new_selection_recv,
             active_tab_recv,
             active_tab,
             should_reload: true,

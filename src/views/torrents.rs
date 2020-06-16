@@ -398,6 +398,7 @@ impl TorrentsView {
     pub(crate) fn new(
         session: Arc<Session>,
         selection: Arc<RwLock<Option<InfoHash>>>,
+        new_selection_send: watch::Sender<()>,
         filters_recv: watch::Receiver<FilterDict>,
         shutdown: Arc<AsyncRwLock<()>>,
     ) -> Self {
@@ -410,6 +411,7 @@ impl TorrentsView {
         let selection_clone = Arc::clone(&selection);
         let mut inner = TableView::new(columns);
         inner.set_on_selection_change(move |_: &mut _, sel: &InfoHash, _, _| {
+            new_selection_send.broadcast(()).unwrap();
             selection_clone.write().unwrap().replace(*sel);
             cursive::event::Callback::dummy()
         });
