@@ -53,26 +53,34 @@ async fn main() -> deluge_rpc::Result<()> {
         (tx, rx)
     };
 
-    let torrents = {
-        TorrentsView::new(session.clone(), selection.clone(), new_selection_send, filters_recv.clone(), shutdown.clone())
-            .with_name("torrents")
-    };
-    let filters = {
-        FiltersView::new(session.clone(), filters_send, filters_recv.clone(), shutdown.clone())
-            .with_name("filters")
-            .into_scroll_wrapper()
-    };
-    let status_bar = {
-        StatusBarView::new(session.clone(), shutdown.clone())
-            .with_name("status")
-    };
+    let torrents = TorrentsView::new(
+        session.clone(),
+        selection.clone(),
+        new_selection_send,
+        filters_recv.clone(),
+        shutdown.clone(),
+    ).with_name("torrents");
+
+    let filters = FiltersView::new(
+        session.clone(),
+        filters_send,
+        filters_recv.clone(),
+        shutdown.clone(),
+    ).with_name("filters").into_scroll_wrapper();
+
+    let status_bar = StatusBarView::new(session.clone(), shutdown.clone())
+        .with_name("status");
 
     let torrents_ui = LinearLayout::new(Orientation::Horizontal)
         .child(Panel::new(filters).title("Filters"))
         .child(Panel::new(torrents).title("Torrents"));
 
-    let torrent_tabs = TorrentTabsView::new(session.clone(), selection.clone(), new_selection_recv, shutdown.clone())
-        .with_name("tabs");
+    let torrent_tabs = TorrentTabsView::new(
+        session.clone(),
+        selection.clone(),
+        new_selection_recv,
+        shutdown.clone(),
+    ).with_name("tabs");
 
     let main_ui = LinearLayout::new(Orientation::Vertical)
         .child(torrents_ui)
