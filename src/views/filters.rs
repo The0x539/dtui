@@ -38,7 +38,6 @@ pub(crate) struct FiltersView {
 }
 
 struct FiltersViewThread {
-    session: Arc<Session>,
     categories: Arc<RwLock<Categories>>,
     filters_recv: watch::Receiver<FilterDict>,
     events_recv: broadcast::Receiver<deluge_rpc::Event>,
@@ -46,12 +45,11 @@ struct FiltersViewThread {
 
 impl FiltersViewThread {
     fn new(
-        session: Arc<Session>,
+        events_recv: broadcast::Receiver<deluge_rpc::Event>,
         categories: Arc<RwLock<Categories>>,
         filters_recv: watch::Receiver<FilterDict>,
     ) -> Self {
-        let events_recv = session.subscribe_events();
-        Self { session, categories, filters_recv, events_recv }
+        Self { categories, filters_recv, events_recv }
     }
 
     fn should_show(&self, key: FilterKey, filter: &(String, u64)) -> bool {
@@ -106,17 +104,17 @@ impl FiltersViewThread {
 
 #[async_trait]
 impl ViewThread for FiltersViewThread {
-    async fn init(&mut self) -> deluge_rpc::Result<()> {
+    async fn init(&mut self, session: &Session) -> deluge_rpc::Result<()> {
         let interested = deluge_rpc::events![TorrentAdded, TorrentRemoved, TorrentStateChanged];
-        self.session.set_event_interest(&interested).await?;
+        session.set_event_interest(&interested).await?;
 
         Ok(())
     }
 
-    async fn do_update(&mut self) -> deluge_rpc::Result<()> {
+    async fn do_update(&mut self, session: &Session) -> deluge_rpc::Result<()> {
         let tick = time::Instant::now() + time::Duration::from_secs(3);
 
-        let new_tree = self.session.get_filter_tree(true, &[]).await?;
+        let new_tree = session.get_filter_tree(true, &[]).await?;
         self.replace_tree(new_tree);
 
         loop {
@@ -137,14 +135,15 @@ impl ViewThread for FiltersViewThread {
 
 impl FiltersView {
     pub(crate) fn new(
-        session: Arc<Session>,
+        session_recv: watch::Receiver<Option<Arc<Session>>>,
         filters_send: watch::Sender<FilterDict>,
         filters_recv: watch::Receiver<FilterDict>,
         shutdown: Arc<AsyncRwLock<()>>,
     ) -> Self {
         let categories = Arc::new(RwLock::new(Categories::new()));
-        let thread_obj = FiltersViewThread::new(session, categories.clone(), filters_recv);
-        let thread = tokio::spawn(thread_obj.run(shutdown));
+        let events_recv = session_recv.borrow().clone().unwrap().subscribe_events();
+        let thread_obj = FiltersViewThread::new(events_recv, categories.clone(), filters_recv);
+        let thread = tokio::spawn(thread_obj.run(session_recv, shutdown));
         Self {
             active_filters: FilterDict::default(),
             categories,

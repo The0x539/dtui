@@ -5,7 +5,7 @@ use std::net::IpAddr;
 use serde::Deserialize;
 use deluge_rpc::{Session, Query};
 use tokio::task::JoinHandle;
-use tokio::sync::RwLock as AsyncRwLock;
+use tokio::sync::{watch, RwLock as AsyncRwLock};
 use tokio::time;
 use std::sync::{Arc, RwLock};
 use std::fmt::{Display, Formatter, self};
@@ -81,29 +81,27 @@ pub(crate) struct StatusBarView {
 }
 
 struct StatusBarViewThread {
-    session: Arc<Session>,
     data: Arc<RwLock<StatusBarData>>,
 }
 
 impl StatusBarViewThread {
     pub(crate) fn new(
-        session: Arc<Session>,
         data: Arc<RwLock<StatusBarData>>,
     ) -> Self {
-        Self { session, data }
+        Self { data }
     }
 }
 
 #[async_trait]
 impl ViewThread for StatusBarViewThread {
-    async fn do_update(&mut self) -> deluge_rpc::Result<()> {
+    async fn do_update(&mut self, session: &Session) -> deluge_rpc::Result<()> {
         let tick = time::Instant::now() + time::Duration::from_secs(1);
 
         let (status, config, ip, space) = tokio::try_join!(
-            self.session.get_session_status::<StatusQuery>(),
-            self.session.get_config_values::<ConfigQuery>(),
-            self.session.get_external_ip(),
-            self.session.get_free_space(None),
+            session.get_session_status::<StatusQuery>(),
+            session.get_config_values::<ConfigQuery>(),
+            session.get_external_ip(),
+            session.get_free_space(None),
         )?;
 
         /* stupid async borrow checker */ {
@@ -135,10 +133,10 @@ impl ViewThread for StatusBarViewThread {
 }
 
 impl StatusBarView {
-    pub fn new(session: Arc<Session>, shutdown: Arc<AsyncRwLock<()>>) -> Self {
+    pub fn new(session_recv: watch::Receiver<Option<Arc<Session>>>, shutdown: Arc<AsyncRwLock<()>>) -> Self {
         let data = Arc::new(RwLock::new(StatusBarData::default()));
-        let thread_obj = StatusBarViewThread::new(session, data.clone());
-        let thread = tokio::spawn(thread_obj.run(shutdown));
+        let thread_obj = StatusBarViewThread::new(data.clone());
+        let thread = tokio::spawn(thread_obj.run(session_recv, shutdown));
         Self { data, thread }
     }
 

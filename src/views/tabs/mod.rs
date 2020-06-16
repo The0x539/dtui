@@ -75,7 +75,6 @@ mod peers;
 mod trackers;
 
 struct TorrentTabsViewThread {
-    session: Arc<Session>,
     selection: Arc<RwLock<Option<InfoHash>>>,
     new_selection_recv: watch::Receiver<()>,
     active_tab_recv: watch::Receiver<Tab>,
@@ -105,7 +104,7 @@ pub(crate) struct TorrentTabsView {
 
 #[async_trait]
 impl ViewThread for TorrentTabsViewThread {
-    async fn do_update(&mut self) -> deluge_rpc::Result<()> {
+    async fn do_update(&mut self, session: &Session) -> deluge_rpc::Result<()> {
         let tick = time::Instant::now() + time::Duration::from_secs(1);
 
         let opt_hash = {
@@ -125,11 +124,11 @@ impl ViewThread for TorrentTabsViewThread {
 
             if self.should_reload {
                 self.should_reload = false;
-                tab.reload(&self.session, hash).await?;
+                tab.reload(session, hash).await?;
             } else if let Some(event) = self.latest_event.take() {
-                tab.on_event(&self.session, event).await?;
+                tab.on_event(session, event).await?;
             } else {
-                tab.update(&self.session).await?;
+                tab.update(session).await?;
             }
         }
 
@@ -161,7 +160,7 @@ impl ViewThread for TorrentTabsViewThread {
 
 impl TorrentTabsView {
     pub(crate) fn new(
-        session: Arc<Session>,
+        session_recv: watch::Receiver<Option<Arc<Session>>>,
         selection: Arc<RwLock<Option<InfoHash>>>,
         new_selection_recv: watch::Receiver<()>,
         shutdown: Arc<AsyncRwLock<()>>,
@@ -180,6 +179,8 @@ impl TorrentTabsView {
         let active_tab = Tab::Status;
         let (active_tab_send, active_tab_recv) = watch::channel(active_tab);
 
+        let session = session_recv.borrow().clone().unwrap();
+
         let evs = deluge_rpc::events![TorrentFileRenamed, TorrentFolderRenamed];
         let f = session.set_event_interest(&evs);
         task::block_in_place(|| futures::executor::block_on(f)).unwrap();
@@ -187,7 +188,6 @@ impl TorrentTabsView {
         let events_recv = session.subscribe_events();
 
         let thread_obj = TorrentTabsViewThread {
-            session,
             selection,
             new_selection_recv,
             active_tab_recv,
@@ -202,7 +202,7 @@ impl TorrentTabsView {
             peers_data,
             trackers_data,
         };
-        let thread = task::spawn(thread_obj.run(shutdown));
+        let thread = task::spawn(thread_obj.run(session_recv, shutdown));
 
         let view = TabPanel::new()
             .with_tab(Tab::Status, status_tab)

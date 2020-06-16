@@ -192,7 +192,6 @@ pub(crate) struct TorrentsView {
 }
 
 struct TorrentsViewThread {
-    session: Arc<Session>,
     data: Arc<RwLock<ViewData>>,
     filters: FilterDict,
     filters_recv: watch::Receiver<FilterDict>,
@@ -203,15 +202,13 @@ struct TorrentsViewThread {
 
 impl TorrentsViewThread {
     fn new(
-        session: Arc<Session>,
+        events_recv: broadcast::Receiver<deluge_rpc::Event>,
         data: Arc<RwLock<ViewData>>,
         selection: Arc<RwLock<Option<InfoHash>>>,
         filters_recv: watch::Receiver<FilterDict>,
     ) -> Self {
-        let events_recv = session.subscribe_events();
         let filters = filters_recv.borrow().clone();
         Self {
-            session,
             data,
             filters,
             filters_recv,
@@ -279,12 +276,6 @@ impl TorrentsViewThread {
         data.sort_unstable();
     }
 
-    async fn add_torrent_by_hash(&mut self, hash: InfoHash) -> deluge_rpc::Result<()> {
-        let new_torrent = self.session.get_torrent_status::<Torrent>(hash).await?;
-        self.add_torrent(hash, new_torrent);
-        Ok(())
-    }
-
     fn add_torrent(&mut self, hash: InfoHash, torrent: Torrent) {
         let mut data = self.data.write().unwrap();
 
@@ -332,11 +323,11 @@ impl TorrentsViewThread {
 
 #[async_trait]
 impl ViewThread for TorrentsViewThread {
-    async fn init(&mut self) -> deluge_rpc::Result<()> {
+    async fn init(&mut self, session: &Session) -> deluge_rpc::Result<()> {
         let interested = deluge_rpc::events![TorrentAdded, TorrentRemoved, TorrentStateChanged];
-        self.session.set_event_interest(&interested).await?;
+        session.set_event_interest(&interested).await?;
 
-        let initial_torrents = self.session.get_torrents_status::<Torrent>(None).await?;
+        let initial_torrents = session.get_torrents_status::<Torrent>(None).await?;
         // TODO: do this more efficiently
         for (hash, torrent) in initial_torrents.into_iter() {
             self.add_torrent(hash, torrent);
@@ -345,7 +336,7 @@ impl ViewThread for TorrentsViewThread {
         Ok(())
     }
 
-    async fn do_update(&mut self) -> deluge_rpc::Result<()> {
+    async fn do_update(&mut self, session: &Session) -> deluge_rpc::Result<()> {
         let deadline = time::Instant::now() + time::Duration::from_secs(1);
 
         loop {
@@ -364,7 +355,8 @@ impl ViewThread for TorrentsViewThread {
                 ToHandle::Filters(new_filters) => self.replace_filters(new_filters),
                 ToHandle::Event(event) => match event {
                     deluge_rpc::Event::TorrentAdded(hash, _from_state) => {
-                        self.add_torrent_by_hash(hash).await?;
+                        let new_torrent = session.get_torrent_status::<Torrent>(hash).await?;
+                        self.add_torrent(hash, new_torrent);
                     },
                     deluge_rpc::Event::TorrentRemoved(hash) => {
                         self.remove_torrent(hash);
@@ -383,11 +375,12 @@ impl ViewThread for TorrentsViewThread {
             }
         }
 
-        let delta = self.session.get_torrents_status_diff::<Torrent>(None).await?;
+        let delta = session.get_torrents_status_diff::<Torrent>(None).await?;
         self.apply_delta(delta);
 
         while let Some(hash) = self.missed_torrents.pop() {
-            self.add_torrent_by_hash(hash).await?;
+            let new_torrent = session.get_torrent_status::<Torrent>(hash).await?;
+            self.add_torrent(hash, new_torrent);
         }
 
         Ok(())
@@ -396,7 +389,7 @@ impl ViewThread for TorrentsViewThread {
 
 impl TorrentsView {
     pub(crate) fn new(
-        session: Arc<Session>,
+        session_recv: watch::Receiver<Option<Arc<Session>>>,
         selection: Arc<RwLock<Option<InfoHash>>>,
         new_selection_send: watch::Sender<()>,
         filters_recv: watch::Receiver<FilterDict>,
@@ -420,8 +413,9 @@ impl TorrentsView {
             menu::torrent_context_menu(*sel, name, position)
         });
 
-        let thread_obj = TorrentsViewThread::new(session.clone(), inner.get_data(), selection, filters_recv);
-        let thread = tokio::spawn(thread_obj.run(shutdown));
+        let events_recv = session_recv.borrow().clone().unwrap().subscribe_events();
+        let thread_obj = TorrentsViewThread::new(events_recv, inner.get_data(), selection, filters_recv);
+        let thread = tokio::spawn(thread_obj.run(session_recv, shutdown));
         Self { inner, thread }
     }
 

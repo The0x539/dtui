@@ -30,6 +30,8 @@ mod form;
 mod menu;
 mod config;
 
+fn foo<T>() -> T { todo!() }
+
 #[tokio::main]
 async fn main() -> deluge_rpc::Result<()> {
     let endpoint = util::read_file("./experiment/endpoint");
@@ -53,8 +55,10 @@ async fn main() -> deluge_rpc::Result<()> {
         (tx, rx)
     };
 
+    let (session_send, session_recv) = watch::channel(Some(session));
+
     let torrents = TorrentsView::new(
-        session.clone(),
+        session_recv.clone(),
         selection.clone(),
         new_selection_send,
         filters_recv.clone(),
@@ -62,13 +66,13 @@ async fn main() -> deluge_rpc::Result<()> {
     ).with_name("torrents");
 
     let filters = FiltersView::new(
-        session.clone(),
+        session_recv.clone(),
         filters_send,
         filters_recv.clone(),
         shutdown.clone(),
     ).with_name("filters").into_scroll_wrapper();
 
-    let status_bar = StatusBarView::new(session.clone(), shutdown.clone())
+    let status_bar = StatusBarView::new(session_recv.clone(), shutdown.clone())
         .with_name("status");
 
     let torrents_ui = LinearLayout::new(Orientation::Horizontal)
@@ -76,7 +80,7 @@ async fn main() -> deluge_rpc::Result<()> {
         .child(Panel::new(torrents).title("Torrents"));
 
     let torrent_tabs = TorrentTabsView::new(
-        session.clone(),
+        session_recv.clone(),
         selection.clone(),
         new_selection_recv,
         shutdown.clone(),
@@ -96,7 +100,7 @@ async fn main() -> deluge_rpc::Result<()> {
     siv.set_fps(4);
     siv.set_autohide_menu(false);
     siv.set_theme(themes::dracula());
-    siv.set_user_data(session.clone());
+    siv.set_user_data(session_recv.borrow().clone().unwrap());
 
     siv.add_global_callback('q', Cursive::quit);
     siv.add_global_callback(cursive::event::Key::Esc, |siv| {
@@ -120,7 +124,7 @@ async fn main() -> deluge_rpc::Result<()> {
 
     std::mem::drop(shutdown_write_handle);
 
-    siv.take_user_data::<Arc<Session>>().unwrap();
+    //siv.take_user_data::<Arc<Session>>().unwrap();
 
     let torrents_thread = siv.call_on_name("torrents", TorrentsView::take_thread).unwrap();
     let filters_thread = siv.call_on_name("filters", FiltersView::take_thread).unwrap();
@@ -144,8 +148,8 @@ async fn main() -> deluge_rpc::Result<()> {
     statusbar_result?;
     tabs_result?;
 
-    let session = Arc::try_unwrap(session).unwrap();
-    
+    let session: Session = foo();
+
     session.disconnect().await.map_err(|(_stream, err)| err)?;
 
     Ok(())
