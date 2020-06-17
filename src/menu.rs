@@ -112,7 +112,7 @@ async fn set_multi_file_priority(
 fn rename_file_dialog(siv: &mut Cursive, hash: InfoHash, index: usize, old_name: &str) {
     let dialog = TextArea::new()
         .content(old_name)
-        //.with(|v| v.set_cursor(old_name.len()))
+        .with(|v| v.set_cursor(old_name.len()))
         .into_dialog("Cancel", "Rename", move |siv, new_name| {
             let renames = &[(index as u64, new_name.as_str())];
             wsbu!(siv, |ses| ses.rename_files(hash, renames));
@@ -125,7 +125,7 @@ fn rename_file_dialog(siv: &mut Cursive, hash: InfoHash, index: usize, old_name:
 fn rename_folder_dialog(siv: &mut Cursive, hash: InfoHash, old_name: Rc<str>) {
     let dialog = TextArea::new()
         .content(old_name.as_ref())
-        //.with(|v| v.set_cursor(old_name.len()))
+        .with(|v| v.set_cursor(old_name.len()))
         .into_dialog("Cancel", "Rename", move |siv, new_name| {
             wsbu!(siv, |ses| ses.rename_folder(hash, &old_name, &new_name));
         })

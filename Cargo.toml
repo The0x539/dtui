@@ -7,7 +7,7 @@ edition = "2018"
 [dependencies]
 serde = "*"
 tokio = { version = "0.2", features = ["time", "dns"] }
-cursive = { version = "0.15.0", default-features = false, features = ["crossterm-backend"] }
+cursive = { path = "experiment/cursive/cursive", default-features = false, features = ["crossterm-backend"] }
 deluge-rpc = { git = "https://github.com/The0x539/rust-deluge-rpc.git", branch = "trunk" }
 bytesize = "1.0.1"
 cursive-tabs = { path = "experiment/cursive-tabs" }
@@ -28,6 +28,7 @@ lazy_static = "1.4.0"
 [patch.crates-io]
 deluge-rpc-macro = { git = "https://github.com/The0x539/deluge-macro.git", branch = "trunk" }
 rencode = { git = "https://github.com/The0x539/rust-rencode.git", branch = "trunk" }
+cursive_core = { path = "experiment/cursive/cursive-core" }
 
 [profile.dev]
 panic = "abort"
