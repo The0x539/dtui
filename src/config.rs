@@ -1,4 +1,4 @@
-use std::sync::RwLock;
+use std::sync::{Arc, RwLock};
 
 use uuid::Uuid;
 use serde::{Serialize, Deserialize};
@@ -23,21 +23,20 @@ pub struct ConnectionManagerConfig {
 
 #[derive(Default, Serialize, Deserialize)]
 pub struct Config {
-    pub connection_manager: RwLock<ConnectionManagerConfig>,
+    pub connection_manager: ConnectionManagerConfig,
 }
 
 lazy_static! {
-    static ref CONFIG: Config = {
+    static ref CONFIG: Arc<RwLock<Config>> = {
         let cfg: Config = confy::load("dtui").unwrap();
-        let cmgr = cfg.connection_manager.read().unwrap();
+        let cmgr = &cfg.connection_manager;
         if let Some(id) = cmgr.autoconnect {
             assert!(cmgr.hosts.contains_key(&id));
         }
-        drop(cmgr);
-        cfg
+        Arc::new(RwLock::new(cfg))
     };
 }
 
-pub fn get_config() -> &'static Config {
-    &self::CONFIG
+pub fn get_config() -> Arc<RwLock<Config>> {
+    Arc::clone(&self::CONFIG)
 }

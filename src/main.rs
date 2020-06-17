@@ -42,7 +42,7 @@ async fn main() -> deluge_rpc::Result<()> {
 
     {
         let cfg = config::get_config();
-        let cmgr = cfg.connection_manager.read().unwrap();
+        let cmgr = &cfg.read().unwrap().connection_manager;
         if let Some(id) = cmgr.autoconnect {
             let host = &cmgr.hosts[&id];
             let endpoint = (host.address.as_str(), host.port);
