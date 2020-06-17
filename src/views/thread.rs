@@ -30,25 +30,14 @@ pub trait ViewThread: Sized {
                 should_reinit = false;
             }
 
-            if let Some(ses) = &session {
-                let update = self.do_update(ses);
-
-                tokio::select! {
-                    r = update => r?,
-                    new_session = session_recv.recv() => {
-                        session = new_session.unwrap();
-                        should_reinit = true;
-                    },
-                    _ = shutdown.read() => return Ok(()),
-                }
-            } else {
-                tokio::select! {
-                    new_session = session_recv.recv() => {
-                        session = new_session.unwrap();
-                        should_reinit = true;
-                    },
-                    _ = shutdown.read() => return Ok(()),
-                }
+            let update = session.as_ref().map(|ses| self.do_update(ses));
+            tokio::select! {
+                r = update.unwrap(), if update.is_some() => r?,
+                new_session = session_recv.recv() => {
+                    session = new_session.unwrap();
+                    should_reinit = true;
+                },
+                _ = shutdown.read() => return Ok(()),
             }
         }
     }
