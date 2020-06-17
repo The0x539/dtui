@@ -38,10 +38,6 @@ impl ViewWrapper for RemoveTorrentPrompt {
 impl Form for RemoveTorrentPrompt {
     type Data = bool;
 
-    fn replacement() -> Self {
-        Self::new_single("")
-    }
-
     fn into_data(self) -> Self::Data {
         self.inner
             .get_child(2)

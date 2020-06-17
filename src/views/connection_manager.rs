@@ -125,12 +125,6 @@ pub(crate) struct ConnectionManagerView {
     inner: LinearLayout,
 }
 
-impl Default for ConnectionManagerView {
-    fn default() -> Self {
-        Self { inner: LinearLayout::vertical() }
-    }
-}
-
 impl ConnectionManagerView {
     pub fn new(current_host: AppState) -> Self {
         let cfg = config::get_config();
@@ -197,10 +191,6 @@ impl ViewWrapper for ConnectionManagerView {
 
 impl Form for ConnectionManagerView {
     type Data = AppState;
-
-    fn replacement() -> Self {
-        Self { inner: LinearLayout::vertical() }
-    }
 
     fn into_data(self) -> Self::Data {
         let Self { mut inner } = self;

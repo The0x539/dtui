@@ -100,13 +100,6 @@ impl LabeledCheckbox {
 impl Form for LabeledCheckbox {
     type Data = bool;
 
-    fn replacement() -> Self {
-        Self {
-            inner: PaddedView::lrtb(0, 0, 0, 0, Checkbox::new()),
-            label: String::new(),
-        }
-    }
-
     fn into_data(self) -> Self::Data {
         self.is_checked()
     }

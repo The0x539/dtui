@@ -1,15 +1,13 @@
 use std::rc::Rc;
 
 use cursive::Cursive;
-use cursive::view::{View, Resizable};
+use cursive::view::{View, ViewWrapper};
 use cursive::views::{Dialog, EditView, TextArea, ResizedView};
 
 pub trait Form: View + Sized + 'static {
     type Data;
 
     fn into_data(self) -> Self::Data;
-
-    fn replacement() -> Self;
 
     fn into_dialog(
         self,
@@ -21,19 +19,18 @@ pub trait Form: View + Sized + 'static {
             let mut f = Some(on_submit);
             move |siv: &mut Cursive| {
                 if let Some(f) = f.take() {
-                    let mut dialog: Box<Dialog> = siv
+                    let dialog: Box<Dialog> = siv
                         .pop_layer()
                         .expect("no layer")
                         .downcast::<Dialog>()
                         .ok()
                         .expect("top layer wasn't a Dialog");
 
-                    let form_ref: &mut Self = dialog
-                        .get_content_mut()
-                        .downcast_mut::<Self>()
+                    let form: Box<Self> = dialog
+                        .into_content()
+                        .downcast::<Self>()
+                        .ok()
                         .expect("dialog's contents weren't Self");
-
-                    let form = std::mem::replace(form_ref, Self::replacement());
 
                     let data = form.into_data();
 
@@ -53,8 +50,6 @@ pub trait Form: View + Sized + 'static {
 impl Form for EditView {
     type Data = String;
 
-    fn replacement() -> Self { Self::default() }
-
     fn into_data(self) -> Self::Data {
         let content = self.get_content();
         std::mem::drop(self);
@@ -66,20 +61,16 @@ impl Form for EditView {
 impl Form for TextArea {
     type Data = String;
 
-    fn replacement() -> Self { Self::default() }
-
     fn into_data(self) -> Self::Data {
         String::from(self.get_content())
     }
 }
 
 // This would be generic across all implementors of ViewWrapper, but rustc complains.
-impl<V: Form + Default> Form for ResizedView<V> {
+impl<V: Form> Form for ResizedView<V> {
     type Data = V::Data;
 
-    fn replacement() -> Self { V::default().min_height(0) }
-
-    fn into_data(mut self) -> Self::Data {
-        std::mem::take(self.get_inner_mut()).into_data()
+    fn into_data(self) -> Self::Data {
+        self.into_inner().ok().unwrap().into_data()
     }
 }

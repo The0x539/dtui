@@ -73,7 +73,7 @@ fn new_app_state(siv: &mut Cursive, app_state: AppState) {
 
 pub fn show_connection_manager(siv: &mut Cursive) {
     // TODO: add an on_dismiss hook for Form so we can safely *take* the data
-    let app_state = siv.user_data::<AppState>().clone().unwrap();
+    let app_state = siv.user_data::<AppState>().unwrap().clone();
     let dialog = ConnectionManagerView::new(app_state)
         .max_size((80, 20))
         .into_dialog("Close", "Connect/Disconnect", new_app_state)
