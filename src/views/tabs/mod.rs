@@ -94,6 +94,9 @@ pub(crate) struct TorrentTabsView {
     active_tab: Tab,
     active_tab_send: watch::Sender<Tab>,
     thread: JoinHandle<deluge_rpc::Result<()>>,
+    // TODO: name all these Notify structs based on who's being notified
+    // Right now, they're named based on what's updating, and in this case, that's either of two things.
+    thread_notifier: Arc<Notify>,
 
     options_field_names: options::OptionsNames,
     current_options_recv: watch::Receiver<options::OptionsQuery>,
@@ -188,6 +191,8 @@ impl TorrentTabsView {
         let active_tab = Tab::Status;
         let (active_tab_send, active_tab_recv) = watch::channel(active_tab);
 
+        let thread_notifier = selection_notify.clone();
+
         let thread_obj = TorrentTabsViewThread {
             last_selection: None,
             selection,
@@ -219,6 +224,7 @@ impl TorrentTabsView {
             active_tab,
             active_tab_send,
             thread,
+            thread_notifier,
             options_field_names,
             current_options_recv,
             pending_options,
@@ -244,6 +250,7 @@ impl ViewWrapper for TorrentTabsView {
             if new_tab != old_tab {
                 self.active_tab = new_tab;
                 self.active_tab_send.broadcast(new_tab).unwrap();
+                self.thread_notifier.notify();
             }
         }
 
