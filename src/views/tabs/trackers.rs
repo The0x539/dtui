@@ -45,10 +45,6 @@ impl TabData for TrackersData {
 
         Ok(())
     }
-
-    async fn reload(&mut self, session: &Session, _: InfoHash) -> deluge_rpc::Result<()> {
-        self.update(session).await
-    }
 }
 
 impl BuildableTabData for TrackersData {

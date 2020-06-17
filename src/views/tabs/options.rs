@@ -157,7 +157,7 @@ impl TabData for OptionsData {
         Ok(())
     }
 
-    async fn reload(&mut self, session: &Session, _: InfoHash) -> deluge_rpc::Result<()> {
+    async fn reload(&mut self, session: &Session) -> deluge_rpc::Result<()> {
         task::block_in_place(|| self.pending_options.write().unwrap().take());
         
         let hash = match self.get_selection() {

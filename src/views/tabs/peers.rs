@@ -201,7 +201,7 @@ impl TabData for PeersData {
         Ok(())
     }
 
-    async fn reload(&mut self, session: &Session, _: InfoHash) -> deluge_rpc::Result<()> {
+    async fn reload(&mut self, session: &Session) -> deluge_rpc::Result<()> {
         let hash = match self.get_selection() {
             Some(hash) => hash,
             None => return Ok(()),

@@ -55,7 +55,9 @@ impl std::fmt::Display for Tab {
 trait TabData: Send {
     async fn update(&mut self, session: &Session) -> deluge_rpc::Result<()>;
 
-    async fn reload(&mut self, session: &Session, hash: InfoHash) -> deluge_rpc::Result<()>;
+    async fn reload(&mut self, session: &Session) -> deluge_rpc::Result<()> {
+        self.update(session).await
+    }
 
     async fn on_event(&mut self, _session: &Session, _event: deluge_rpc::Event) -> deluge_rpc::Result<()> {
         Ok(())
@@ -138,17 +140,13 @@ impl ViewThread for TorrentTabsViewThread {
     }
 
     async fn do_update(&mut self, session: &Session) -> deluge_rpc::Result<()> {
-        let hash = {
+        {
             let lock = self.selection.read().unwrap();
             if *lock != self.last_selection {
                 self.last_selection = *lock;
                 self.should_reload = true;
             }
-            match *lock {
-                Some(hash) => hash,
-                None => return Ok(()),
-            }
-        };
+        }
 
         if let Some(tab) = self.active_tab_recv.recv().now_or_never() {
             self.active_tab = tab.unwrap();
@@ -158,7 +156,7 @@ impl ViewThread for TorrentTabsViewThread {
         if self.should_reload {
             self.should_reload = false;
             self.get_active_tab_mut()
-                .reload(session, hash)
+                .reload(session)
                 .await?;
         } else {
             self.get_active_tab_mut()

@@ -93,10 +93,6 @@ impl TabData for StatusData {
 
         Ok(())
     }
-
-    async fn reload(&mut self, session: &Session, _: InfoHash) -> deluge_rpc::Result<()> {
-        self.update(session).await
-    }
 }
 
 impl BuildableTabData for StatusData {
