@@ -586,13 +586,19 @@ impl TabData for FilesData {
     }
 
     async fn on_event(&mut self, session: &Session, event: deluge_rpc::Event) -> deluge_rpc::Result<()> {
-        use deluge_rpc::EventKind::*;
-        if let TorrentFileRenamed | TorrentFolderRenamed = event.into() {
-            // screw it. might've been a simple rename, might've been a move.
-            // either way, our code is fast enough that we can afford to just
-            // rebuild the tree.
-            // this discards files' collapsed-ness. sorry.
-            self.reload(session).await?;
+        let hash = match self.get_selection() {
+            Some(hash) => hash,
+            None => return Ok(()), // No need to reload if nothing was selected to begin with
+        };
+        use deluge_rpc::Event::*;
+        if let TorrentFileRenamed(h, _, _) | TorrentFolderRenamed(h, _, _) = event {
+            if hash == h {
+                // screw it. might've been a simple rename, might've been a move.
+                // either way, our code is fast enough that we can afford to just
+                // rebuild the tree.
+                // this discards files' collapsed-ness. sorry.
+                self.reload(session).await?;
+            }
         }
         Ok(())
     }
