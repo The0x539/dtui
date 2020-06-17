@@ -5,7 +5,7 @@
 #![feature(trait_alias)]
 
 use deluge_rpc::*;
-use tokio::sync::{RwLock as AsyncRwLock, watch};
+use tokio::sync::{RwLock as AsyncRwLock, watch, Notify};
 use cursive::Cursive;
 use cursive::traits::*;
 use cursive::views::{LinearLayout, Panel};
@@ -48,6 +48,7 @@ async fn main() -> deluge_rpc::Result<()> {
     let shutdown_write_handle = shutdown.write().await;
 
     let (filters_send, filters_recv) = watch::channel(FilterDict::default());
+    let filters_notify = Arc::new(Notify::new());
     let selection = Arc::new(RwLock::new(None));
     let (new_selection_send, new_selection_recv) = {
         let (tx, mut rx) = watch::channel(());
@@ -62,6 +63,7 @@ async fn main() -> deluge_rpc::Result<()> {
         selection.clone(),
         new_selection_send,
         filters_recv.clone(),
+        filters_notify.clone(),
         shutdown.clone(),
     ).with_name("torrents");
 
@@ -69,6 +71,7 @@ async fn main() -> deluge_rpc::Result<()> {
         session_recv.clone(),
         filters_send,
         filters_recv.clone(),
+        filters_notify,
         shutdown.clone(),
     ).with_name("filters").into_scroll_wrapper();
 

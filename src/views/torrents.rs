@@ -1,13 +1,13 @@
 use cursive::traits::*;
 use deluge_rpc::{Session, Query, InfoHash, FilterKey, FilterDict, TorrentState};
 use cursive::Printer;
-use tokio::sync::{RwLock as AsyncRwLock, watch};
+use tokio::sync::{RwLock as AsyncRwLock, watch, Notify};
 use std::sync::{Arc, RwLock};
 use cursive::utils::Counter;
 use cursive::views::ProgressBar;
 use tokio::task::JoinHandle;
 use fnv::FnvHashMap;
-use tokio::time;
+use futures::FutureExt;
 use async_trait::async_trait;
 use super::thread::ViewThread;
 use cursive::view::ViewWrapper;
@@ -195,6 +195,7 @@ struct TorrentsViewThread {
     data: Arc<RwLock<ViewData>>,
     filters: FilterDict,
     filters_recv: watch::Receiver<FilterDict>,
+    filters_notify: Arc<Notify>,
     missed_torrents: Vec<InfoHash>,
     selection: Arc<RwLock<Option<InfoHash>>>,
 }
@@ -204,12 +205,14 @@ impl TorrentsViewThread {
         data: Arc<RwLock<ViewData>>,
         selection: Arc<RwLock<Option<InfoHash>>>,
         filters_recv: watch::Receiver<FilterDict>,
+        filters_notify: Arc<Notify>,
     ) -> Self {
         let filters = filters_recv.borrow().clone();
         Self {
             data,
             filters,
             filters_recv,
+            filters_notify,
             missed_torrents: Vec::new(),
             selection,
         }
@@ -334,9 +337,7 @@ impl ViewThread for TorrentsViewThread {
     }
 
     async fn do_update(&mut self, session: &Session) -> deluge_rpc::Result<()> {
-        let deadline = time::Instant::now() + time::Duration::from_secs(1);
-
-        while let Ok(new_filters) = time::timeout_at(deadline, self.filters_recv.recv()).await {
+        if let Some(new_filters) = self.filters_recv.recv().now_or_never() {
             self.replace_filters(new_filters.unwrap());
         }
 
@@ -377,6 +378,10 @@ impl ViewThread for TorrentsViewThread {
         }
         Ok(())
     }
+
+    fn update_notifier(&self) -> Arc<Notify> {
+        self.filters_notify.clone()
+    }
 }
 
 impl TorrentsView {
@@ -385,6 +390,7 @@ impl TorrentsView {
         selection: Arc<RwLock<Option<InfoHash>>>,
         new_selection_send: watch::Sender<()>,
         filters_recv: watch::Receiver<FilterDict>,
+        filters_notify: Arc<Notify>,
         shutdown: Arc<AsyncRwLock<()>>,
     ) -> Self {
         let columns = vec![
@@ -405,7 +411,7 @@ impl TorrentsView {
             menu::torrent_context_menu(*sel, name, position)
         });
 
-        let thread_obj = TorrentsViewThread::new(inner.get_data(), selection, filters_recv);
+        let thread_obj = TorrentsViewThread::new(inner.get_data(), selection, filters_recv, filters_notify);
         let thread = tokio::spawn(thread_obj.run(session_recv, shutdown));
         Self { inner, thread }
     }

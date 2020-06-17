@@ -33,6 +33,7 @@ pub(crate) struct FiltersView {
     active_filters: FilterDict,
     categories: Arc<RwLock<Categories>>,
     filters_send: watch::Sender<FilterDict>,
+    filters_notify: Arc<Notify>,
     thread: JoinHandle<deluge_rpc::Result<()>>,
 }
 
@@ -133,6 +134,7 @@ impl FiltersView {
         session_recv: watch::Receiver<Option<Arc<Session>>>,
         filters_send: watch::Sender<FilterDict>,
         filters_recv: watch::Receiver<FilterDict>,
+        filters_notify: Arc<Notify>,
         shutdown: Arc<AsyncRwLock<()>>,
     ) -> Self {
         let categories = Arc::new(RwLock::new(Categories::new()));
@@ -142,6 +144,7 @@ impl FiltersView {
             active_filters: FilterDict::default(),
             categories,
             filters_send,
+            filters_notify,
             thread,
         }
     }
@@ -209,6 +212,8 @@ impl FiltersView {
                 self.filters_send
                     .broadcast(new_dict)
                     .expect("Couldn't send new view filters");
+
+                self.filters_notify.notify();
             },
             None => (),
         }
