@@ -8,7 +8,7 @@ type FnvIndexMap<K, V> = indexmap::IndexMap<K, V, fnv::FnvBuildHasher>;
 
 const APP_NAME: &str = "dtui";
  
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct Host {
     pub username: String,
     pub password: String, // ¯\_(ツ)_/¯

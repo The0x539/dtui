@@ -128,7 +128,11 @@ async fn main() -> deluge_rpc::Result<()> {
                 .delimiter()
                 .leaf("Quit and shutdown daemon", menu::quit_and_shutdown_daemon)
                 .delimiter()
-                .leaf("Quit", Cursive::quit));
+                .leaf("Quit", Cursive::quit))
+        .add_subtree("Edit",
+            MenuTree::new()
+                .leaf("Preferences", |_| ())
+                .leaf("Connection Manager", menu::show_connection_manager));
 
     siv.add_fullscreen_layer(main_ui);
     

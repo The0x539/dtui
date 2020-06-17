@@ -12,7 +12,10 @@ use std::future::Future;
 use crate::form::Form;
 use crate::AppState;
 
-use crate::views::remove_torrent::RemoveTorrentPrompt;
+use crate::views::{
+    remove_torrent::RemoveTorrentPrompt,
+    connection_manager::ConnectionManagerView,
+};
 
 use deluge_rpc::{Session, TorrentOptions, FilePriority, Query, InfoHash};
 
@@ -60,6 +63,21 @@ pub fn add_torrent_dialog(siv: &mut Cursive) {
     let dialog = TextArea::new()
         .into_dialog("Cancel", "Add", add_torrent)
         .title("Add Torrent");
+
+    siv.add_layer(dialog);
+}
+
+fn new_app_state(siv: &mut Cursive, app_state: AppState) {
+    siv.set_user_data(app_state);
+}
+
+pub fn show_connection_manager(siv: &mut Cursive) {
+    // TODO: add an on_dismiss hook for Form so we can safely *take* the data
+    let app_state = siv.user_data::<AppState>().clone().unwrap();
+    let dialog = ConnectionManagerView::new(app_state)
+        .max_size((80, 20))
+        .into_dialog("Close", "Connect/Disconnect", new_app_state)
+        .title("Connection Manager");
 
     siv.add_layer(dialog);
 }

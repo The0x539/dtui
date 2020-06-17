@@ -1,14 +1,13 @@
 use std::cmp::{PartialEq, Ordering};
-use std::net::SocketAddr;
 use std::sync::Arc;
-
-use std::fmt;
 
 use super::{
     table::{TableViewData, TableView},
     labeled_checkbox::LabeledCheckbox,
 };
+use crate::config;
 use crate::form::Form;
+use crate::AppState;
 
 use deluge_rpc::Session;
 
@@ -17,7 +16,6 @@ use cursive::{
     views::{Button, LinearLayout, Panel, DummyView},
     view::ViewWrapper,
 };
-use serde::{Serialize, Deserialize};
 use uuid::Uuid;
 
 type FnvIndexMap<K, V> = indexmap::IndexMap<K, V, fnv::FnvBuildHasher>;
@@ -34,37 +32,33 @@ impl AsRef<str> for Column {
     }
 }
 
-#[derive(PartialEq, Eq, Serialize, Deserialize)]
-enum HostAddr {
-    Address(SocketAddr),
-    Domain(String, Option<u16>),
-}
-
-impl fmt::Display for HostAddr {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            Self::Address(addr) => write!(f, "{}", addr),
-            Self::Domain(domain, None) => f.write_str(domain),
-            Self::Domain(domain, Some(port)) => write!(f, "{}:{}", domain, port),
-        }
-    }
-}
-
-#[derive(Serialize, Deserialize)]
 pub(crate) struct Connection {
     username: String,
     password: String, // ¯\_(ツ)_/¯
-    host: HostAddr,
-    #[serde(skip)]
+    address: String,
+    port: u16,
     version: Option<String>,
-
-    #[serde(skip)]
     session: Option<Arc<Session>>,
+}
+
+// TODO: helper EqByKey trait in util?
+impl Connection {
+    fn eq_key<'a>(&'a self) -> impl 'a + Eq {
+        (&self.username, &self.address, self.port)
+    }
+}
+
+impl From<config::Host> for Connection {
+    fn from(val: config::Host) -> Self {
+        let config::Host { username, password, port, address } = val;
+        let (version, session) = (None, None);
+        Self { username, password, port, address, version, session }
+    }
 }
 
 impl PartialEq<Self> for Connection {
     fn eq(&self, other: &Self) -> bool {
-        (&self.username, &self.host) == (&other.username, &other.host)
+        self.eq_key() == other.eq_key()
     }
 }
 
@@ -121,7 +115,7 @@ impl TableViewData for ConnectionTableData {
                     print("Offline");
                 }
             },
-            Column::Host => print(&format!("{}@{}", connection.username, connection.host)),
+            Column::Host => print(&format!("{}@{}:{}", connection.username, connection.address, connection.port)),
             Column::Version => { connection.version.as_ref().map(|s| print(s)); },
         }
     }
@@ -131,10 +125,22 @@ pub(crate) struct ConnectionManagerView {
     inner: LinearLayout,
 }
 
+impl Default for ConnectionManagerView {
+    fn default() -> Self {
+        Self { inner: LinearLayout::vertical() }
+    }
+}
+
 impl ConnectionManagerView {
-    #[allow(dead_code)]
-    fn new(current_host: Option<(Uuid, Arc<Session>)>) -> Self {
-        let connections: FnvIndexMap<Uuid, Connection> = Default::default(); // TODO: read from config
+    pub fn new(current_host: AppState) -> Self {
+        let cfg = config::get_config();
+        let cmgr = &cfg.read().unwrap().connection_manager;
+
+        let connections: FnvIndexMap<Uuid, Connection> = cmgr.hosts
+            .iter()
+            .map(|(id, host)| (*id, host.clone().into()))
+            .collect();
+
         let autoconnect_host = None; // TODO: read from config
         let hide_dialog = false; // TODO: read from config
 
@@ -190,7 +196,7 @@ impl ViewWrapper for ConnectionManagerView {
 }
 
 impl Form for ConnectionManagerView {
-    type Data = Option<(Uuid, Arc<Session>)>;
+    type Data = AppState;
 
     fn replacement() -> Self {
         Self { inner: LinearLayout::vertical() }
