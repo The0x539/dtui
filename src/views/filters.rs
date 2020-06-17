@@ -3,7 +3,7 @@ use cursive::Printer;
 use fnv::FnvHashMap;
 use cursive::event::{Event, EventResult, MouseEvent, MouseButton};
 use cursive::vec::Vec2;
-use tokio::sync::{RwLock as AsyncRwLock, watch};
+use tokio::sync::{RwLock as AsyncRwLock, watch, Notify};
 use std::collections::BTreeMap;
 use deluge_rpc::{FilterKey, FilterDict, Session};
 use tokio::task::JoinHandle;
@@ -39,7 +39,7 @@ pub(crate) struct FiltersView {
 struct FiltersViewThread {
     categories: Arc<RwLock<Categories>>,
     filters_recv: watch::Receiver<FilterDict>,
-    update_now: bool,
+    update_notifier: Arc<Notify>,
 }
 
 impl FiltersViewThread {
@@ -47,7 +47,8 @@ impl FiltersViewThread {
         categories: Arc<RwLock<Categories>>,
         filters_recv: watch::Receiver<FilterDict>,
     ) -> Self {
-        Self { categories, filters_recv, update_now: false }
+        let update_notifier = Arc::new(Notify::new());
+        Self { categories, filters_recv, update_notifier }
     }
 
     fn should_show(&self, key: FilterKey, filter: &(String, u64)) -> bool {
@@ -105,28 +106,26 @@ impl ViewThread for FiltersViewThread {
     async fn init(&mut self, session: &Session) -> deluge_rpc::Result<()> {
         let interested = deluge_rpc::events![TorrentAdded, TorrentRemoved, TorrentStateChanged];
         session.set_event_interest(&interested).await?;
-
         Ok(())
     }
 
     async fn do_update(&mut self, session: &Session) -> deluge_rpc::Result<()> {
-        self.update_now = false;
-
         let new_tree = session.get_filter_tree(true, &[]).await?;
         self.replace_tree(new_tree);
-
         Ok(())
     }
 
     async fn on_event(&mut self, _: &Session, event: deluge_rpc::Event) -> deluge_rpc::Result<()> {
         use deluge_rpc::EventKind::*;
         if let TorrentAdded | TorrentRemoved | TorrentStateChanged = event.into() {
-            self.update_now = true;
+            self.update_notifier.notify();
         }
         Ok(())
     }
 
-    fn should_update_now(&self) -> bool { self.update_now }
+    fn update_notifier(&self) -> Arc<Notify> {
+        self.update_notifier.clone()
+    }
 }
 
 impl FiltersView {

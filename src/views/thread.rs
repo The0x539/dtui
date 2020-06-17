@@ -1,5 +1,5 @@
 use std::sync::Arc;
-use tokio::sync::{watch, RwLock as AsyncRwLock};
+use tokio::sync::{watch, RwLock as AsyncRwLock, Notify};
 use async_trait::async_trait;
 use tokio::time;
 use deluge_rpc::{Session, Event};
@@ -24,8 +24,8 @@ pub trait ViewThread: Sized {
         time::Duration::from_secs(5)
     }
 
-    fn should_update_now(&self) -> bool {
-        false
+    fn update_notifier(&self) -> Arc<Notify> {
+        Arc::new(Notify::new())
     }
 
     async fn run(
@@ -35,6 +35,7 @@ pub trait ViewThread: Sized {
     ) -> Result {
         let mut session: Option<Arc<Session>> = session_recv.borrow().clone();
         let mut events = None;
+        let mut update_notifier = Arc::new(Notify::new());
 
         let mut should_reinit = true;
 
@@ -43,6 +44,7 @@ pub trait ViewThread: Sized {
                 if let Some(ses) = &session {
                     events = Some(ses.subscribe_events());
                     self.init(ses).await?;
+                    update_notifier = self.update_notifier();
                 } else {
                     events = None;
                 }
@@ -68,21 +70,15 @@ pub trait ViewThread: Sized {
             self.do_update(ses).await?;
 
             loop {
-                if self.should_update_now() {
-                    break;
-                }
-
                 let event = tokio::select! {
                     event = evs.recv() => event.unwrap(),
-
                     new_session = session_recv.recv() => {
                         session = new_session.unwrap();
                         should_reinit = true;
                         break;
                     },
-
+                    _ = update_notifier.notified() => break,
                     _ = time::delay_until(tick) => break,
-
                     _ = shutdown.read() => return Ok(()),
                 };
 
