@@ -10,6 +10,7 @@ use tokio::task::JoinHandle;
 use std::sync::{Arc, RwLock};
 use async_trait::async_trait;
 use super::thread::ViewThread;
+use crate::SessionHandle;
 
 use super::scroll::ScrollInner;
 
@@ -131,7 +132,7 @@ impl ViewThread for FiltersViewThread {
 
 impl FiltersView {
     pub(crate) fn new(
-        session_recv: watch::Receiver<Option<Arc<Session>>>,
+        session_recv: watch::Receiver<SessionHandle>,
         filters_send: watch::Sender<FilterDict>,
         filters_recv: watch::Receiver<FilterDict>,
         filters_notify: Arc<Notify>,

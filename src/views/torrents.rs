@@ -13,7 +13,7 @@ use async_trait::async_trait;
 use super::thread::ViewThread;
 use cursive::view::ViewWrapper;
 use crate::menu;
-use crate::Selection;
+use crate::{Selection, SessionHandle};
 
 use super::table::{TableViewData, TableView};
 
@@ -394,7 +394,7 @@ impl ViewThread for TorrentsViewThread {
 
 impl TorrentsView {
     pub(crate) fn new(
-        session_recv: watch::Receiver<Option<Arc<Session>>>,
+        session_recv: watch::Receiver<SessionHandle>,
         selection: Selection,
         selection_notify: Arc<Notify>,
         filters_recv: watch::Receiver<FilterDict>,

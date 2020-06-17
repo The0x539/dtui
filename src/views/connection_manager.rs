@@ -7,7 +7,7 @@ use super::{
 };
 use crate::config;
 use crate::form::Form;
-use crate::AppState;
+use crate::SessionHandle;
 
 use deluge_rpc::Session;
 
@@ -126,7 +126,7 @@ pub(crate) struct ConnectionManagerView {
 }
 
 impl ConnectionManagerView {
-    pub fn new(current_host: AppState) -> Self {
+    pub fn new(current_host: SessionHandle) -> Self {
         let cfg = config::get_config();
         let cmgr = &cfg.read().unwrap().connection_manager;
 
@@ -190,7 +190,7 @@ impl ViewWrapper for ConnectionManagerView {
 }
 
 impl Form for ConnectionManagerView {
-    type Data = AppState;
+    type Data = SessionHandle;
 
     fn into_data(self) -> Self::Data {
         let Self { mut inner } = self;

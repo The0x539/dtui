@@ -21,7 +21,7 @@ use cursive::views::{
 };
 use futures::FutureExt;
 
-use crate::Selection;
+use crate::{Selection, SessionHandle};
 
 use crate::views::{
     labeled_checkbox::LabeledCheckbox,
@@ -176,7 +176,7 @@ impl ViewThread for TorrentTabsViewThread {
 
 impl TorrentTabsView {
     pub(crate) fn new(
-        session_recv: watch::Receiver<Option<Arc<Session>>>,
+        session_recv: watch::Receiver<SessionHandle>,
         selection: Selection,
         selection_notify: Arc<Notify>,
         shutdown: Arc<AsyncRwLock<()>>,

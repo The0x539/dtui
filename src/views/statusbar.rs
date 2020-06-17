@@ -11,6 +11,7 @@ use std::sync::{Arc, RwLock};
 use std::fmt::{Display, Formatter, self};
 use super::thread::ViewThread;
 use async_trait::async_trait;
+use crate::SessionHandle;
 
 #[derive(Default, Debug, Clone, Copy)]
 struct StatusBarData {
@@ -131,7 +132,7 @@ impl ViewThread for StatusBarViewThread {
 }
 
 impl StatusBarView {
-    pub fn new(session_recv: watch::Receiver<Option<Arc<Session>>>, shutdown: Arc<AsyncRwLock<()>>) -> Self {
+    pub fn new(session_recv: watch::Receiver<SessionHandle>, shutdown: Arc<AsyncRwLock<()>>) -> Self {
         let data = Arc::new(RwLock::new(StatusBarData::default()));
         let thread_obj = StatusBarViewThread::new(data.clone());
         let thread = tokio::spawn(thread_obj.run(session_recv, shutdown));

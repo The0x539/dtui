@@ -31,14 +31,32 @@ mod menu;
 mod config;
 
 type Selection = Arc<RwLock<Option<InfoHash>>>;
-type AppState = Option<(Uuid, Arc<Session>)>;
+
+type SessionHandle = Option<(Uuid, Arc<Session>)>;
+struct AppState {
+    tx: watch::Sender<SessionHandle>,
+    val: SessionHandle,
+}
+impl AppState {
+    fn get(&self) -> &SessionHandle {
+        &self.val
+    }
+
+    fn set(&mut self, val: SessionHandle) {
+        self.val = val;
+        self.tx.broadcast(self.val.clone()).unwrap();
+    }
+}
 
 fn foo<T>() -> T { todo!() }
 
 #[tokio::main]
 async fn main() -> deluge_rpc::Result<()> {
-    let mut app_state: AppState = None;
     let (session_send, session_recv) = watch::channel(None);
+    let mut app_state = AppState {
+        tx: session_send,
+        val: None,
+    };
 
     {
         let cfg = config::get_config();
@@ -53,8 +71,7 @@ async fn main() -> deluge_rpc::Result<()> {
             assert!(auth_level >= AuthLevel::Normal);
 
             let session = Arc::new(ses);
-            app_state = Some((id, session.clone()));
-            session_send.broadcast(Some(session)).unwrap();
+            app_state.set(Some((id, session.clone())));
         }
     }
 

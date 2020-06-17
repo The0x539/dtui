@@ -10,7 +10,7 @@ use std::rc::Rc;
 use std::future::Future;
 
 use crate::form::Form;
-use crate::AppState;
+use crate::{AppState, SessionHandle};
 
 use crate::views::{
     remove_torrent::RemoveTorrentPrompt,
@@ -19,14 +19,14 @@ use crate::views::{
 
 use deluge_rpc::{Session, TorrentOptions, FilePriority, Query, InfoHash};
 
-trait CursiveWithSession {
-    fn session<'a>(&'a mut self) -> &'a Session;
+trait CursiveWithSession<'a> {
+    fn session(&'a mut self) -> &'a Session;
 
-    fn with_session<'a, T, F: FnOnce(&'a Session) -> T>(&'a mut self, f: F) -> T {
-        f(self.session())
+    fn with_session<T, F: FnOnce(&'a Session) -> T>(&'a mut self, f: F) -> T {
+        f(&self.session())
     }
 
-    fn with_session_blocking<'a, T: Future, F: FnOnce(&'a Session) -> T>(&'a mut self, f: F) -> T::Output {
+    fn with_session_blocking<T: Future, F: FnOnce(&'a Session) -> T>(&'a mut self, f: F) -> T::Output {
         block_on(self.with_session(f))
     }
 }
@@ -41,11 +41,11 @@ macro_rules! wsbu {
     };
 }
 
-impl CursiveWithSession for Cursive {
-    fn session<'a>(&'a mut self) -> &'a Session {
-        match self.user_data::<AppState>() {
+impl<'a> CursiveWithSession<'a> for Cursive {
+    fn session(&'a mut self) -> &'a Session {
+        match self.user_data().map(|s: &mut AppState| s.get()) {
             None => panic!("Cursive object must contain an AppState"),
-            Some(None) => panic!("AppState was unexpectedly empty"),
+            Some(None) => panic!("SessionHandle was unexpectedly empty"),
             Some(Some((_, state))) => state,
         }
     }
@@ -67,16 +67,19 @@ pub fn add_torrent_dialog(siv: &mut Cursive) {
     siv.add_layer(dialog);
 }
 
-fn new_app_state(siv: &mut Cursive, app_state: AppState) {
-    siv.set_user_data(app_state);
+fn replace_session(siv: &mut Cursive, handle: SessionHandle) {
+    siv.with_user_data(|app_state: &mut AppState| {
+        // TODO: gracefully disconnect old state here, rather than in main
+        app_state.set(handle);
+    }).unwrap();
 }
 
 pub fn show_connection_manager(siv: &mut Cursive) {
-    // TODO: add an on_dismiss hook for Form so we can safely *take* the data
-    let app_state = siv.user_data::<AppState>().unwrap().clone();
-    let dialog = ConnectionManagerView::new(app_state)
+    let app_state = siv.user_data::<AppState>().unwrap();
+    let session_handle = app_state.get().clone();
+    let dialog = ConnectionManagerView::new(session_handle)
         .max_size((80, 20))
-        .into_dialog("Close", "Connect/Disconnect", new_app_state)
+        .into_dialog("Close", "Connect/Disconnect", replace_session)
         .title("Connection Manager");
 
     siv.add_layer(dialog);
@@ -192,10 +195,9 @@ pub fn files_tab_folder_menu(
     let files = Rc::from(files);
     let make_cb = move |priority| {
         let files = Rc::clone(&files);
-        move |siv: &mut Cursive| {
-            let fut = set_multi_file_priority(siv.session(), hash, &files, priority);
-            block_on(fut).unwrap();
-        }
+        wsbu!(|ses| {
+            set_multi_file_priority(ses, hash, &files, priority)
+        })
     };
 
     let name = Rc::<str>::from(name);

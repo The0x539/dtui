@@ -3,6 +3,7 @@ use tokio::sync::{watch, RwLock as AsyncRwLock, Notify};
 use async_trait::async_trait;
 use tokio::time;
 use deluge_rpc::{Session, Event};
+use crate::SessionHandle;
 
 type Result = deluge_rpc::Result<()>;
 
@@ -28,10 +29,11 @@ pub trait ViewThread: Send {
 
     async fn run(
         mut self,
-        mut session_recv: watch::Receiver<Option<Arc<Session>>>,
+        mut session_recv: watch::Receiver<SessionHandle>,
         shutdown: Arc<AsyncRwLock<()>>,
     ) -> Result where Self: Sized {
-        let mut session: Option<Arc<Session>> = session_recv.borrow().clone();
+        let handle: SessionHandle = session_recv.borrow().clone();
+        let mut session: Option<Arc<Session>> = handle.map(|(_, ses)| ses);
         let mut events = None;
         let mut update_notifier = Arc::new(Notify::new());
 
@@ -55,7 +57,7 @@ pub trait ViewThread: Send {
                 (Some(ses), Some(evs)) => (ses, evs),
                 _ => tokio::select! {
                     new_session = session_recv.recv() => {
-                        session = new_session.unwrap();
+                        session = new_session.unwrap().map(|(_, ses)| ses);
                         should_reinit = true;
                         continue;
                     },
@@ -71,7 +73,7 @@ pub trait ViewThread: Send {
                 let event = tokio::select! {
                     event = evs.recv() => event.unwrap(),
                     new_session = session_recv.recv() => {
-                        session = new_session.unwrap();
+                        session = new_session.unwrap().map(|(_, ses)| ses);
                         should_reinit = true;
                         break;
                     },
