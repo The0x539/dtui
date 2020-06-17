@@ -1,5 +1,6 @@
 use std::cmp::{PartialEq, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
+use std::ops::Deref;
 
 use super::{
     table::{TableViewData, TableView},
@@ -37,8 +38,8 @@ pub(crate) struct Connection {
     password: String, // ¯\_(ツ)_/¯
     address: String,
     port: u16,
-    version: Option<String>,
-    session: Option<Arc<Session>>,
+    version: Arc<RwLock<Option<String>>>,
+    session: Arc<RwLock<Option<Arc<Session>>>>,
 }
 
 // TODO: helper EqByKey trait in util?
@@ -51,7 +52,7 @@ impl Connection {
 impl From<config::Host> for Connection {
     fn from(val: config::Host) -> Self {
         let config::Host { username, password, port, address } = val;
-        let (version, session) = (None, None);
+        let (version, session) = Default::default();
         Self { username, password, port, address, version, session }
     }
 }
@@ -107,16 +108,20 @@ impl TableViewData for ConnectionTableData {
             Column::Status => {
                 // uuuuuuugh, the catch-22 of passing draw-cell a value vs an index
                 if self.get_current_host().contains(&connection) {
-                    assert!(connection.session.is_some());
+                    assert!(connection.session.read().unwrap().is_some());
                     print("Connected");
-                } else if connection.session.is_some() {
+                } else if connection.session.read().unwrap().is_some() {
                     print("Online");
                 } else {
                     print("Offline");
                 }
             },
             Column::Host => print(&format!("{}@{}:{}", connection.username, connection.address, connection.port)),
-            Column::Version => { connection.version.as_ref().map(|s| print(s)); },
+            Column::Version => {
+                if let Some(s) = connection.version.read().unwrap().deref() {
+                    print(s);
+                }
+            },
         }
     }
 }
@@ -142,8 +147,8 @@ impl ConnectionManagerView {
 
         let cols = vec![(Column::Status, 9), (Column::Host, 50), (Column::Version, 11)];
         let table = TableView::<ConnectionTableData>::new(cols);
+        let table_data = table.get_data();
         {
-            let table_data = table.get_data();
             let mut data = table_data.write().unwrap();
 
             data.rows = connections.keys().copied().collect();
@@ -151,7 +156,7 @@ impl ConnectionManagerView {
             data.autoconnect_host = autoconnect_host;
             if let Some((id, session)) = current_host {
                 data.current_host = Some(id);
-                data.connections[&id].session = Some(session);
+                data.connections[&id].session.write().unwrap().replace(session);
             }
         }
 
@@ -216,9 +221,9 @@ impl Form for ConnectionManagerView {
             .unwrap();                   // LockResult<T> -> T
 
         if data.current_host.contains(&selected) {
-            assert!(data.connections[&selected].session.is_some());
+            assert!(data.connections[&selected].session.read().unwrap().is_some());
             None // Disconnect from current session
-        } else if let Some(session) = data.connections[&selected].session.clone() {
+        } else if let Some(session) = data.connections[&selected].session.read().unwrap().clone() {
             Some((selected, session))
         } else {
             todo!("The connect button should be disabled.")
