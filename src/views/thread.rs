@@ -33,8 +33,8 @@ pub trait ViewThread: Sized {
         loop {
             if should_reinit {
                 if let Some(ses) = &session {
-                    self.init(ses).await?;
                     events = Some(ses.subscribe_events());
+                    self.init(ses).await?;
                 } else {
                     events = None;
                 }

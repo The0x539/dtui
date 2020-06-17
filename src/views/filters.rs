@@ -3,7 +3,7 @@ use cursive::Printer;
 use fnv::FnvHashMap;
 use cursive::event::{Event, EventResult, MouseEvent, MouseButton};
 use cursive::vec::Vec2;
-use tokio::sync::{RwLock as AsyncRwLock, watch, broadcast};
+use tokio::sync::{RwLock as AsyncRwLock, watch, Notify};
 use std::collections::BTreeMap;
 use deluge_rpc::{FilterKey, FilterDict, Session};
 use tokio::task::JoinHandle;
@@ -40,16 +40,16 @@ pub(crate) struct FiltersView {
 struct FiltersViewThread {
     categories: Arc<RwLock<Categories>>,
     filters_recv: watch::Receiver<FilterDict>,
-    events_recv: broadcast::Receiver<deluge_rpc::Event>,
+    update_now: Arc<Notify>,
 }
 
 impl FiltersViewThread {
     fn new(
-        events_recv: broadcast::Receiver<deluge_rpc::Event>,
         categories: Arc<RwLock<Categories>>,
         filters_recv: watch::Receiver<FilterDict>,
     ) -> Self {
-        Self { categories, filters_recv, events_recv }
+        let update_now = Arc::new(Notify::new());
+        Self { categories, filters_recv, update_now }
     }
 
     fn should_show(&self, key: FilterKey, filter: &(String, u64)) -> bool {
@@ -117,18 +117,21 @@ impl ViewThread for FiltersViewThread {
         let new_tree = session.get_filter_tree(true, &[]).await?;
         self.replace_tree(new_tree);
 
-        loop {
-            let ev_fut = self.events_recv.recv();
-            use deluge_rpc::EventKind::*;
-            tokio::select! {
-                event = ev_fut => match event.unwrap().into() {
-                    TorrentAdded | TorrentRemoved | TorrentStateChanged => break,
-                    _ => continue,
-                },
-                _ = time::delay_until(tick) => break,
-            }
+        // TODO: this does not work fully as intended. need a separate "tick" trait method
+        let update_now = self.update_now.notified();
+        tokio::select! {
+            _ = update_now => (),
+            _ = time::delay_until(tick) => (),
         }
 
+        Ok(())
+    }
+
+    async fn on_event(&mut self, _: &Session, event: deluge_rpc::Event) -> deluge_rpc::Result<()> {
+        use deluge_rpc::EventKind::*;
+        if let TorrentAdded | TorrentRemoved | TorrentStateChanged = event.into() {
+            self.update_now.notify();
+        }
         Ok(())
     }
 }
@@ -141,8 +144,7 @@ impl FiltersView {
         shutdown: Arc<AsyncRwLock<()>>,
     ) -> Self {
         let categories = Arc::new(RwLock::new(Categories::new()));
-        let events_recv = session_recv.borrow().clone().unwrap().subscribe_events();
-        let thread_obj = FiltersViewThread::new(events_recv, categories.clone(), filters_recv);
+        let thread_obj = FiltersViewThread::new(categories.clone(), filters_recv);
         let thread = tokio::spawn(thread_obj.run(session_recv, shutdown));
         Self {
             active_filters: FilterDict::default(),
