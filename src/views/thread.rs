@@ -8,13 +8,11 @@ type Result = deluge_rpc::Result<()>;
 
 #[async_trait]
 pub trait ViewThread: Send {
-    async fn reload(&mut self, _session: &Session) -> Result {
-        Ok(())
+    async fn reload(&mut self, session: &Session) -> Result {
+        self.update(session).await
     }
 
-    async fn update(&mut self, _session: &Session) -> Result {
-        Ok(())
-    }
+    async fn update(&mut self, _session: &Session) -> Result;
 
     async fn on_event(&mut self, _session: &Session, _event: Event) -> Result {
         Ok(())
