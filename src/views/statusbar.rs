@@ -94,7 +94,7 @@ impl StatusBarViewThread {
 
 #[async_trait]
 impl ViewThread for StatusBarViewThread {
-    async fn do_update(&mut self, session: &Session) -> deluge_rpc::Result<()> {
+    async fn update(&mut self, session: &Session) -> deluge_rpc::Result<()> {
         let (status, config, ip, space) = tokio::try_join!(
             session.get_session_status::<StatusQuery>(),
             session.get_config_values::<ConfigQuery>(),

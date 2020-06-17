@@ -329,7 +329,7 @@ impl TorrentsViewThread {
 
 #[async_trait]
 impl ViewThread for TorrentsViewThread {
-    async fn init(&mut self, session: &Session) -> deluge_rpc::Result<()> {
+    async fn reload(&mut self, session: &Session) -> deluge_rpc::Result<()> {
         let interested = deluge_rpc::events![TorrentAdded, TorrentRemoved, TorrentStateChanged];
         session.set_event_interest(&interested).await?;
 
@@ -342,7 +342,7 @@ impl ViewThread for TorrentsViewThread {
         Ok(())
     }
 
-    async fn do_update(&mut self, session: &Session) -> deluge_rpc::Result<()> {
+    async fn update(&mut self, session: &Session) -> deluge_rpc::Result<()> {
         if let Some(new_filters) = self.filters_recv.recv().now_or_never() {
             self.replace_filters(new_filters.unwrap());
         }

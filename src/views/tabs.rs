@@ -124,7 +124,7 @@ impl TorrentTabsViewThread {
 
 #[async_trait]
 impl ViewThread for TorrentTabsViewThread {
-    async fn init(&mut self, session: &Session) -> deluge_rpc::Result<()> {
+    async fn reload(&mut self, session: &Session) -> deluge_rpc::Result<()> {
         let evs = deluge_rpc::events![TorrentFileRenamed, TorrentFolderRenamed];
         session.set_event_interest(&evs).await?;
         Ok(())
@@ -139,7 +139,7 @@ impl ViewThread for TorrentTabsViewThread {
         Ok(())
     }
 
-    async fn do_update(&mut self, session: &Session) -> deluge_rpc::Result<()> {
+    async fn update(&mut self, session: &Session) -> deluge_rpc::Result<()> {
         {
             let lock = self.selection.read().unwrap();
             if *lock != self.last_selection {

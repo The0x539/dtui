@@ -8,11 +8,11 @@ type Result = deluge_rpc::Result<()>;
 
 #[async_trait]
 pub trait ViewThread: Sized {
-    async fn init(&mut self, _session: &Session) -> Result {
+    async fn reload(&mut self, _session: &Session) -> Result {
         Ok(())
     }
 
-    async fn do_update(&mut self, _session: &Session) -> Result {
+    async fn update(&mut self, _session: &Session) -> Result {
         Ok(())
     }
 
@@ -43,7 +43,7 @@ pub trait ViewThread: Sized {
             if should_reinit {
                 if let Some(ses) = &session {
                     events = Some(ses.subscribe_events());
-                    self.init(ses).await?;
+                    self.reload(ses).await?;
                     update_notifier = self.update_notifier();
                 } else {
                     events = None;
@@ -67,7 +67,7 @@ pub trait ViewThread: Sized {
 
             // Assuming this will be reasonably fast.
             // If not for that assumption, I'd select between this, shutdown, and new_session.
-            self.do_update(ses).await?;
+            self.update(ses).await?;
 
             loop {
                 let event = tokio::select! {

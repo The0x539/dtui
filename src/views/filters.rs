@@ -104,13 +104,13 @@ impl FiltersViewThread {
 
 #[async_trait]
 impl ViewThread for FiltersViewThread {
-    async fn init(&mut self, session: &Session) -> deluge_rpc::Result<()> {
+    async fn reload(&mut self, session: &Session) -> deluge_rpc::Result<()> {
         let interested = deluge_rpc::events![TorrentAdded, TorrentRemoved, TorrentStateChanged];
         session.set_event_interest(&interested).await?;
         Ok(())
     }
 
-    async fn do_update(&mut self, session: &Session) -> deluge_rpc::Result<()> {
+    async fn update(&mut self, session: &Session) -> deluge_rpc::Result<()> {
         let new_tree = session.get_filter_tree(true, &[]).await?;
         self.replace_tree(new_tree);
         Ok(())
