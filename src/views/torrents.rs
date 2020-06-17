@@ -89,14 +89,14 @@ impl Torrent {
 }
 
 #[derive(Debug, Default, Clone)]
-pub(crate) struct ViewData {
+pub(crate) struct TorrentsState {
     rows: Vec<InfoHash>,
     torrents: FnvHashMap<InfoHash, Torrent>,
     sort_column: Column,
     descending_sort: bool,
 }
 
-impl TableViewData for ViewData {
+impl TableViewData for TorrentsState {
     type Column = Column;
     type RowIndex = InfoHash;
     type RowValue = Torrent;
@@ -171,7 +171,7 @@ impl TableViewData for ViewData {
     }
 }
 
-impl ViewData {
+impl TorrentsState {
     fn binary_search(&self, hash: &InfoHash) -> std::result::Result<usize, usize> {
         self.rows.binary_search_by(|hash2| self.compare_rows(hash2, hash))
     }
@@ -189,12 +189,12 @@ impl ViewData {
 }
 
 pub(crate) struct TorrentsView {
-    inner: TableView<ViewData>,
+    inner: TableView<TorrentsState>,
     thread: JoinHandle<deluge_rpc::Result<()>>,
 }
 
 struct TorrentsViewThread {
-    data: Arc<RwLock<ViewData>>,
+    data: Arc<RwLock<TorrentsState>>,
     filters: FilterDict,
     filters_recv: watch::Receiver<FilterDict>,
     filters_notify: Arc<Notify>,
@@ -205,7 +205,7 @@ struct TorrentsViewThread {
 
 impl TorrentsViewThread {
     fn new(
-        data: Arc<RwLock<ViewData>>,
+        data: Arc<RwLock<TorrentsState>>,
         selection: Selection,
         selection_notify: Arc<Notify>,
         filters_recv: watch::Receiver<FilterDict>,
@@ -415,7 +415,7 @@ impl TorrentsView {
             selection_notify_clone.notify();
             cursive::event::Callback::dummy()
         });
-        inner.set_on_right_click(|data: &mut ViewData, sel: &InfoHash, position, _| {
+        inner.set_on_right_click(|data: &mut TorrentsState, sel: &InfoHash, position, _| {
             let name = &data.torrents[sel].name;
             menu::torrent_context_menu(*sel, name, position)
         });
@@ -433,5 +433,5 @@ impl TorrentsView {
 }
 
 impl ViewWrapper for TorrentsView {
-    cursive::wrap_impl!(self.inner: TableView<ViewData>);
+    cursive::wrap_impl!(self.inner: TableView<TorrentsState>);
 }
