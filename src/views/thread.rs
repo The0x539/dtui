@@ -1,7 +1,8 @@
 use std::sync::Arc;
 use tokio::sync::{watch, RwLock as AsyncRwLock};
 use async_trait::async_trait;
-use deluge_rpc::Session;
+use futures::FutureExt;
+use deluge_rpc::{Session, Event};
 
 type Result = deluge_rpc::Result<()>;
 
@@ -11,7 +12,13 @@ pub trait ViewThread: Sized {
         Ok(())
     }
 
-    async fn do_update(&mut self, session: &Session) -> Result;
+    async fn do_update(&mut self, _session: &Session) -> Result {
+        Ok(())
+    }
+
+    async fn on_event(&mut self, _session: &Session, _event: Event) -> Result {
+        Ok(())
+    }
 
     async fn run(
         mut self,
@@ -19,6 +26,7 @@ pub trait ViewThread: Sized {
         shutdown: Arc<AsyncRwLock<()>>,
     ) -> Result {
         let mut session: Option<Arc<Session>> = session_recv.borrow().clone();
+        let mut events = None;
 
         let mut should_reinit = true;
 
@@ -26,8 +34,17 @@ pub trait ViewThread: Sized {
             if should_reinit {
                 if let Some(ses) = &session {
                     self.init(ses).await?;
+                    events = Some(ses.subscribe_events());
+                } else {
+                    events = None;
                 }
                 should_reinit = false;
+            }
+
+            if let (Some(session), Some(events)) = (&session, &mut events) {
+                while let Some(event) = events.recv().now_or_never() {
+                    self.on_event(session, event.unwrap()).await?;
+                }
             }
 
             let update = session.as_ref().map(|ses| self.do_update(ses));
