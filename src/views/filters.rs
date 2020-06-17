@@ -3,12 +3,11 @@ use cursive::Printer;
 use fnv::FnvHashMap;
 use cursive::event::{Event, EventResult, MouseEvent, MouseButton};
 use cursive::vec::Vec2;
-use tokio::sync::{RwLock as AsyncRwLock, watch, Notify};
+use tokio::sync::{RwLock as AsyncRwLock, watch};
 use std::collections::BTreeMap;
 use deluge_rpc::{FilterKey, FilterDict, Session};
 use tokio::task::JoinHandle;
 use std::sync::{Arc, RwLock};
-use tokio::time;
 use async_trait::async_trait;
 use super::thread::ViewThread;
 
@@ -40,7 +39,7 @@ pub(crate) struct FiltersView {
 struct FiltersViewThread {
     categories: Arc<RwLock<Categories>>,
     filters_recv: watch::Receiver<FilterDict>,
-    update_now: Arc<Notify>,
+    update_now: bool,
 }
 
 impl FiltersViewThread {
@@ -48,8 +47,7 @@ impl FiltersViewThread {
         categories: Arc<RwLock<Categories>>,
         filters_recv: watch::Receiver<FilterDict>,
     ) -> Self {
-        let update_now = Arc::new(Notify::new());
-        Self { categories, filters_recv, update_now }
+        Self { categories, filters_recv, update_now: false }
     }
 
     fn should_show(&self, key: FilterKey, filter: &(String, u64)) -> bool {
@@ -112,17 +110,10 @@ impl ViewThread for FiltersViewThread {
     }
 
     async fn do_update(&mut self, session: &Session) -> deluge_rpc::Result<()> {
-        let tick = time::Instant::now() + time::Duration::from_secs(3);
+        self.update_now = false;
 
         let new_tree = session.get_filter_tree(true, &[]).await?;
         self.replace_tree(new_tree);
-
-        // TODO: this does not work fully as intended. need a separate "tick" trait method
-        let update_now = self.update_now.notified();
-        tokio::select! {
-            _ = update_now => (),
-            _ = time::delay_until(tick) => (),
-        }
 
         Ok(())
     }
@@ -130,10 +121,12 @@ impl ViewThread for FiltersViewThread {
     async fn on_event(&mut self, _: &Session, event: deluge_rpc::Event) -> deluge_rpc::Result<()> {
         use deluge_rpc::EventKind::*;
         if let TorrentAdded | TorrentRemoved | TorrentStateChanged = event.into() {
-            self.update_now.notify();
+            self.update_now = true;
         }
         Ok(())
     }
+
+    fn should_update_now(&self) -> bool { self.update_now }
 }
 
 impl FiltersView {
