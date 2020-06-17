@@ -1,43 +1,43 @@
 use std::sync::RwLock;
 
-use std::net::SocketAddr;
-
 use uuid::Uuid;
 use serde::{Serialize, Deserialize};
 use lazy_static::lazy_static;
 
 type FnvIndexMap<K, V> = indexmap::IndexMap<K, V, fnv::FnvBuildHasher>;
  
-#[derive(PartialEq, Eq, Serialize, Deserialize)]
-pub(crate) enum HostAddr {
-    Address(SocketAddr),
-    Domain(String, Option<u16>),
-}
-
 #[derive(Serialize, Deserialize)]
-pub(crate) struct Host {
-    username: String,
-    password: String, // ¯\_(ツ)_/¯
-    host: i128,
+pub struct Host {
+    pub username: String,
+    pub password: String, // ¯\_(ツ)_/¯
+    pub address: String,
+    pub port: u16,
 }
 
 #[derive(Default, Serialize, Deserialize)]
-pub(crate) struct ConnectionManagerConfig {
-    hosts: FnvIndexMap<Uuid, Host>,
-    autoconnect_host_id: Option<Uuid>,
-    hide_connection_manager_on_start: bool,
+pub struct ConnectionManagerConfig {
+    pub autoconnect: Option<Uuid>,
+    pub hide_on_start: bool,
+    pub hosts: FnvIndexMap<Uuid, Host>,
 }
 
 #[derive(Default, Serialize, Deserialize)]
-struct Config {
-    connection_manager: RwLock<ConnectionManagerConfig>,
+pub struct Config {
+    pub connection_manager: RwLock<ConnectionManagerConfig>,
 }
 
 lazy_static! {
-    static ref CONFIG: Config = confy::load("dtui").unwrap();
+    static ref CONFIG: Config = {
+        let cfg: Config = confy::load("dtui").unwrap();
+        let cmgr = cfg.connection_manager.read().unwrap();
+        if let Some(id) = cmgr.autoconnect {
+            assert!(cmgr.hosts.contains_key(&id));
+        }
+        drop(cmgr);
+        cfg
+    };
 }
 
-#[allow(dead_code)]
-fn get_config() -> &'static Config {
+pub fn get_config() -> &'static Config {
     &self::CONFIG
 }

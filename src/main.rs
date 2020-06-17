@@ -6,6 +6,7 @@
 
 use deluge_rpc::*;
 use tokio::sync::{RwLock as AsyncRwLock, watch, Notify};
+use uuid::Uuid;
 use cursive::Cursive;
 use cursive::traits::*;
 use cursive::views::{LinearLayout, Panel};
@@ -23,29 +24,40 @@ use views::{
     scroll::ScrollInner,
 };
 
-pub mod util;
-
+mod util;
 mod themes;
 mod form;
 mod menu;
 mod config;
 
 type Selection = Arc<RwLock<Option<InfoHash>>>;
+type AppState = Option<(Uuid, Arc<Session>)>;
 
 fn foo<T>() -> T { todo!() }
 
 #[tokio::main]
 async fn main() -> deluge_rpc::Result<()> {
-    let endpoint = util::read_file("./experiment/endpoint");
-    let mut session = Session::connect(endpoint).await?;
+    let mut app_state: AppState = None;
+    let (session_send, session_recv) = watch::channel(None);
 
-    let user = util::read_file("./experiment/username");
-    let pass = util::read_file("./experiment/password");
-    let auth_level = session.login(&user, &pass).await?;
-    assert!(auth_level >= AuthLevel::Normal);
+    {
+        let cfg = config::get_config();
+        let cmgr = cfg.connection_manager.read().unwrap();
+        if let Some(id) = cmgr.autoconnect {
+            let host = &cmgr.hosts[&id];
+            let endpoint = (host.address.as_str(), host.port);
 
-    let session = Arc::new(session);
-    
+            let mut ses = Session::connect(endpoint).await?;
+
+            let auth_level = ses.login(&host.username, &host.password).await?;
+            assert!(auth_level >= AuthLevel::Normal);
+
+            let session = Arc::new(ses);
+            app_state = Some((id, session.clone()));
+            session_send.broadcast(Some(session)).unwrap();
+        }
+    }
+
     let shutdown = Arc::new(AsyncRwLock::new(()));
     let shutdown_write_handle = shutdown.write().await;
 
@@ -54,8 +66,6 @@ async fn main() -> deluge_rpc::Result<()> {
 
     let selection = Arc::new(RwLock::new(None));
     let selection_notify = Arc::new(Notify::new());
-
-    let (session_send, session_recv) = watch::channel(Some(session));
 
     let torrents = TorrentsView::new(
         session_recv.clone(),
@@ -102,7 +112,7 @@ async fn main() -> deluge_rpc::Result<()> {
     siv.set_fps(4);
     siv.set_autohide_menu(false);
     siv.set_theme(themes::dracula());
-    siv.set_user_data(session_recv.borrow().clone().unwrap());
+    siv.set_user_data(app_state);
 
     siv.add_global_callback('q', Cursive::quit);
     siv.add_global_callback(cursive::event::Key::Esc, |siv| {

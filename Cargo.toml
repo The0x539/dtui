@@ -22,7 +22,7 @@ uuid = { version = "0.8.1", features = ["v4", "serde"] }
 slab = "0.4.2"
 itertools = "0.9.0"
 indexmap = { version = "1.4.0", features = ["serde-1"] }
-confy = "0.4.0"
+confy = { git = "https://github.com/rust-cli/confy.git", default_features = false, features = ["yaml_conf"] }
 lazy_static = "1.4.0"
 
 [patch.crates-io]

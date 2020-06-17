@@ -1,10 +1,6 @@
 use bytesize::ByteSize;
 use std::fmt::Display;
 
-pub fn read_file(path: &str) -> String {
-    std::fs::read_to_string(path).unwrap()
-}
-
 pub fn fmt_bytes(amt: u64) -> String {
     ByteSize(amt).to_string_as(true)
 }

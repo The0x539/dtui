@@ -6,18 +6,18 @@ use cursive::Vec2;
 use cursive::menu::MenuTree;
 use futures::executor::block_on;
 use serde::Deserialize;
-use std::sync::Arc;
 use std::rc::Rc;
 use std::future::Future;
 
 use crate::form::Form;
+use crate::AppState;
 
 use crate::views::remove_torrent::RemoveTorrentPrompt;
 
 use deluge_rpc::{Session, TorrentOptions, FilePriority, Query, InfoHash};
 
 trait CursiveWithSession {
-    fn session(&mut self) -> &Session;
+    fn session<'a>(&'a mut self) -> &'a Session;
 
     fn with_session<'a, T, F: FnOnce(&'a Session) -> T>(&'a mut self, f: F) -> T {
         f(self.session())
@@ -39,9 +39,12 @@ macro_rules! wsbu {
 }
 
 impl CursiveWithSession for Cursive {
-    fn session(&mut self) -> &Session {
-        self.user_data::<Arc<Session>>()
-            .expect("must actually contain a Session")
+    fn session<'a>(&'a mut self) -> &'a Session {
+        match self.user_data::<AppState>() {
+            None => panic!("Cursive object must contain an AppState"),
+            Some(None) => panic!("AppState was unexpectedly empty"),
+            Some(Some((_, state))) => state,
+        }
     }
 }
 
