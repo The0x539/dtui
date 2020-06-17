@@ -6,6 +6,7 @@ use cursive::align::HAlign;
 use crate::util;
 use async_trait::async_trait;
 use static_assertions::const_assert_eq;
+use crate::Selection;
 
 #[derive(Debug, Clone, Deserialize, Query)]
 struct TorrentDetails {
@@ -22,7 +23,7 @@ struct TorrentDetails {
 }
 
 pub(super) struct DetailsData {
-    active_torrent: Option<InfoHash>,
+    selection: Selection,
 
     top: TextContent,
     left: TextContent,
@@ -33,7 +34,10 @@ pub(super) struct DetailsData {
 #[async_trait]
 impl TabData for DetailsData {
     async fn update(&mut self, session: &Session) -> deluge_rpc::Result<()> {
-        let hash = self.active_torrent.unwrap();
+        let hash = match self.get_selection() {
+            Some(hash) => hash,
+            None => return Ok(()),
+        };
 
         let details = session.get_torrent_status::<TorrentDetails>(hash).await?;
 
@@ -62,8 +66,7 @@ impl TabData for DetailsData {
         Ok(())
     }
 
-    async fn reload(&mut self, session: &Session, hash: InfoHash) -> deluge_rpc::Result<()> {
-        self.active_torrent = Some(hash);
+    async fn reload(&mut self, session: &Session, _: InfoHash) -> deluge_rpc::Result<()> {
         self.update(session).await
     }
 }
@@ -71,7 +74,7 @@ impl TabData for DetailsData {
 impl BuildableTabData for DetailsData {
     type V = LinearLayout;
 
-    fn view() -> (Self::V, Self) {
+    fn view(selection: Selection) -> (Self::V, Self) {
         let (top_view, top) = column(&["Name:", "Download Folder:"], HAlign::Left);
         let (left_view, left) = column(&["Total Size:", "Total Files:", "Hash:"], HAlign::Left);
         let (right_view, right) = column(&["Added:", "Completed:", "Pieces:"], HAlign::Left);
@@ -95,8 +98,12 @@ impl BuildableTabData for DetailsData {
             .child(middle_view)
             .child(bottom_view);
 
-        let data = DetailsData { active_torrent: None, top, left, right, bottom };
+        let data = Self { selection, top, left, right, bottom };
 
         (view, data)
+    }
+
+    fn get_selection(&self) -> Option<InfoHash> {
+        *self.selection.read().unwrap()
     }
 }

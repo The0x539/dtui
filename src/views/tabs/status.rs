@@ -8,6 +8,7 @@ use cursive::align::HAlign;
 use cursive::utils::Counter;
 use crate::util;
 use async_trait::async_trait;
+use crate::Selection;
 
 #[derive(Debug, Clone, Deserialize, Query)]
 struct TorrentStatus {
@@ -41,7 +42,7 @@ struct TorrentStatus {
 }
 
 pub(super) struct StatusData {
-    active_torrent: Option<InfoHash>,
+    selection: Selection,
 
     progress_label_send: watch::Sender<String>,
     progress_val: Counter,
@@ -52,7 +53,10 @@ pub(super) struct StatusData {
 #[async_trait]
 impl TabData for StatusData {
     async fn update(&mut self, session: &Session) -> deluge_rpc::Result<()> {
-        let hash = self.active_torrent.unwrap();
+        let hash = match self.get_selection() {
+            Some(hash) => hash,
+            None => return Ok(()),
+        };
 
         let status = session.get_torrent_status::<TorrentStatus>(hash).await?;
 
@@ -90,8 +94,7 @@ impl TabData for StatusData {
         Ok(())
     }
 
-    async fn reload(&mut self, session: &Session, hash: InfoHash) -> deluge_rpc::Result<()> {
-        self.active_torrent = Some(hash);
+    async fn reload(&mut self, session: &Session, _: InfoHash) -> deluge_rpc::Result<()> {
         self.update(session).await
     }
 }
@@ -99,7 +102,7 @@ impl TabData for StatusData {
 impl BuildableTabData for StatusData {
     type V = LinearLayout;
 
-    fn view() -> (Self::V, Self) {
+    fn view(selection: Selection) -> (Self::V, Self) {
         let (progress_label_send, progress_label_recv) = watch::channel(String::new());
 
         let progress_val = Counter::new(0);
@@ -131,12 +134,16 @@ impl BuildableTabData for StatusData {
             .child(status);
 
         let data = StatusData {
-            active_torrent: None,
+            selection,
             progress_label_send,
             progress_val,
             columns: [col1_content, col2_content, col3_content],
         };
 
         (view, data)
+    }
+
+    fn get_selection(&self) -> Option<InfoHash> {
+        *self.selection.read().unwrap()
     }
 }

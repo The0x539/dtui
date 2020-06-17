@@ -9,6 +9,7 @@ use std::sync::{Arc, RwLock};
 use async_trait::async_trait;
 use super::{TabData, BuildableTabData};
 use crate::util;
+use crate::Selection;
 
 fn stupid_bool<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<bool, D::Error> {
     u8::deserialize(deserializer).map(|v| v != 0)
@@ -174,13 +175,16 @@ impl TableViewData for PeersTableData {
 pub(super) struct PeersData {
     state: Arc<RwLock<PeersTableData>>,
     was_empty: bool,
-    active_torrent: Option<InfoHash>,
+    selection: Selection,
 }
 
 #[async_trait]
 impl TabData for PeersData {
     async fn update(&mut self, session: &Session) -> deluge_rpc::Result<()> {
-        let hash = self.active_torrent.unwrap();
+        let hash = match self.get_selection() {
+            Some(hash) => hash,
+            None => return Ok(()),
+        };
 
         let query = session.get_torrent_status::<PeersQuery>(hash).await?;
 
@@ -197,8 +201,11 @@ impl TabData for PeersData {
         Ok(())
     }
 
-    async fn reload(&mut self, session: &Session, hash: InfoHash) -> deluge_rpc::Result<()> {
-        self.active_torrent = Some(hash);
+    async fn reload(&mut self, session: &Session, _: InfoHash) -> deluge_rpc::Result<()> {
+        let hash = match self.get_selection() {
+            Some(hash) => hash,
+            None => return Ok(()),
+        };
 
         // Get two different locks, so that we can have a moment of empty data.
         // The alternative is a moment of data for the old torrent.
@@ -221,7 +228,7 @@ impl TabData for PeersData {
 impl BuildableTabData for PeersData {
     type V = TableView<PeersTableData>;
 
-    fn view() -> (Self::V, Self) {
+    fn view(selection: Selection) -> (Self::V, Self) {
         let columns = vec![
             (Column::Address, 10),
             (Column::Client, 10),
@@ -234,8 +241,12 @@ impl BuildableTabData for PeersData {
 
         let view = TableView::new(columns);
         let state = view.get_data();
-        let data = PeersData { state, active_torrent: None, was_empty: true };
+        let data = PeersData { state, selection, was_empty: true };
 
         (view, data)
+    }
+
+    fn get_selection(&self) -> Option<InfoHash> {
+        *self.selection.read().unwrap()
     }
 }

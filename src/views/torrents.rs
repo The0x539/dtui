@@ -13,6 +13,7 @@ use async_trait::async_trait;
 use super::thread::ViewThread;
 use cursive::view::ViewWrapper;
 use crate::menu;
+use crate::Selection;
 
 use super::table::{TableViewData, TableView};
 
@@ -198,14 +199,14 @@ struct TorrentsViewThread {
     filters_recv: watch::Receiver<FilterDict>,
     filters_notify: Arc<Notify>,
     missed_torrents: Vec<InfoHash>,
-    selection: Arc<RwLock<Option<InfoHash>>>,
+    selection: Selection,
     selection_notify: Arc<Notify>,
 }
 
 impl TorrentsViewThread {
     fn new(
         data: Arc<RwLock<ViewData>>,
-        selection: Arc<RwLock<Option<InfoHash>>>,
+        selection: Selection,
         selection_notify: Arc<Notify>,
         filters_recv: watch::Receiver<FilterDict>,
         filters_notify: Arc<Notify>,
@@ -394,7 +395,7 @@ impl ViewThread for TorrentsViewThread {
 impl TorrentsView {
     pub(crate) fn new(
         session_recv: watch::Receiver<Option<Arc<Session>>>,
-        selection: Arc<RwLock<Option<InfoHash>>>,
+        selection: Selection,
         selection_notify: Arc<Notify>,
         filters_recv: watch::Receiver<FilterDict>,
         filters_notify: Arc<Notify>,

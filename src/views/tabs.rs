@@ -62,10 +62,12 @@ trait TabData: Send {
     }
 }
 
-trait BuildableTabData: TabData {
+trait BuildableTabData: TabData + Sized {
     type V: View;
 
-    fn view() -> (Self::V, Self) where Self: Sized;
+    fn view(selection: Selection) -> (Self::V, Self);
+
+    fn get_selection(&self) -> Option<InfoHash>;
 }
 
 mod status;
@@ -179,12 +181,12 @@ impl TorrentTabsView {
         selection_notify: Arc<Notify>,
         shutdown: Arc<AsyncRwLock<()>>,
     ) -> Self {
-        let (status_tab, status_data) = status::StatusData::view();
-        let (details_tab, details_data) = details::DetailsData::view();
-        let (options_tab, options_data) = options::OptionsData::view();
-        let (files_tab, files_data) = files::FilesData::view();
-        let (peers_tab, peers_data) = peers::PeersData::view();
-        let (trackers_tab, trackers_data) = trackers::TrackersData::view();
+        let (status_tab, status_data) = status::StatusData::view(selection.clone());
+        let (details_tab, details_data) = details::DetailsData::view(selection.clone());
+        let (options_tab, options_data) = options::OptionsData::view(selection.clone());
+        let (files_tab, files_data) = files::FilesData::view(selection.clone());
+        let (peers_tab, peers_data) = peers::PeersData::view(selection.clone());
+        let (trackers_tab, trackers_data) = trackers::TrackersData::view(selection.clone());
 
         let options_field_names = options_data.names.clone();
         let current_options_recv = options_data.current_options_recv.clone();

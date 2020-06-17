@@ -12,6 +12,7 @@ use cursive::view::ViewWrapper;
 use crate::views::table::{TableViewData, TableView};
 use itertools::Itertools;
 use crate::menu;
+use crate::Selection;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Column { Filename, Size, Progress, Priority }
@@ -514,13 +515,16 @@ impl ViewWrapper for FilesView {
 #[derive(Default)]
 pub(super) struct FilesData {
     state: Arc<RwLock<FilesState>>,
-    active_torrent: Option<InfoHash>,
+    selection: Selection,
 }
 
 #[async_trait]
 impl TabData for FilesData {
     async fn update(&mut self, session: &Session) -> deluge_rpc::Result<()> {
-        let hash = self.active_torrent.unwrap();
+        let hash = match self.get_selection() {
+            Some(hash) => hash,
+            None => return Ok(()),
+        };
 
         let mut query = session.get_torrent_status_diff::<FilesQuery>(hash).await?;
 
@@ -564,13 +568,17 @@ impl TabData for FilesData {
         Ok(())
     }
 
-    async fn reload(&mut self, session: &Session, hash: InfoHash) -> deluge_rpc::Result<()> {
-        self.active_torrent = Some(hash);
+    async fn reload(&mut self, session: &Session, _: InfoHash) -> deluge_rpc::Result<()> {
+        let hash = match self.get_selection() {
+            Some(hash) => hash,
+            // TODO: clear out state as necessary
+            None => return Ok(()),
+        };
 
         let query = session.get_torrent_status::<FilesQuery>(hash).await?;
 
         let mut state = self.state.write().unwrap();
-        state.active_torrent = self.active_torrent;
+        state.active_torrent = Some(hash);
         state.build_tree(query);
         state.rebuild_rows();
 
@@ -595,7 +603,7 @@ impl TabData for FilesData {
 impl BuildableTabData for FilesData {
     type V = FilesView;
 
-    fn view() -> (Self::V, Self) {
+    fn view(selection: Selection) -> (Self::V, Self) {
         let columns = vec![
             (Column::Filename, 10),
             (Column::Size, 10),
@@ -629,7 +637,11 @@ impl BuildableTabData for FilesData {
         });
 
         let state = view.inner.get_data();
-        let data = FilesData { state, active_torrent: None };
+        let data = FilesData { state, selection };
         (view, data)
+    }
+
+    fn get_selection(&self) -> Option<InfoHash> {
+        *self.selection.read().unwrap()
     }
 }

@@ -12,6 +12,7 @@ use tokio::sync::Notify;
 use tokio::task;
 use tokio::time;
 use cursive::traits::Nameable;
+use crate::Selection;
 
 #[derive(Default, Debug, Clone, Deserialize, Query)]
 pub(super) struct OptionsQuery {
@@ -84,7 +85,7 @@ impl OptionsNames {
 }
 
 pub(super) struct OptionsData {
-    active_torrent: Option<InfoHash>,
+    selection: Selection,
     current_options_send: watch::Sender<OptionsQuery>,
     apply_notify: Arc<Notify>,
     owner: TextContent,
@@ -103,8 +104,9 @@ impl OptionsData {
 
         self.current_options_send.broadcast(new_options).unwrap();
 
-        assert!(self.active_torrent.is_some());
-        let hash = self.active_torrent.unwrap();
+        let sel = self.get_selection();
+        assert!(sel.is_some());
+        let hash = sel.unwrap();
 
         let options = {
             let c = self.current_options_recv.borrow();
@@ -138,7 +140,10 @@ impl TabData for OptionsData {
         let deadline = time::Instant::now() + time::Duration::from_secs(1);
 
         if task::block_in_place(|| self.pending_options.read().unwrap().is_none()) {
-            let hash = self.active_torrent.unwrap();
+            let hash = match self.get_selection() {
+                Some(hash) => hash,
+                None => return Ok(()),
+            };
             let options = session.get_torrent_status::<OptionsQuery>(hash).await?;
             self.owner.set_content(&options.owner);
             self.current_options_send.broadcast(options).unwrap();
@@ -152,9 +157,13 @@ impl TabData for OptionsData {
         Ok(())
     }
 
-    async fn reload(&mut self, session: &Session, hash: InfoHash) -> deluge_rpc::Result<()> {
-        self.active_torrent = Some(hash);
+    async fn reload(&mut self, session: &Session, _: InfoHash) -> deluge_rpc::Result<()> {
         task::block_in_place(|| self.pending_options.write().unwrap().take());
+        
+        let hash = match self.get_selection() {
+            Some(hash) => hash,
+            None => return Ok(()),
+        };
 
         let options = session.get_torrent_status::<OptionsQuery>(hash).await?;
         self.owner.set_content(&options.owner);
@@ -167,7 +176,7 @@ impl TabData for OptionsData {
 impl BuildableTabData for OptionsData {
     type V = LinearLayout;
 
-    fn view() -> (Self::V, Self) {
+    fn view(selection: Selection) -> (Self::V, Self) {
         let pending_options = Arc::new(RwLock::new(None));
         let (current_options_send, current_options_recv) = watch::channel(OptionsQuery::default());
         let names = OptionsNames::new();
@@ -319,8 +328,8 @@ impl BuildableTabData for OptionsData {
             .child(DummyView.fixed_width(2))
             .child(col3);
 
-        let data = OptionsData {
-            active_torrent: None,
+        let data = Self {
+            selection,
             current_options_send,
             current_options_recv,
             owner: owner_content,
@@ -329,5 +338,9 @@ impl BuildableTabData for OptionsData {
             names,
         };
         (view, data)
+    }
+
+    fn get_selection(&self) -> Option<InfoHash> {
+        *self.selection.read().unwrap()
     }
 }

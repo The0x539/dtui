@@ -6,6 +6,7 @@ use cursive::views::{LinearLayout, TextContent, Button, DummyView};
 use cursive::traits::Resizable;
 use serde::Deserialize;
 use crate::util;
+use crate::Selection;
 
 #[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq)]
 struct Tracker { /* we don't actually need any of this */ }
@@ -20,14 +21,17 @@ struct TrackersQuery {
 }
 
 pub(super) struct TrackersData {
-    active_torrent: Option<InfoHash>,
+    selection: Selection,
     content: TextContent,
 }
 
 #[async_trait]
 impl TabData for TrackersData {
     async fn update(&mut self, session: &Session) -> deluge_rpc::Result<()> {
-        let hash = self.active_torrent.unwrap();
+        let hash = match self.get_selection() {
+            Some(hash) => hash,
+            None => return Ok(()),
+        };
 
         let query = session.get_torrent_status::<TrackersQuery>(hash).await?;
 
@@ -42,8 +46,7 @@ impl TabData for TrackersData {
         Ok(())
     }
 
-    async fn reload(&mut self, session: &Session, hash: InfoHash) -> deluge_rpc::Result<()> {
-        self.active_torrent = Some(hash);
+    async fn reload(&mut self, session: &Session, _: InfoHash) -> deluge_rpc::Result<()> {
         self.update(session).await
     }
 }
@@ -51,7 +54,7 @@ impl TabData for TrackersData {
 impl BuildableTabData for TrackersData {
     type V = LinearLayout;
 
-    fn view() -> (Self::V, Self) {
+    fn view(selection: Selection) -> (Self::V, Self) {
         let rows = [
             "Total Trackers:",
             "Current Tracker:",
@@ -70,8 +73,12 @@ impl BuildableTabData for TrackersData {
 
         col_view.insert_child(0, left_col);
 
-        let data = TrackersData { active_torrent: None, content: col_content };
+        let data = TrackersData { selection, content: col_content };
 
         (col_view, data)
+    }
+
+    fn get_selection(&self) -> Option<InfoHash> {
+        *self.selection.read().unwrap()
     }
 }
