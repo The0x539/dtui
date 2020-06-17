@@ -2,8 +2,7 @@ use std::sync::{Arc, RwLock};
 use deluge_rpc::{Session, InfoHash};
 use super::thread::ViewThread;
 use async_trait::async_trait;
-use tokio::sync::{RwLock as AsyncRwLock, watch, broadcast};
-use tokio::time;
+use tokio::sync::{RwLock as AsyncRwLock, watch, Notify};
 use cursive_tabs::TabPanel;
 use tokio::task::{self, JoinHandle};
 use cursive::traits::*;
@@ -75,13 +74,12 @@ mod peers;
 mod trackers;
 
 struct TorrentTabsViewThread {
+    last_selection: Option<InfoHash>,
     selection: Arc<RwLock<Option<InfoHash>>>,
-    new_selection_recv: watch::Receiver<()>,
+    selection_notify: Arc<Notify>,
     active_tab_recv: watch::Receiver<Tab>,
     active_tab: Tab,
     should_reload: bool,
-    events_recv: broadcast::Receiver<deluge_rpc::Event>,
-    latest_event: Option<deluge_rpc::Event>,
 
     status_data: status::StatusData,
     details_data: details::DetailsData,
@@ -102,59 +100,70 @@ pub(crate) struct TorrentTabsView {
     pending_options: Arc<RwLock<Option<options::OptionsQuery>>>,
 }
 
+impl TorrentTabsViewThread {
+    fn get_active_tab_mut(&mut self) -> &mut dyn TabData {
+        match self.active_tab {
+            Tab::Status   => &mut self.status_data,
+            Tab::Details  => &mut self.details_data,
+            Tab::Options  => &mut self.options_data,
+            Tab::Files    => &mut self.files_data,
+            Tab::Peers    => &mut self.peers_data,
+            Tab::Trackers => &mut self.trackers_data,
+        }
+    }
+}
+
 #[async_trait]
 impl ViewThread for TorrentTabsViewThread {
-    async fn do_update(&mut self, session: &Session) -> deluge_rpc::Result<()> {
-        let tick = time::Instant::now() + time::Duration::from_secs(1);
+    async fn init(&mut self, session: &Session) -> deluge_rpc::Result<()> {
+        let evs = deluge_rpc::events![TorrentFileRenamed, TorrentFolderRenamed];
+        session.set_event_interest(&evs).await?;
+        Ok(())
+    }
 
-        let opt_hash = {
+    async fn on_event(&mut self, session: &Session, event: deluge_rpc::Event) -> deluge_rpc::Result<()> {
+        if self.selection.read().unwrap().is_some() {
+            self.get_active_tab_mut()
+                .on_event(session, event)
+                .await?;
+        }
+        Ok(())
+    }
+
+    async fn do_update(&mut self, session: &Session) -> deluge_rpc::Result<()> {
+        let hash = {
             let lock = self.selection.read().unwrap();
-            *lock
+            if *lock != self.last_selection {
+                self.last_selection = *lock;
+                self.should_reload = true;
+            }
+            match *lock {
+                Some(hash) => hash,
+                None => return Ok(()),
+            }
         };
 
-        if let Some(hash) = opt_hash {
-            let tab: &mut dyn TabData = match self.active_tab {
-                Tab::Status   => &mut self.status_data,
-                Tab::Details  => &mut self.details_data,
-                Tab::Options  => &mut self.options_data,
-                Tab::Files    => &mut self.files_data,
-                Tab::Peers    => &mut self.peers_data,
-                Tab::Trackers => &mut self.trackers_data,
-            };
-
-            if self.should_reload {
-                self.should_reload = false;
-                tab.reload(session, hash).await?;
-            } else if let Some(event) = self.latest_event.take() {
-                tab.on_event(session, event).await?;
-            } else {
-                tab.update(session).await?;
-            }
+        if let Some(tab) = self.active_tab_recv.recv().now_or_never() {
+            self.active_tab = tab.unwrap();
+            self.should_reload = true;
         }
 
-        let new_selection = self.new_selection_recv.recv();
-        let new_active_tab = self.active_tab_recv.recv();
-        let new_event = self.events_recv.recv();
-
-        let should_reload = &mut self.should_reload;
-        let active_tab = &mut self.active_tab;
-        let latest_event = &mut self.latest_event;
-
-        tokio::select! {
-            _ = new_selection => {
-                *should_reload = true;
-            },
-            tab = new_active_tab => {
-                *should_reload = true;
-                *active_tab = tab.unwrap();
-            },
-            event = new_event => {
-                *latest_event = Some(event.unwrap());
-            }
-            _ = time::delay_until(tick) => (),
+        if self.should_reload {
+            self.should_reload = false;
+            self.get_active_tab_mut()
+                .reload(session, hash)
+                .await?;
+        } else {
+            self.get_active_tab_mut()
+                .update(session)
+                .await?;
         }
 
         Ok(())
+    }
+
+    fn update_notifier(&self) -> Arc<Notify> {
+        self.selection_notify.clone()
     }
 }
 
@@ -162,7 +171,7 @@ impl TorrentTabsView {
     pub(crate) fn new(
         session_recv: watch::Receiver<Option<Arc<Session>>>,
         selection: Arc<RwLock<Option<InfoHash>>>,
-        new_selection_recv: watch::Receiver<()>,
+        selection_notify: Arc<Notify>,
         shutdown: Arc<AsyncRwLock<()>>,
     ) -> Self {
         let (status_tab, status_data) = status::StatusData::view();
@@ -179,22 +188,13 @@ impl TorrentTabsView {
         let active_tab = Tab::Status;
         let (active_tab_send, active_tab_recv) = watch::channel(active_tab);
 
-        let session = session_recv.borrow().clone().unwrap();
-
-        let evs = deluge_rpc::events![TorrentFileRenamed, TorrentFolderRenamed];
-        let f = session.set_event_interest(&evs);
-        task::block_in_place(|| futures::executor::block_on(f)).unwrap();
-
-        let events_recv = session.subscribe_events();
-
         let thread_obj = TorrentTabsViewThread {
+            last_selection: None,
             selection,
-            new_selection_recv,
+            selection_notify,
             active_tab_recv,
             active_tab,
             should_reload: true,
-            events_recv,
-            latest_event: None,
             status_data,
             details_data,
             options_data,

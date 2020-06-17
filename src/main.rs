@@ -49,19 +49,16 @@ async fn main() -> deluge_rpc::Result<()> {
 
     let (filters_send, filters_recv) = watch::channel(FilterDict::default());
     let filters_notify = Arc::new(Notify::new());
+
     let selection = Arc::new(RwLock::new(None));
-    let (new_selection_send, new_selection_recv) = {
-        let (tx, mut rx) = watch::channel(());
-        rx.recv().await;
-        (tx, rx)
-    };
+    let selection_notify = Arc::new(Notify::new());
 
     let (session_send, session_recv) = watch::channel(Some(session));
 
     let torrents = TorrentsView::new(
         session_recv.clone(),
         selection.clone(),
-        new_selection_send,
+        selection_notify.clone(),
         filters_recv.clone(),
         filters_notify.clone(),
         shutdown.clone(),
@@ -84,8 +81,8 @@ async fn main() -> deluge_rpc::Result<()> {
 
     let torrent_tabs = TorrentTabsView::new(
         session_recv.clone(),
-        selection.clone(),
-        new_selection_recv,
+        selection,
+        selection_notify,
         shutdown.clone(),
     ).with_name("tabs");
 

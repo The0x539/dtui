@@ -199,12 +199,14 @@ struct TorrentsViewThread {
     filters_notify: Arc<Notify>,
     missed_torrents: Vec<InfoHash>,
     selection: Arc<RwLock<Option<InfoHash>>>,
+    selection_notify: Arc<Notify>,
 }
 
 impl TorrentsViewThread {
     fn new(
         data: Arc<RwLock<ViewData>>,
         selection: Arc<RwLock<Option<InfoHash>>>,
+        selection_notify: Arc<Notify>,
         filters_recv: watch::Receiver<FilterDict>,
         filters_notify: Arc<Notify>,
     ) -> Self {
@@ -216,6 +218,7 @@ impl TorrentsViewThread {
             filters_notify,
             missed_torrents: Vec::new(),
             selection,
+            selection_notify,
         }
     }
 
@@ -307,6 +310,7 @@ impl TorrentsViewThread {
         let mut selection = self.selection.write().unwrap();
         if *selection == Some(hash) {
             *selection = None;
+            self.selection_notify.notify();
         }
 
         let mut data = self.data.write().unwrap();
@@ -391,7 +395,7 @@ impl TorrentsView {
     pub(crate) fn new(
         session_recv: watch::Receiver<Option<Arc<Session>>>,
         selection: Arc<RwLock<Option<InfoHash>>>,
-        new_selection_send: watch::Sender<()>,
+        selection_notify: Arc<Notify>,
         filters_recv: watch::Receiver<FilterDict>,
         filters_notify: Arc<Notify>,
         shutdown: Arc<AsyncRwLock<()>>,
@@ -403,10 +407,11 @@ impl TorrentsView {
             (Column::Speed, 15),
         ];
         let selection_clone = Arc::clone(&selection);
+        let selection_notify_clone = Arc::clone(&selection_notify);
         let mut inner = TableView::new(columns);
         inner.set_on_selection_change(move |_: &mut _, sel: &InfoHash, _, _| {
-            new_selection_send.broadcast(()).unwrap();
             selection_clone.write().unwrap().replace(*sel);
+            selection_notify_clone.notify();
             cursive::event::Callback::dummy()
         });
         inner.set_on_right_click(|data: &mut ViewData, sel: &InfoHash, position, _| {
@@ -414,7 +419,7 @@ impl TorrentsView {
             menu::torrent_context_menu(*sel, name, position)
         });
 
-        let thread_obj = TorrentsViewThread::new(inner.get_data(), selection, filters_recv, filters_notify);
+        let thread_obj = TorrentsViewThread::new(inner.get_data(), selection, selection_notify, filters_recv, filters_notify);
         let thread = tokio::spawn(thread_obj.run(session_recv, shutdown));
         Self { inner, thread }
     }
