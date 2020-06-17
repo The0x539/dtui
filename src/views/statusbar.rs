@@ -95,8 +95,6 @@ impl StatusBarViewThread {
 #[async_trait]
 impl ViewThread for StatusBarViewThread {
     async fn do_update(&mut self, session: &Session) -> deluge_rpc::Result<()> {
-        let tick = time::Instant::now() + time::Duration::from_secs(1);
-
         let (status, config, ip, space) = tokio::try_join!(
             session.get_session_status::<StatusQuery>(),
             session.get_config_values::<ConfigQuery>(),
@@ -126,10 +124,10 @@ impl ViewThread for StatusBarViewThread {
             data.max_upload_rate = config.max_upload_speed;
         }
 
-        time::delay_until(tick).await;
-
         Ok(())
     }
+
+    fn tick() -> time::Duration { time::Duration::from_secs(1) }
 }
 
 impl StatusBarView {

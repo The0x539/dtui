@@ -6,6 +6,7 @@ use std::sync::{Arc, RwLock};
 use cursive::utils::Counter;
 use cursive::views::ProgressBar;
 use tokio::task::JoinHandle;
+use tokio::time;
 use fnv::FnvHashMap;
 use futures::FutureExt;
 use async_trait::async_trait;
@@ -382,6 +383,8 @@ impl ViewThread for TorrentsViewThread {
     fn update_notifier(&self) -> Arc<Notify> {
         self.filters_notify.clone()
     }
+
+    fn tick() -> time::Duration { time::Duration::from_secs(1) }
 }
 
 impl TorrentsView {
