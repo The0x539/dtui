@@ -97,6 +97,17 @@ pub(crate) struct TorrentTabsView {
 }
 
 impl TorrentTabsViewThread {
+    fn get_active_tab(&self) -> &dyn ViewThread {
+        match self.active_tab {
+            Tab::Status   => &self.status_data,
+            Tab::Details  => &self.details_data,
+            Tab::Options  => &self.options_data,
+            Tab::Files    => &self.files_data,
+            Tab::Peers    => &self.peers_data,
+            Tab::Trackers => &self.trackers_data,
+        }
+    }
+
     fn get_active_tab_mut(&mut self) -> &mut dyn ViewThread {
         match self.active_tab {
             Tab::Status   => &mut self.status_data,
@@ -156,6 +167,10 @@ impl ViewThread for TorrentTabsViewThread {
 
     fn update_notifier(&self) -> Arc<Notify> {
         self.selection_notify.clone()
+    }
+
+    fn tick(&self) -> tokio::time::Duration {
+        self.get_active_tab().tick()
     }
 }
 
