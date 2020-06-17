@@ -51,20 +51,7 @@ impl std::fmt::Display for Tab {
     }
 }
 
-#[async_trait]
-trait TabData: Send {
-    async fn update(&mut self, session: &Session) -> deluge_rpc::Result<()>;
-
-    async fn reload(&mut self, session: &Session) -> deluge_rpc::Result<()> {
-        self.update(session).await
-    }
-
-    async fn on_event(&mut self, _session: &Session, _event: deluge_rpc::Event) -> deluge_rpc::Result<()> {
-        Ok(())
-    }
-}
-
-trait BuildableTabData: TabData + Sized {
+trait BuildableTabData: ViewThread + Sized {
     type V: View;
 
     fn view(selection: Selection) -> (Self::V, Self);
@@ -110,7 +97,7 @@ pub(crate) struct TorrentTabsView {
 }
 
 impl TorrentTabsViewThread {
-    fn get_active_tab_mut(&mut self) -> &mut dyn TabData {
+    fn get_active_tab_mut(&mut self) -> &mut dyn ViewThread {
         match self.active_tab {
             Tab::Status   => &mut self.status_data,
             Tab::Details  => &mut self.details_data,

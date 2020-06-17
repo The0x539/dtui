@@ -7,7 +7,7 @@ use deluge_rpc::{Session, Event};
 type Result = deluge_rpc::Result<()>;
 
 #[async_trait]
-pub trait ViewThread: Sized {
+pub trait ViewThread: Send {
     async fn reload(&mut self, _session: &Session) -> Result {
         Ok(())
     }
@@ -20,7 +20,7 @@ pub trait ViewThread: Sized {
         Ok(())
     }
 
-    fn tick() -> time::Duration {
+    fn tick() -> time::Duration where Self: Sized {
         time::Duration::from_secs(5)
     }
 
@@ -32,7 +32,7 @@ pub trait ViewThread: Sized {
         mut self,
         mut session_recv: watch::Receiver<Option<Arc<Session>>>,
         shutdown: Arc<AsyncRwLock<()>>,
-    ) -> Result {
+    ) -> Result where Self: Sized {
         let mut session: Option<Arc<Session>> = session_recv.borrow().clone();
         let mut events = None;
         let mut update_notifier = Arc::new(Notify::new());

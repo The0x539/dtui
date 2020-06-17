@@ -6,13 +6,14 @@ use std::cmp::Ordering;
 use cursive::Printer;
 use crate::util::{self, GetIfAllSame};
 use std::sync::{Arc, RwLock};
-use super::{TabData, BuildableTabData};
+use super::BuildableTabData;
 use async_trait::async_trait;
 use cursive::view::ViewWrapper;
 use crate::views::table::{TableViewData, TableView};
 use itertools::Itertools;
 use crate::menu;
 use crate::Selection;
+use crate::views::thread::ViewThread;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Column { Filename, Size, Progress, Priority }
@@ -519,7 +520,7 @@ pub(super) struct FilesData {
 }
 
 #[async_trait]
-impl TabData for FilesData {
+impl ViewThread for FilesData {
     async fn update(&mut self, session: &Session) -> deluge_rpc::Result<()> {
         let hash = match self.get_selection() {
             Some(hash) => hash,

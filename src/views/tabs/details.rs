@@ -1,4 +1,5 @@
-use super::{column, TabData, BuildableTabData};
+use super::{column, BuildableTabData};
+use crate::views::thread::ViewThread;
 use deluge_rpc::{Query, InfoHash, Session};
 use serde::Deserialize;
 use cursive::views::{TextContent, LinearLayout, TextView};
@@ -32,7 +33,7 @@ pub(super) struct DetailsData {
 }
 
 #[async_trait]
-impl TabData for DetailsData {
+impl ViewThread for DetailsData {
     async fn update(&mut self, session: &Session) -> deluge_rpc::Result<()> {
         let hash = match self.get_selection() {
             Some(hash) => hash,

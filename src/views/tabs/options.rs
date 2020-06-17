@@ -1,4 +1,4 @@
-use super::{TabData, BuildableTabData};
+use super::BuildableTabData;
 use deluge_rpc::{Query, InfoHash, Session};
 use serde::Deserialize;
 use cursive::views::{EditView, LinearLayout, TextView, DummyView, Button, Panel, EnableableView, TextContent};
@@ -13,6 +13,7 @@ use tokio::task;
 use tokio::time;
 use cursive::traits::Nameable;
 use crate::Selection;
+use crate::views::thread::ViewThread;
 
 #[derive(Default, Debug, Clone, Deserialize, Query)]
 pub(super) struct OptionsQuery {
@@ -135,7 +136,7 @@ impl OptionsData {
 }
 
 #[async_trait]
-impl TabData for OptionsData {
+impl ViewThread for OptionsData {
     async fn update(&mut self, session: &Session) -> deluge_rpc::Result<()> {
         let deadline = time::Instant::now() + time::Duration::from_secs(1);
 

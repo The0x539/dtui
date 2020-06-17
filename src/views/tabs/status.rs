@@ -1,4 +1,4 @@
-use super::{column, TabData, BuildableTabData};
+use super::{column, BuildableTabData};
 use cursive::traits::Resizable;
 use deluge_rpc::{Query, TorrentState, Session, InfoHash};
 use serde::Deserialize;
@@ -9,6 +9,7 @@ use cursive::utils::Counter;
 use crate::util;
 use async_trait::async_trait;
 use crate::Selection;
+use crate::views::thread::ViewThread;
 
 #[derive(Debug, Clone, Deserialize, Query)]
 struct TorrentStatus {
@@ -51,7 +52,7 @@ pub(super) struct StatusData {
 }
 
 #[async_trait]
-impl TabData for StatusData {
+impl ViewThread for StatusData {
     async fn update(&mut self, session: &Session) -> deluge_rpc::Result<()> {
         let hash = match self.get_selection() {
             Some(hash) => hash,

@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use super::{column, TabData, BuildableTabData};
+use super::{column, BuildableTabData};
 use deluge_rpc::{Query, Session, InfoHash};
 use cursive::align::HAlign;
 use cursive::views::{LinearLayout, TextContent, Button, DummyView};
@@ -7,6 +7,7 @@ use cursive::traits::Resizable;
 use serde::Deserialize;
 use crate::util;
 use crate::Selection;
+use crate::views::thread::ViewThread;
 
 #[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq)]
 struct Tracker { /* we don't actually need any of this */ }
@@ -26,7 +27,7 @@ pub(super) struct TrackersData {
 }
 
 #[async_trait]
-impl TabData for TrackersData {
+impl ViewThread for TrackersData {
     async fn update(&mut self, session: &Session) -> deluge_rpc::Result<()> {
         let hash = match self.get_selection() {
             Some(hash) => hash,
