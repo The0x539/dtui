@@ -30,6 +30,8 @@ mod form;
 mod menu;
 mod config;
 
+type Selection = Arc<RwLock<Option<InfoHash>>>;
+
 fn foo<T>() -> T { todo!() }
 
 #[tokio::main]

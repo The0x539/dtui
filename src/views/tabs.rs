@@ -21,6 +21,8 @@ use cursive::views::{
 };
 use futures::FutureExt;
 
+use crate::Selection;
+
 use crate::views::{
     labeled_checkbox::LabeledCheckbox,
     spin::SpinView,
@@ -75,7 +77,7 @@ mod trackers;
 
 struct TorrentTabsViewThread {
     last_selection: Option<InfoHash>,
-    selection: Arc<RwLock<Option<InfoHash>>>,
+    selection: Selection,
     selection_notify: Arc<Notify>,
     active_tab_recv: watch::Receiver<Tab>,
     active_tab: Tab,
@@ -173,7 +175,7 @@ impl ViewThread for TorrentTabsViewThread {
 impl TorrentTabsView {
     pub(crate) fn new(
         session_recv: watch::Receiver<Option<Arc<Session>>>,
-        selection: Arc<RwLock<Option<InfoHash>>>,
+        selection: Selection,
         selection_notify: Arc<Notify>,
         shutdown: Arc<AsyncRwLock<()>>,
     ) -> Self {
