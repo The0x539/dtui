@@ -1,7 +1,7 @@
 use cursive::traits::*;
 use deluge_rpc::{Session, Query, InfoHash, FilterKey, FilterDict, TorrentState};
 use cursive::Printer;
-use tokio::sync::{RwLock as AsyncRwLock, broadcast, watch};
+use tokio::sync::{RwLock as AsyncRwLock, watch};
 use std::sync::{Arc, RwLock};
 use cursive::utils::Counter;
 use cursive::views::ProgressBar;
@@ -195,14 +195,12 @@ struct TorrentsViewThread {
     data: Arc<RwLock<ViewData>>,
     filters: FilterDict,
     filters_recv: watch::Receiver<FilterDict>,
-    events_recv: broadcast::Receiver<deluge_rpc::Event>,
     missed_torrents: Vec<InfoHash>,
     selection: Arc<RwLock<Option<InfoHash>>>,
 }
 
 impl TorrentsViewThread {
     fn new(
-        events_recv: broadcast::Receiver<deluge_rpc::Event>,
         data: Arc<RwLock<ViewData>>,
         selection: Arc<RwLock<Option<InfoHash>>>,
         filters_recv: watch::Receiver<FilterDict>,
@@ -212,7 +210,6 @@ impl TorrentsViewThread {
             data,
             filters,
             filters_recv,
-            events_recv,
             missed_torrents: Vec::new(),
             selection,
         }
@@ -339,40 +336,8 @@ impl ViewThread for TorrentsViewThread {
     async fn do_update(&mut self, session: &Session) -> deluge_rpc::Result<()> {
         let deadline = time::Instant::now() + time::Duration::from_secs(1);
 
-        loop {
-            enum ToHandle { Filters(FilterDict), Event(deluge_rpc::Event) }
-
-            let filt_fut = self.filters_recv.recv();
-            let ev_fut = self.events_recv.recv();
-
-            let to_handle = tokio::select! {
-                new_filters = filt_fut => ToHandle::Filters(new_filters.unwrap()),
-                event = ev_fut => ToHandle::Event(event.unwrap()),
-                _ = time::delay_until(deadline) => break,
-            };
-
-            match to_handle {
-                ToHandle::Filters(new_filters) => self.replace_filters(new_filters),
-                ToHandle::Event(event) => match event {
-                    deluge_rpc::Event::TorrentAdded(hash, _from_state) => {
-                        let new_torrent = session.get_torrent_status::<Torrent>(hash).await?;
-                        self.add_torrent(hash, new_torrent);
-                    },
-                    deluge_rpc::Event::TorrentRemoved(hash) => {
-                        self.remove_torrent(hash);
-                    },
-                    deluge_rpc::Event::TorrentStateChanged(hash, state) => {
-                        let mut delta = FnvHashMap::default();
-                        let diff = TorrentDiff {
-                            state: Some(state),
-                            ..TorrentDiff::default()
-                        };
-                        delta.insert(hash, diff);
-                        self.apply_delta(delta);
-                    },
-                    _ => (),
-                }
-            }
+        while let Ok(new_filters) = time::timeout_at(deadline, self.filters_recv.recv()).await {
+            self.replace_filters(new_filters.unwrap());
         }
 
         let delta = session.get_torrents_status_diff::<Torrent>(None).await?;
@@ -383,6 +348,33 @@ impl ViewThread for TorrentsViewThread {
             self.add_torrent(hash, new_torrent);
         }
 
+        Ok(())
+    }
+
+    async fn on_event(
+        &mut self,
+        session: &Session,
+        event: deluge_rpc::Event,
+    ) -> deluge_rpc::Result<()> {
+        match event {
+            deluge_rpc::Event::TorrentAdded(hash, _from_state) => {
+                let new_torrent = session.get_torrent_status::<Torrent>(hash).await?;
+                self.add_torrent(hash, new_torrent);
+            },
+            deluge_rpc::Event::TorrentRemoved(hash) => {
+                self.remove_torrent(hash);
+            },
+            deluge_rpc::Event::TorrentStateChanged(hash, state) => {
+                let mut delta = FnvHashMap::default();
+                let diff = TorrentDiff {
+                    state: Some(state),
+                    ..TorrentDiff::default()
+                };
+                delta.insert(hash, diff);
+                self.apply_delta(delta);
+            },
+            _ => (),
+        }
         Ok(())
     }
 }
@@ -413,8 +405,7 @@ impl TorrentsView {
             menu::torrent_context_menu(*sel, name, position)
         });
 
-        let events_recv = session_recv.borrow().clone().unwrap().subscribe_events();
-        let thread_obj = TorrentsViewThread::new(events_recv, inner.get_data(), selection, filters_recv);
+        let thread_obj = TorrentsViewThread::new(inner.get_data(), selection, filters_recv);
         let thread = tokio::spawn(thread_obj.run(session_recv, shutdown));
         Self { inner, thread }
     }
