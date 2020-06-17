@@ -127,7 +127,7 @@ impl ViewThread for StatusBarViewThread {
         Ok(())
     }
 
-    fn tick() -> time::Duration { time::Duration::from_secs(1) }
+    fn tick(&self) -> time::Duration { time::Duration::from_secs(1) }
 }
 
 impl StatusBarView {

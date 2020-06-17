@@ -20,7 +20,7 @@ pub trait ViewThread: Send {
         Ok(())
     }
 
-    fn tick() -> time::Duration where Self: Sized {
+    fn tick(&self) -> time::Duration {
         time::Duration::from_secs(5)
     }
 
@@ -51,7 +51,7 @@ pub trait ViewThread: Send {
                 should_reinit = false;
             }
 
-            let tick = time::Instant::now() + Self::tick();
+            let tick = time::Instant::now() + self.tick();
 
             let (ses, evs) = match (&session, &mut events) {
                 (Some(ses), Some(evs)) => (ses, evs),
