@@ -8,7 +8,7 @@ use crate::SessionHandle;
 type Result = deluge_rpc::Result<()>;
 
 #[async_trait]
-pub trait ViewThread: Send {
+pub(crate) trait ViewThread: Send {
     async fn reload(&mut self, session: &Session) -> Result {
         self.update(session).await
     }
@@ -33,7 +33,7 @@ pub trait ViewThread: Send {
         shutdown: Arc<AsyncRwLock<()>>,
     ) -> Result where Self: Sized {
         let handle: SessionHandle = session_recv.borrow().clone();
-        let mut session: Option<Arc<Session>> = handle.map(|(_, ses)| ses);
+        let mut session: Option<Arc<Session>> = handle.into_session();
         let mut events = None;
         let mut update_notifier = Arc::new(Notify::new());
 
@@ -57,7 +57,7 @@ pub trait ViewThread: Send {
                 (Some(ses), Some(evs)) => (ses, evs),
                 _ => tokio::select! {
                     new_session = session_recv.recv() => {
-                        session = new_session.unwrap().map(|(_, ses)| ses);
+                        session = new_session.unwrap().into_session();
                         should_reinit = true;
                         continue;
                     },
@@ -73,7 +73,7 @@ pub trait ViewThread: Send {
                 let event = tokio::select! {
                     event = evs.recv() => event.unwrap(),
                     new_session = session_recv.recv() => {
-                        session = new_session.unwrap().map(|(_, ses)| ses);
+                        session = new_session.unwrap().into_session();
                         should_reinit = true;
                         break;
                     },

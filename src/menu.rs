@@ -13,7 +13,7 @@ use std::future::Future;
 use std::sync::Arc;
 
 use crate::form::Form;
-use crate::AppState;
+use crate::{AppState, SessionHandle};
 
 use crate::views::{
     remove_torrent::RemoveTorrentPrompt,
@@ -46,11 +46,11 @@ macro_rules! wsbu {
 
 impl<'a> CursiveWithSession<'a> for Cursive {
     fn session(&'a mut self) -> &'a Session {
-        match self.user_data().map(|s: &mut AppState| s.get()) {
-            None => panic!("Cursive object must contain an AppState"),
-            Some(None) => panic!("SessionHandle was unexpectedly empty"),
-            Some(Some((_, state))) => state,
-        }
+        self.user_data::<AppState>()
+            .map(|app_state| app_state.get())
+            .expect("Cursive object must contain an AppState")
+            .get_session()
+            .expect("SessionHandle was unexpectedly empty")
     }
 }
 
@@ -82,9 +82,9 @@ fn replace_session(
                 .login(&username, &password);
 
             block_on(fut).unwrap();
-            Some((id, session))
+            SessionHandle::new(id, session)
         }
-        None => None,
+        None => SessionHandle::None,
     };
     siv.with_user_data(|app_state: &mut AppState| {
         task::block_in_place(|| block_on(app_state.replace(handle)));

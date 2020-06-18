@@ -15,7 +15,7 @@ use cursive::direction::Orientation;
 use cursive::menu::MenuTree;
 use std::sync::{Arc, RwLock};
 
-pub mod views;
+mod views;
 use views::{
     filters::FiltersView,
     torrents::TorrentsView,
@@ -36,7 +36,48 @@ type Selection = Arc<RwLock<Option<InfoHash>>>;
 // App state, channel, torrents, filters, tabs, status bar.
 const SESSION_HANDLE_REF_COUNT: usize = 6;
 
-type SessionHandle = Option<(Uuid, Arc<Session>)>;
+#[derive(Debug, Clone)]
+pub(crate) enum SessionHandle {
+    Some(Uuid, Arc<Session>),
+    None,
+}
+impl SessionHandle {
+    fn new(id: Uuid, session: Arc<Session>) -> Self {
+        Self::Some(id, session)
+    }
+
+    fn get_id(&self) -> Option<Uuid> {
+        match self {
+            Self::Some(id, _) => Some(*id),
+            Self::None => None,
+        }
+    }
+
+    fn get_session(&self) -> Option<&Arc<Session>> {
+        match self {
+            Self::Some(_, ref ses) => Some(ses),
+            Self::None => None,
+        }
+    }
+
+    fn into_session(self) -> Option<Arc<Session>> {
+        match self {
+            Self::Some(_, ses) => Some(ses),
+            Self::None => None,
+        }
+    }
+
+    fn into_both(self) -> Option<(Uuid, Arc<Session>)> {
+        Some((self.get_id()?, self.into_session()?))
+    }
+
+    fn check_ref_count(&self, n: usize) -> bool {
+        self.get_session()
+            .map(Arc::strong_count)
+            .unwrap_or(n) == n
+    }
+}
+
 struct AppState {
     tx: watch::Sender<SessionHandle>,
     val: SessionHandle,
@@ -49,13 +90,11 @@ impl AppState {
     async fn replace(&mut self, val: SessionHandle) {
         let old = std::mem::replace(&mut self.val, val);
 
-        if let Some((_, session)) = &old {
-            assert_eq!(Arc::strong_count(session), SESSION_HANDLE_REF_COUNT);
-        }
+        assert!(old.check_ref_count(SESSION_HANDLE_REF_COUNT));
 
         self.tx.broadcast(self.val.clone()).unwrap();
 
-        if let Some((_, session)) = old {
+        if let Some(session) = old.into_session() {
             // TODO: wait on a Barrier here
             tokio::time::delay_for(tokio::time::Duration::from_secs(1)).await;
 
@@ -67,14 +106,18 @@ impl AppState {
                 .unwrap(/* ¯\_(ツ)_/¯ */);
         }
     }
+
+    async fn take(&mut self) {
+        self.replace(SessionHandle::None).await;
+    }
 }
 
 #[tokio::main]
 async fn main() -> deluge_rpc::Result<()> {
-    let (session_send, session_recv) = watch::channel(None);
+    let (session_send, session_recv) = watch::channel(SessionHandle::None);
     let mut app_state = AppState {
         tx: session_send,
-        val: None,
+        val: SessionHandle::None,
     };
 
     {
@@ -89,7 +132,7 @@ async fn main() -> deluge_rpc::Result<()> {
             let auth_level = ses.login(&host.username, &host.password).await?;
             assert!(auth_level >= AuthLevel::Normal);
 
-            let handle = Some((id, Arc::new(ses)));
+            let handle = SessionHandle::new(id, Arc::new(ses));
             app_state
                 .replace(handle)
                 // AppState::replace only awaits if replacing an existing session.
@@ -183,7 +226,7 @@ async fn main() -> deluge_rpc::Result<()> {
     std::mem::drop(shutdown_write_handle);
 
     let mut app_state = siv.take_user_data::<AppState>().unwrap();
-    app_state.replace(None).await;
+    app_state.take().await;
 
     let torrents_thread = siv.call_on_name("torrents", TorrentsView::take_thread).unwrap();
     let filters_thread = siv.call_on_name("filters", FiltersView::take_thread).unwrap();

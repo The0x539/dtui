@@ -152,6 +152,9 @@ async fn connect(
 
 impl ConnectionManagerView {
     pub fn new(current_host: SessionHandle) -> Self {
+        // TODO: where did this handle come from?
+        // is it an additional ref not listed in main.rs?
+
         let cfg = config::get_config();
         let cmgr = &cfg.read().unwrap().connection_manager;
 
@@ -165,7 +168,7 @@ impl ConnectionManagerView {
         let autoconnect_host = None; // TODO: read from config
         let hide_dialog = false; // TODO: read from config
 
-        let auto_connect = current_host.as_ref().map(|x| x.0) == autoconnect_host;
+        let auto_connect = current_host.get_id() == autoconnect_host;
 
         let cols = vec![(Column::Status, 9), (Column::Host, 50), (Column::Version, 11)];
         let table = TableView::<ConnectionTableData>::new(cols);
@@ -176,8 +179,8 @@ impl ConnectionManagerView {
             data.rows = connections.keys().copied().collect();
             data.connections = connections;
             data.autoconnect_host = autoconnect_host;
-            if let Some((id, session)) = current_host {
-                data.current_host = Some(id);
+            if let Some((id, session)) = current_host.into_both() {
+                data.current_host.replace(id);
                 data.connections[&id].session.write().unwrap().replace(session);
             }
 
