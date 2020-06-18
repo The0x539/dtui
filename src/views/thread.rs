@@ -1,5 +1,6 @@
 use std::sync::Arc;
 use tokio::sync::{watch, broadcast, Notify};
+use futures::FutureExt;
 use async_trait::async_trait;
 use tokio::time;
 use deluge_rpc::{Session, Event};
@@ -31,9 +32,14 @@ pub(crate) trait ViewThread: Send {
         mut self,
         mut session_recv: watch::Receiver<SessionHandle>,
     ) -> Result where Self: Sized {
-        let mut handle = session_recv.borrow().clone();
+        let mut handle = session_recv
+            .recv()
+            .now_or_never()
+            .expect("Receiver must have a value ready.")
+            .expect("Receiver must not be closed.");
+
         let mut events = broadcast::channel(1).1;
-        let mut update_notifier = Arc::new(Notify::new());
+        let update_notifier = self.update_notifier();
 
         let mut should_reload = true;
 
@@ -45,11 +51,10 @@ pub(crate) trait ViewThread: Send {
                     events = session.subscribe_events();
                     self.reload(session).await?;
                 } else {
-                    events = broadcast::channel(1).1; // Possibly unnecessary
+                    // events = ...; // unnecessary
                     // TODO
                     // self.clear();
                 }
-                update_notifier = self.update_notifier();
             }
 
             if let Some(session) = handle.get_session() {

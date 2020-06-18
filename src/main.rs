@@ -132,6 +132,28 @@ impl AppState {
 async fn main() -> deluge_rpc::Result<()> {
     let (session_send, session_recv) = watch::channel(SessionHandle::Disconnected);
 
+    {
+        let cfg = config::get_config();
+        let cmgr = &cfg.read().unwrap().connection_manager;
+        if let Some(id) = cmgr.autoconnect {
+            let host = &cmgr.hosts[&id];
+            let endpoint = (host.address.as_str(), host.port);
+
+            let mut ses = Session::connect(endpoint).await?;
+
+            let auth_level = ses.login(&host.username, &host.password).await?;
+            // TODO: be interactive about this
+            assert!(auth_level >= AuthLevel::Normal);
+
+            let handle = SessionHandle::new(id, Arc::new(ses));
+            session_send.broadcast(handle).unwrap();
+        }
+    }
+
+    let app_state = AppState {
+        tx: session_send,
+        val: session_recv.borrow().clone(),
+    };
 
     let (filters_send, filters_recv) = watch::channel(FilterDict::default());
     let filters_notify = Arc::new(Notify::new());
@@ -207,34 +229,6 @@ async fn main() -> deluge_rpc::Result<()> {
                 .leaf("Connection Manager", menu::show_connection_manager));
 
     siv.add_fullscreen_layer(main_ui);
-
-    let mut app_state = AppState {
-        tx: session_send,
-        val: SessionHandle::Disconnected,
-    };
-
-    {
-        let cfg = config::get_config();
-        let cmgr = &cfg.read().unwrap().connection_manager;
-        if let Some(id) = cmgr.autoconnect {
-            let host = &cmgr.hosts[&id];
-            let endpoint = (host.address.as_str(), host.port);
-
-            let mut ses = Session::connect(endpoint).await?;
-
-            let auth_level = ses.login(&host.username, &host.password).await?;
-            assert!(auth_level >= AuthLevel::Normal);
-
-            let handle = SessionHandle::new(id, Arc::new(ses));
-            app_state
-                .replace(handle)
-                // Since this is the startup connection, there is no existing session.
-                // `.await?` is allowed here, but this acts as an assertion.
-                .now_or_never()
-                .expect("Startup session replacement should never yield")
-                .expect("Startup session replacement should never fail");
-        }
-    }
 
     siv.set_user_data(app_state);
 
