@@ -12,7 +12,7 @@ use std::future::Future;
 use std::sync::Arc;
 
 use crate::form::Form;
-use crate::{AppState, SessionHandle};
+use crate::AppState;
 
 use crate::views::{
     remove_torrent::RemoveTorrentPrompt,
@@ -86,8 +86,7 @@ fn replace_session(
         None => None,
     };
     siv.with_user_data(|app_state: &mut AppState| {
-        // TODO: gracefully disconnect old state here, rather than in main
-        app_state.set(handle);
+        app_state.replace(handle);
     }).unwrap();
 }
 

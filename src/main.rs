@@ -13,6 +13,7 @@ use cursive::views::{LinearLayout, Panel};
 use cursive::direction::Orientation;
 use cursive::menu::MenuTree;
 use std::sync::{Arc, RwLock};
+use futures::executor::block_on;
 
 pub mod views;
 use views::{
@@ -46,9 +47,21 @@ impl AppState {
         self.val = val;
         self.tx.broadcast(self.val.clone()).unwrap();
     }
-}
 
-fn foo<T>() -> T { todo!() }
+    fn replace(&mut self, val: SessionHandle) {
+        let old = self.val.take();
+        self.val = val;
+        self.tx.broadcast(self.val.clone()).unwrap();
+        if let Some((_, session)) = old {
+            assert_eq!(Arc::strong_count(&session), 1);
+            let fut = Arc::try_unwrap(session)
+                .unwrap()
+                .disconnect();
+
+            block_on(fut).unwrap();
+        }
+    }
+}
 
 #[tokio::main]
 async fn main() -> deluge_rpc::Result<()> {
@@ -157,7 +170,8 @@ async fn main() -> deluge_rpc::Result<()> {
 
     std::mem::drop(shutdown_write_handle);
 
-    //siv.take_user_data::<Arc<Session>>().unwrap();
+    let mut app_state = siv.take_user_data::<AppState>().unwrap();
+    app_state.replace(None);
 
     let torrents_thread = siv.call_on_name("torrents", TorrentsView::take_thread).unwrap();
     let filters_thread = siv.call_on_name("filters", FiltersView::take_thread).unwrap();
@@ -180,10 +194,6 @@ async fn main() -> deluge_rpc::Result<()> {
     filters_result?;
     statusbar_result?;
     tabs_result?;
-
-    let session: Session = foo();
-
-    session.disconnect().await.map_err(|(_stream, err)| err)?;
 
     Ok(())
 }
