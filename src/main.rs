@@ -6,6 +6,7 @@
 
 use deluge_rpc::*;
 use tokio::sync::{RwLock as AsyncRwLock, watch, Notify};
+use futures::FutureExt;
 use uuid::Uuid;
 use cursive::Cursive;
 use cursive::traits::*;
@@ -13,7 +14,6 @@ use cursive::views::{LinearLayout, Panel};
 use cursive::direction::Orientation;
 use cursive::menu::MenuTree;
 use std::sync::{Arc, RwLock};
-use futures::executor::block_on;
 
 pub mod views;
 use views::{
@@ -33,6 +33,9 @@ mod config;
 
 type Selection = Arc<RwLock<Option<InfoHash>>>;
 
+// App state, channel, torrents, filters, tabs, status bar.
+const SESSION_HANDLE_REF_COUNT: usize = 6;
+
 type SessionHandle = Option<(Uuid, Arc<Session>)>;
 struct AppState {
     tx: watch::Sender<SessionHandle>,
@@ -43,22 +46,25 @@ impl AppState {
         &self.val
     }
 
-    fn set(&mut self, val: SessionHandle) {
-        self.val = val;
-        self.tx.broadcast(self.val.clone()).unwrap();
-    }
+    async fn replace(&mut self, val: SessionHandle) {
+        let old = std::mem::replace(&mut self.val, val);
 
-    fn replace(&mut self, val: SessionHandle) {
-        let old = self.val.take();
-        self.val = val;
+        if let Some((_, session)) = &old {
+            assert_eq!(Arc::strong_count(session), SESSION_HANDLE_REF_COUNT);
+        }
+
         self.tx.broadcast(self.val.clone()).unwrap();
+
         if let Some((_, session)) = old {
-            assert_eq!(Arc::strong_count(&session), 1);
-            let fut = Arc::try_unwrap(session)
-                .unwrap()
-                .disconnect();
+            // TODO: wait on a Barrier here
+            tokio::time::delay_for(tokio::time::Duration::from_secs(1)).await;
 
-            block_on(fut).unwrap();
+            assert_eq!(Arc::strong_count(&session), 1);
+            Arc::try_unwrap(session)
+                .unwrap()
+                .disconnect()
+                .await
+                .unwrap(/* ¯\_(ツ)_/¯ */);
         }
     }
 }
@@ -83,8 +89,14 @@ async fn main() -> deluge_rpc::Result<()> {
             let auth_level = ses.login(&host.username, &host.password).await?;
             assert!(auth_level >= AuthLevel::Normal);
 
-            let session = Arc::new(ses);
-            app_state.set(Some((id, session.clone())));
+            let handle = Some((id, Arc::new(ses)));
+            app_state
+                .replace(handle)
+                // AppState::replace only awaits if replacing an existing session.
+                // Since this is the startup connection, there is no such session.
+                // Awaiting in this context is allowed, but this acts as an assertion.
+                .now_or_never()
+                .expect("Startup session replacement should be synchronous");
         }
     }
 
@@ -171,7 +183,7 @@ async fn main() -> deluge_rpc::Result<()> {
     std::mem::drop(shutdown_write_handle);
 
     let mut app_state = siv.take_user_data::<AppState>().unwrap();
-    app_state.replace(None);
+    app_state.replace(None).await;
 
     let torrents_thread = siv.call_on_name("torrents", TorrentsView::take_thread).unwrap();
     let filters_thread = siv.call_on_name("filters", FiltersView::take_thread).unwrap();

@@ -7,6 +7,7 @@ use cursive::menu::MenuTree;
 use futures::executor::block_on;
 use serde::Deserialize;
 use uuid::Uuid;
+use tokio::task;
 use std::rc::Rc;
 use std::future::Future;
 use std::sync::Arc;
@@ -86,7 +87,7 @@ fn replace_session(
         None => None,
     };
     siv.with_user_data(|app_state: &mut AppState| {
-        app_state.replace(handle);
+        task::block_in_place(|| block_on(app_state.replace(handle)));
     }).unwrap();
 }
 
