@@ -87,7 +87,7 @@ fn replace_session(
         None => SessionHandle::default(),
     };
     siv.with_user_data(|app_state: &mut AppState| {
-        task::block_in_place(|| block_on(app_state.replace(handle)));
+        task::block_in_place(|| block_on(app_state.replace(handle))).unwrap();
     }).unwrap();
 }
 
