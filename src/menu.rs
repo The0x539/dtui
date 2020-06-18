@@ -6,8 +6,10 @@ use cursive::Vec2;
 use cursive::menu::MenuTree;
 use futures::executor::block_on;
 use serde::Deserialize;
+use uuid::Uuid;
 use std::rc::Rc;
 use std::future::Future;
+use std::sync::Arc;
 
 use crate::form::Form;
 use crate::{AppState, SessionHandle};
@@ -67,7 +69,22 @@ pub fn add_torrent_dialog(siv: &mut Cursive) {
     siv.add_layer(dialog);
 }
 
-fn replace_session(siv: &mut Cursive, handle: SessionHandle) {
+fn replace_session(
+    siv: &mut Cursive,
+    new: Option<(Uuid, Arc<Session>, String, String)>,
+) {
+    let handle = match new {
+        Some((id, mut session, username, password)) => {
+            assert_eq!(Arc::strong_count(&session), 1);
+            let fut = Arc::get_mut(&mut session)
+                .unwrap()
+                .login(&username, &password);
+
+            block_on(fut).unwrap();
+            Some((id, session))
+        }
+        None => None,
+    };
     siv.with_user_data(|app_state: &mut AppState| {
         // TODO: gracefully disconnect old state here, rather than in main
         app_state.set(handle);

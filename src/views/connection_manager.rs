@@ -230,7 +230,7 @@ impl ViewWrapper for ConnectionManagerView {
 }
 
 impl Form for ConnectionManagerView {
-    type Data = SessionHandle;
+    type Data = Option<(Uuid, Arc<Session>, String, String)>;
 
     fn into_data(self) -> Self::Data {
         let Self { mut inner } = self;
@@ -249,19 +249,24 @@ impl Form for ConnectionManagerView {
         let selected: Uuid = table.get_selection().copied()?;
 
         std::mem::drop(table);
-        let data = Arc::try_unwrap(data) // Arc<RwLock<T>> -> Result<RwLock<T>, Arc<RwLock<T>>>
-            .ok()                        // Result<RwLock<T>, Arc<RwLock<T>>> -> Option<RwLock<T>>
-            .unwrap()                    // Option<RwLock<T>> -> RwLock<T>
-            .into_inner()                // RwLock<T> -> LockResult<T>
-            .unwrap();                   // LockResult<T> -> T
+        let mut data = Arc::try_unwrap(data) // Arc<RwLock<T>> -> Result<RwLock<T>, Arc<RwLock<T>>>
+            .ok()                            // Result<RwLock<T>, Arc<RwLock<T>>> -> Option<RwLock<T>>
+            .unwrap()                        // Option<RwLock<T>> -> RwLock<T>
+            .into_inner()                    // RwLock<T> -> LockResult<T>
+            .unwrap();                       // LockResult<T> -> T
+
+        let connection = data.connections
+            .remove(&selected)
+            .expect("No selection; the connection button ought to be disabled.");
 
         if data.current_host.contains(&selected) {
-            assert!(data.connections[&selected].session.read().unwrap().is_some());
+            assert!(connection.session.read().unwrap().is_some());
             None // Disconnect from current session
-        } else if let Some(session) = data.connections[&selected].session.read().unwrap().clone() {
-            Some((selected, session))
+        } else if let Some(session) = connection.session.write().unwrap().take() {
+            assert_eq!(Arc::strong_count(&session), 1);
+            Some((selected, session, connection.username, connection.password))
         } else {
-            todo!("The connect button should be disabled.")
+            todo!("No successfully connected session; the connect button should be disabled.")
         }
     }
 }
