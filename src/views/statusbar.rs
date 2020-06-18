@@ -5,7 +5,7 @@ use std::net::IpAddr;
 use serde::Deserialize;
 use deluge_rpc::{Session, Query};
 use tokio::task::JoinHandle;
-use tokio::sync::{watch, RwLock as AsyncRwLock};
+use tokio::sync::watch;
 use tokio::time;
 use std::sync::{Arc, RwLock};
 use std::fmt::{Display, Formatter, self};
@@ -132,10 +132,10 @@ impl ViewThread for StatusBarViewThread {
 }
 
 impl StatusBarView {
-    pub fn new(session_recv: watch::Receiver<SessionHandle>, shutdown: Arc<AsyncRwLock<()>>) -> Self {
+    pub fn new(session_recv: watch::Receiver<SessionHandle>) -> Self {
         let data = Arc::new(RwLock::new(StatusBarData::default()));
         let thread_obj = StatusBarViewThread::new(data.clone());
-        let thread = tokio::spawn(thread_obj.run(session_recv, shutdown));
+        let thread = tokio::spawn(thread_obj.run(session_recv));
         Self { data, thread }
     }
 

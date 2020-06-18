@@ -2,7 +2,7 @@ use std::sync::{Arc, RwLock};
 use deluge_rpc::{Session, InfoHash};
 use super::thread::ViewThread;
 use async_trait::async_trait;
-use tokio::sync::{RwLock as AsyncRwLock, watch, Notify};
+use tokio::sync::{watch, Notify};
 use cursive_tabs::TabPanel;
 use tokio::task::{self, JoinHandle};
 use cursive::traits::*;
@@ -179,7 +179,6 @@ impl TorrentTabsView {
         session_recv: watch::Receiver<SessionHandle>,
         selection: Selection,
         selection_notify: Arc<Notify>,
-        shutdown: Arc<AsyncRwLock<()>>,
     ) -> Self {
         let (status_tab, status_data) = status::StatusData::view(selection.clone());
         let (details_tab, details_data) = details::DetailsData::view(selection.clone());
@@ -211,7 +210,7 @@ impl TorrentTabsView {
             peers_data,
             trackers_data,
         };
-        let thread = task::spawn(thread_obj.run(session_recv, shutdown));
+        let thread = task::spawn(thread_obj.run(session_recv));
 
         let view = TabPanel::new()
             .with_tab(Tab::Status, status_tab)

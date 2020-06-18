@@ -1,7 +1,7 @@
 use cursive::traits::*;
 use deluge_rpc::{Session, Query, InfoHash, FilterKey, FilterDict, TorrentState};
 use cursive::Printer;
-use tokio::sync::{RwLock as AsyncRwLock, watch, Notify};
+use tokio::sync::{watch, Notify};
 use std::sync::{Arc, RwLock};
 use cursive::utils::Counter;
 use cursive::views::ProgressBar;
@@ -399,7 +399,6 @@ impl TorrentsView {
         selection_notify: Arc<Notify>,
         filters_recv: watch::Receiver<FilterDict>,
         filters_notify: Arc<Notify>,
-        shutdown: Arc<AsyncRwLock<()>>,
     ) -> Self {
         let columns = vec![
             (Column::Name, 30),
@@ -421,7 +420,7 @@ impl TorrentsView {
         });
 
         let thread_obj = TorrentsViewThread::new(inner.get_data(), selection, selection_notify, filters_recv, filters_notify);
-        let thread = tokio::spawn(thread_obj.run(session_recv, shutdown));
+        let thread = tokio::spawn(thread_obj.run(session_recv));
         Self { inner, thread }
     }
 

@@ -5,7 +5,7 @@
 #![feature(trait_alias)]
 
 use deluge_rpc::{Session, FilterDict, InfoHash, AuthLevel};
-use tokio::sync::{RwLock as AsyncRwLock, watch, Notify, Barrier};
+use tokio::sync::{watch, Notify, Barrier};
 use futures::FutureExt;
 use uuid::Uuid;
 use cursive::Cursive;
@@ -72,14 +72,6 @@ impl SessionHandle {
         }
     }
 
-    fn ref_count(&self) -> Option<usize> {
-        self.get_session().map(Arc::strong_count)
-    }
-
-    fn check_ref_count(&self, n: usize) {
-        assert_eq!(self.ref_count().unwrap_or(n), n);
-    }
-
     async fn claim(self) -> Option<Session> {
         if let Self::Connected { session, barrier, .. } = self {
             barrier.wait().await;
@@ -123,8 +115,16 @@ impl AppState {
         Ok(())
     }
 
-    async fn take(&mut self) -> deluge_rpc::Result<()> {
-        self.replace(SessionHandle::Disconnected).await
+    async fn shutdown(self) -> deluge_rpc::Result<()> {
+        let Self { tx, val } = self;
+
+        drop(tx);
+
+        if let Some(session) = val.claim().await {
+            session.disconnect().await.map_err(|(_stream, err)| err)?;
+        }
+
+        Ok(())
     }
 }
 
@@ -132,8 +132,6 @@ impl AppState {
 async fn main() -> deluge_rpc::Result<()> {
     let (session_send, session_recv) = watch::channel(SessionHandle::Disconnected);
 
-    let shutdown = Arc::new(AsyncRwLock::new(()));
-    let shutdown_write_handle = shutdown.write().await;
 
     let (filters_send, filters_recv) = watch::channel(FilterDict::default());
     let filters_notify = Arc::new(Notify::new());
@@ -147,7 +145,6 @@ async fn main() -> deluge_rpc::Result<()> {
         selection_notify.clone(),
         filters_recv.clone(),
         filters_notify.clone(),
-        shutdown.clone(),
     ).with_name("torrents");
 
     let filters = FiltersView::new(
@@ -155,10 +152,9 @@ async fn main() -> deluge_rpc::Result<()> {
         filters_send,
         filters_recv.clone(),
         filters_notify,
-        shutdown.clone(),
     ).with_name("filters").into_scroll_wrapper();
 
-    let status_bar = StatusBarView::new(session_recv.clone(), shutdown.clone())
+    let status_bar = StatusBarView::new(session_recv.clone())
         .with_name("status");
 
     let torrents_ui = LinearLayout::new(Orientation::Horizontal)
@@ -169,8 +165,11 @@ async fn main() -> deluge_rpc::Result<()> {
         session_recv.clone(),
         selection,
         selection_notify,
-        shutdown.clone(),
     ).with_name("tabs");
+
+    // No more cloning the receiver after this point.
+    // It's important to drop so that we can unwrap the Arc<SessionHandle> on close.
+    drop(session_recv);
 
     let main_ui = LinearLayout::new(Orientation::Vertical)
         .child(torrents_ui)
@@ -241,11 +240,8 @@ async fn main() -> deluge_rpc::Result<()> {
 
     siv.run();
 
-    let mut app_state = siv.take_user_data::<AppState>().unwrap();
-    app_state.get().check_ref_count(SESSION_HANDLE_REF_COUNT + 1);
-    let disconnected = app_state.take();
-
-    std::mem::drop(shutdown_write_handle);
+    let app_state = siv.take_user_data::<AppState>().unwrap();
+    let disconnected = app_state.shutdown();
 
     let hs = (
         siv.call_on_name("torrents", TorrentsView::take_thread).unwrap(),

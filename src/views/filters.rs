@@ -3,7 +3,7 @@ use cursive::Printer;
 use fnv::FnvHashMap;
 use cursive::event::{Event, EventResult, MouseEvent, MouseButton};
 use cursive::vec::Vec2;
-use tokio::sync::{RwLock as AsyncRwLock, watch, Notify};
+use tokio::sync::{watch, Notify};
 use std::collections::BTreeMap;
 use deluge_rpc::{FilterKey, FilterDict, Session};
 use tokio::task::JoinHandle;
@@ -136,11 +136,10 @@ impl FiltersView {
         filters_send: watch::Sender<FilterDict>,
         filters_recv: watch::Receiver<FilterDict>,
         filters_notify: Arc<Notify>,
-        shutdown: Arc<AsyncRwLock<()>>,
     ) -> Self {
         let categories = Arc::new(RwLock::new(Categories::new()));
         let thread_obj = FiltersViewThread::new(categories.clone(), filters_recv);
-        let thread = tokio::spawn(thread_obj.run(session_recv, shutdown));
+        let thread = tokio::spawn(thread_obj.run(session_recv));
         Self {
             active_filters: FilterDict::default(),
             categories,

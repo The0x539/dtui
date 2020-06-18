@@ -1,5 +1,5 @@
 use std::sync::Arc;
-use tokio::sync::{watch, RwLock as AsyncRwLock, Notify};
+use tokio::sync::{watch, broadcast, Notify};
 use async_trait::async_trait;
 use tokio::time;
 use deluge_rpc::{Session, Event};
@@ -30,65 +30,70 @@ pub(crate) trait ViewThread: Send {
     async fn run(
         mut self,
         mut session_recv: watch::Receiver<SessionHandle>,
-        shutdown: Arc<AsyncRwLock<()>>,
     ) -> Result where Self: Sized {
-        let mut handle = SessionHandle::default();
-        let mut events = None;
+        let mut handle = session_recv.borrow().clone();
+        let mut events = broadcast::channel(1).1;
         let mut update_notifier = Arc::new(Notify::new());
 
-        let mut should_reinit = false;
+        let mut should_reload = true;
 
         'main: loop {
-            if should_reinit {
-                if let Some(ses) = handle.get_session() {
-                    events = Some(ses.subscribe_events());
-                    self.reload(ses).await?;
-                    update_notifier = self.update_notifier();
+            if should_reload {
+                should_reload = false;
+
+                if let Some(session) = handle.get_session() {
+                    events = session.subscribe_events();
+                    self.reload(session).await?;
                 } else {
-                    events = None;
+                    events = broadcast::channel(1).1; // Possibly unnecessary
+                    // TODO
+                    // self.clear();
                 }
-                should_reinit = false;
+                update_notifier = self.update_notifier();
             }
 
-            let tick = time::Instant::now() + self.tick();
+            if let Some(session) = handle.get_session() {
+                let tick = time::Instant::now() + self.tick();
 
-            let (ses, evs) = match (handle.get_session(), &mut events) {
-                (Some(ses), Some(evs)) => (ses, evs),
-                _ => tokio::select! {
-                    new_session = session_recv.recv() => {
-                        handle.relinquish().await;
-                        handle = new_session.unwrap();
-                        should_reinit = true;
-                        continue 'main;
-                    },
-                    _ = shutdown.read() => break 'main,
+                // Assuming this will be reasonably fast.
+                // If not for that assumption, I'd select between this, shutdown, and new_session.
+                self.update(session).await?;
+
+                'idle: loop {
+                    // The select macro isn't gonna let us call self.on_event().
+                    // As a workaround, we do it like this.
+                    let event = tokio::select! {
+                        event = events.recv() => event.unwrap(),
+
+                        _ = update_notifier.notified() => break 'idle,
+                        _ = time::delay_until(tick) => break 'idle,
+
+                        x = session_recv.recv() => match x {
+                            Some(new_handle) => {
+                                handle.relinquish().await;
+                                handle = new_handle;
+                                should_reload = true;
+                                continue 'main;
+                            },
+                            None => break 'main,
+                        },
+                    };
+
+                    self.on_event(session, event).await?;
                 }
-            };
-
-            // Assuming this will be reasonably fast.
-            // If not for that assumption, I'd select between this, shutdown, and new_session.
-            self.update(ses).await?;
-
-            'idle: loop {
-                // The select macro isn't gonna let us call self.on_event().
-                // As a workaround, we do it like this.
-                let event = tokio::select! {
-                    event = evs.recv() => event.unwrap(),
-                    new_session = session_recv.recv() => {
-                        handle.relinquish().await;
-                        handle = new_session.unwrap();
-                        should_reinit = true;
-                        break 'idle;
-                    },
-                    _ = update_notifier.notified() => break 'idle,
-                    _ = time::delay_until(tick) => break 'idle,
-                    _ = shutdown.read() => break 'main,
-                };
-
-                self.on_event(ses, event).await?;
+            } else {
+                if let Some(new_handle) = session_recv.recv().await {
+                    handle.relinquish().await;
+                    handle = new_handle;
+                    should_reload = true;
+                    continue 'main;
+                } else {
+                    break 'main;
+                }
             }
         }
 
+        drop(session_recv);
         handle.relinquish().await;
         Ok(())
     }
