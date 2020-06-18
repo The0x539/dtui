@@ -10,6 +10,8 @@ use crate::config;
 use crate::form::Form;
 use crate::SessionHandle;
 
+use tokio::task;
+
 use deluge_rpc::Session;
 
 use cursive::{
@@ -130,6 +132,24 @@ pub(crate) struct ConnectionManagerView {
     inner: LinearLayout,
 }
 
+async fn connect(
+    address: String,
+    port: u16,
+    session_handle: Arc<RwLock<Option<Arc<Session>>>>,
+    version_handle: Arc<RwLock<Option<String>>>,
+) -> deluge_rpc::Result<()> {
+    let endpoint = (address.as_str(), port);
+    let session = Session::connect(endpoint).await?;
+    let version = session.daemon_info().await?;
+
+    if let (Ok(mut ses), Ok(mut ver)) = (session_handle.write(), version_handle.write()) {
+        ses.replace(Arc::new(session));
+        ver.replace(version);
+    }
+
+    Ok(())
+}
+
 impl ConnectionManagerView {
     pub fn new(current_host: SessionHandle) -> Self {
         let cfg = config::get_config();
@@ -139,6 +159,8 @@ impl ConnectionManagerView {
             .iter()
             .map(|(id, host)| (*id, host.clone().into()))
             .collect();
+
+        let mut threads = Vec::with_capacity(connections.len());
 
         let autoconnect_host = None; // TODO: read from config
         let hide_dialog = false; // TODO: read from config
@@ -157,6 +179,19 @@ impl ConnectionManagerView {
             if let Some((id, session)) = current_host {
                 data.current_host = Some(id);
                 data.connections[&id].session.write().unwrap().replace(session);
+            }
+
+            for connection in data.connections.values_mut() {
+                if connection.session.read().unwrap().is_some() {
+                    continue;
+                }
+                let fut = connect(
+                    connection.address.clone(),
+                    connection.port,
+                    connection.session.clone(),
+                    connection.version.clone(),
+                );
+                threads.push(task::spawn(fut));
             }
         }
 
