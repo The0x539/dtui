@@ -38,32 +38,35 @@ const SESSION_HANDLE_REF_COUNT: usize = 6;
 
 #[derive(Debug, Clone)]
 pub(crate) enum SessionHandle {
-    Some(Uuid, Arc<Session>),
-    None,
+    Connected {
+        id: Uuid,
+        session: Arc<Session>,
+    },
+    Disconnected,
 }
 impl SessionHandle {
     fn new(id: Uuid, session: Arc<Session>) -> Self {
-        Self::Some(id, session)
+        Self::Connected { id, session }
     }
 
     fn get_id(&self) -> Option<Uuid> {
         match self {
-            Self::Some(id, _) => Some(*id),
-            Self::None => None,
+            Self::Connected { id, .. } => Some(*id),
+            Self::Disconnected => None,
         }
     }
 
     fn get_session(&self) -> Option<&Arc<Session>> {
         match self {
-            Self::Some(_, ref ses) => Some(ses),
-            Self::None => None,
+            Self::Connected { session, .. } => Some(session),
+            Self::Disconnected => None,
         }
     }
 
     fn into_session(self) -> Option<Arc<Session>> {
         match self {
-            Self::Some(_, ses) => Some(ses),
-            Self::None => None,
+            Self::Connected { session, .. } => Some(session),
+            Self::Disconnected => None,
         }
     }
 
@@ -76,6 +79,9 @@ impl SessionHandle {
             .map(Arc::strong_count)
             .unwrap_or(n) == n
     }
+}
+impl Default for SessionHandle {
+    fn default() -> Self { Self::Disconnected }
 }
 
 struct AppState {
@@ -108,16 +114,16 @@ impl AppState {
     }
 
     async fn take(&mut self) {
-        self.replace(SessionHandle::None).await;
+        self.replace(SessionHandle::Disconnected).await;
     }
 }
 
 #[tokio::main]
 async fn main() -> deluge_rpc::Result<()> {
-    let (session_send, session_recv) = watch::channel(SessionHandle::None);
+    let (session_send, session_recv) = watch::channel(SessionHandle::Disconnected);
     let mut app_state = AppState {
         tx: session_send,
-        val: SessionHandle::None,
+        val: SessionHandle::Disconnected,
     };
 
     {
