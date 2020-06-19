@@ -68,6 +68,13 @@ impl ViewThread for DetailsData {
 
         Ok(())
     }
+
+    fn clear(&mut self) {
+        self.top.set_content("");
+        self.left.set_content("");
+        self.right.set_content("");
+        self.bottom.set_content("");
+    }
 }
 
 impl TabData for DetailsData {

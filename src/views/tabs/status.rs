@@ -110,6 +110,12 @@ impl ViewThread for StatusData {
 
         Ok(())
     }
+
+    fn clear(&mut self) {
+        self.progress_val.set(0);
+        self.progress_label_send.broadcast(String::new()).unwrap();
+        self.columns.iter_mut().for_each(|c| c.set_content(""));
+    }
 }
 
 impl TabData for StatusData {

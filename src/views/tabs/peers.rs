@@ -236,6 +236,10 @@ impl ViewThread for PeersData {
 
         Ok(())
     }
+
+    fn clear(&mut self) {
+        self.state.write().unwrap().clear();
+    }
 }
 
 impl TabData for PeersData {

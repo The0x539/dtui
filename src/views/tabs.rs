@@ -153,15 +153,13 @@ impl ViewThread for TorrentTabsViewThread {
 
         let selection = self.last_selection;
         if self.should_reload {
-            self.should_reload = false;
-            let tab = self.get_active_tab_mut();
+            self.clear();
             if let Some(sel) = selection {
+                let tab = self.get_active_tab_mut();
                 tab.set_selection(sel);
                 tab.reload(session).await?;
-            } else {
-                // TODO
-                // tab.clear();
             }
+            self.should_reload = false;
         } else if selection.is_some() {
             self.get_active_tab_mut().update(session).await?;
         }
@@ -175,6 +173,12 @@ impl ViewThread for TorrentTabsViewThread {
 
     fn tick(&self) -> tokio::time::Duration {
         self.get_active_tab().tick()
+    }
+
+    fn clear(&mut self) {
+        let tab = self.get_active_tab_mut();
+        tab.set_selection(InfoHash::default());
+        tab.clear();
     }
 }
 

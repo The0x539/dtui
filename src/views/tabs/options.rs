@@ -164,6 +164,14 @@ impl ViewThread for OptionsData {
 
         Ok(())
     }
+
+    fn clear(&mut self) {
+        // ¯\_(ツ)_/¯
+        // I don't know what code I should be running here.
+        // Like, logically, I should be greying out all the buttons.
+        // But do I do that here...?
+        // This code is very separated from being able to access the actual View objects.
+    }
 }
 
 impl TabData for OptionsData {

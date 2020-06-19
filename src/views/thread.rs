@@ -28,6 +28,8 @@ pub(crate) trait ViewThread: Send {
         Arc::new(Notify::new())
     }
 
+    fn clear(&mut self);
+
     async fn run(mut self, mut session_recv: watch::Receiver<SessionHandle>) -> Result
     where
         Self: Sized,
@@ -51,9 +53,7 @@ pub(crate) trait ViewThread: Send {
                     events = session.subscribe_events();
                     self.reload(session).await?;
                 } else {
-                    // events = ...; // unnecessary
-                    // TODO
-                    // self.clear();
+                    self.clear();
                 }
             }
 

@@ -408,6 +408,16 @@ impl ViewThread for TorrentsViewThread {
     fn tick(&self) -> time::Duration {
         time::Duration::from_secs(1)
     }
+
+    fn clear(&mut self) {
+        let mut data = self.data.write().unwrap();
+        data.torrents.clear();
+        data.rows.clear();
+        self.selection.write().unwrap().take();
+        self.selection_notify.notify();
+        self.missed_torrents.clear();
+        self.filters.clear();
+    }
 }
 
 impl TorrentsView {

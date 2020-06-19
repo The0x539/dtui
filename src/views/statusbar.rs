@@ -15,6 +15,8 @@ use tokio::time;
 
 #[derive(Default, Debug, Clone, Copy)]
 struct StatusBarData {
+    connected: bool,
+
     num_peers: u64,
     max_peers: Option<u64>,
     download_rate: u64,
@@ -48,6 +50,10 @@ struct ConfigQuery {
 
 impl Display for StatusBarData {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        if !self.connected {
+            return write!(f, "Not Connected");
+        }
+
         f.write_str(" ⇄ ")?;
         f.write_str(&util::fmt_pair(
             util::fmt_bytes,
@@ -119,6 +125,8 @@ impl ViewThread for StatusBarViewThread {
         {
             let mut data = self.data.write().unwrap();
 
+            data.connected = true;
+
             data.ip = Some(ip);
             data.free_space = space;
 
@@ -143,6 +151,10 @@ impl ViewThread for StatusBarViewThread {
 
     fn tick(&self) -> time::Duration {
         time::Duration::from_secs(1)
+    }
+
+    fn clear(&mut self) {
+        self.data.write().unwrap().connected = false;
     }
 }
 

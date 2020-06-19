@@ -137,6 +137,10 @@ impl ViewThread for FiltersViewThread {
     fn update_notifier(&self) -> Arc<Notify> {
         self.update_notifier.clone()
     }
+
+    fn clear(&mut self) {
+        self.replace_tree(Default::default());
+    }
 }
 
 impl FiltersView {

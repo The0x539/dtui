@@ -44,6 +44,10 @@ impl ViewThread for TrackersData {
 
         Ok(())
     }
+
+    fn clear(&mut self) {
+        self.content.set_content("");
+    }
 }
 
 impl TabData for TrackersData {

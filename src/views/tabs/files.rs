@@ -620,6 +620,13 @@ impl ViewThread for FilesData {
         }
         Ok(())
     }
+
+    fn clear(&mut self) {
+        let mut data = self.state.write().unwrap();
+        let old = std::mem::take(&mut *data);
+        data.sort_column = old.sort_column;
+        data.descending_sort = old.descending_sort;
+    }
 }
 
 impl TabData for FilesData {
