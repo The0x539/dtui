@@ -225,11 +225,10 @@ impl FilesState {
         self.root_dir = self.dirs_info.insert(Dir::default());
 
         for (i, file) in files.into_iter().enumerate() {
-            let mut cwd = self.root_dir;
-
+            // TODO: Result, or maybe allow out-of-order file insertion
             assert_eq!(i, file.index);
-            let progress = file_progress[i];
-            let priority = file_priorities[i];
+
+            let mut cwd = self.root_dir;
 
             let mut depth = self.dirs_info[cwd].depth;
             assert_eq!(depth, 0);
@@ -282,8 +281,8 @@ impl FilesState {
                 size: file.size,
                 name: String::from(file_name),
                 depth,
-                progress,
-                priority,
+                progress: file_progress[i],
+                priority: file_priorities[i],
             };
 
             let key = self.files_info.insert(f);
@@ -555,7 +554,8 @@ impl ViewThread for FilesData {
         let mut query = session.get_torrent_status_diff::<FilesQuery>(hash).await?;
 
         // Deluge is dumb, so this is always Some.
-        query.files.take();
+        // Instead, we rely on the TorrentFileRenamed/TorrentFolderRenamed events.
+        query.files = None;
 
         if query == Default::default() {
             return Ok(());
@@ -570,12 +570,14 @@ impl ViewThread for FilesData {
         };
 
         if let Some(progress) = query.file_progress.take() {
+            assert_eq!(progress.len(), state.files_info.len());
             for (idx, val) in progress.into_iter().enumerate() {
                 state.files_info[idx.into()].progress = val;
             }
         }
 
         if let Some(priorities) = query.file_priorities.take() {
+            assert_eq!(priorities.len(), state.files_info.len());
             for (idx, val) in priorities.into_iter().enumerate() {
                 state.files_info[idx.into()].priority = val;
             }
