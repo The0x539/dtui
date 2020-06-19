@@ -1,6 +1,7 @@
 use super::BuildableTabData;
 use crate::menu;
-use crate::util;
+use crate::simple_slab::SimpleSlab;
+use crate::util::fmt_bytes;
 use crate::views::table::{TableView, TableViewData};
 use crate::views::thread::ViewThread;
 use crate::Selection;
@@ -12,7 +13,6 @@ use cursive::Vec2;
 use deluge_rpc::{FilePriority, InfoHash, Query, Session};
 use itertools::Itertools;
 use serde::Deserialize;
-use slab::Slab;
 use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
@@ -97,10 +97,8 @@ struct FilesQuery {
 pub(crate) struct FilesState {
     active_torrent: Option<InfoHash>,
     rows: Vec<DirEntry>,
-    files_info: Vec<File>,
-    // TODO: write a simpler Slab with more applicable invariants
-    // Would also be usable for files_info.
-    dirs_info: Slab<Dir>,
+    files_info: SimpleSlab<File>,
+    dirs_info: SimpleSlab<Dir>,
     root_dir: usize,
     sort_column: Column,
     descending_sort: bool,
@@ -284,12 +282,12 @@ impl FilesState {
                 priority,
             };
 
-            assert_eq!(self.files_info.len(), i);
-            self.files_info.push(f);
-            let file_name = &self.files_info[i].name;
+            let key = self.files_info.insert(f);
+            assert_eq!(key, i);
+            let file_name = &self.files_info[key].name;
 
-            debug_assert!(!self.dirs_info[cwd].descendants.contains(&i));
-            self.dirs_info[cwd].descendants.push(i);
+            debug_assert!(!self.dirs_info[cwd].descendants.contains(&key));
+            self.dirs_info[cwd].descendants.push(key);
 
             // TODO: Result
             assert!(!self.dirs_info[cwd].children.contains_key(file_name));
@@ -308,7 +306,7 @@ impl FilesState {
         let mut dirs_info = std::mem::take(&mut self.dirs_info);
         let files_info = &self.files_info;
 
-        for (_, dir) in dirs_info.iter_mut() {
+        for dir in dirs_info.iter_mut() {
             dir.size = 0;
             dir.progress = 0.0;
 
@@ -479,7 +477,7 @@ impl TableViewData for FilesState {
 
             (Column::Size, entry) => {
                 let size = self.get_size(entry);
-                printer.print((0, 0), &util::fmt_bytes(size));
+                printer.print((0, 0), &fmt_bytes(size));
             }
 
             (Column::Progress, entry) => {

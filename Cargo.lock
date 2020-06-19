@@ -497,7 +497,6 @@ dependencies = [
  "lazy_static",
  "ryu",
  "serde",
- "slab",
  "static_assertions",
  "tokio",
  "uuid",
