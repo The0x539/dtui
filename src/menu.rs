@@ -17,6 +17,7 @@ use crate::{AppState, SessionHandle};
 
 use crate::views::{
     connection_manager::ConnectionManagerView, remove_torrent::RemoveTorrentPrompt,
+    tabs::files::FileKey,
 };
 
 use deluge_rpc::{FilePriority, InfoHash, Query, Session, TorrentOptions};
@@ -130,7 +131,7 @@ async fn set_single_file_priority(
 async fn set_multi_file_priority(
     session: &Session,
     hash: InfoHash,
-    indices: &[usize],
+    indices: &[FileKey],
     priority: FilePriority,
 ) -> deluge_rpc::Result<()> {
     #[derive(Debug, Clone, Deserialize, Query)]
@@ -143,7 +144,7 @@ async fn set_multi_file_priority(
         response?.file_priorities
     };
     for index in indices {
-        priorities[*index] = priority;
+        priorities[usize::from(*index)] = priority;
     }
 
     let options = TorrentOptions {
@@ -209,9 +210,9 @@ pub fn files_tab_file_menu(
     Callback::from_fn(cb)
 }
 
-pub fn files_tab_folder_menu(
+pub(crate) fn files_tab_folder_menu(
     hash: InfoHash,
-    files: &[usize],
+    files: &[FileKey],
     name: &str,
     position: Vec2,
 ) -> Callback {

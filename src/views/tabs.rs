@@ -57,7 +57,7 @@ trait BuildableTabData: ViewThread + Sized {
 }
 
 mod details;
-mod files;
+pub(crate) mod files;
 mod options;
 mod peers;
 mod status;
