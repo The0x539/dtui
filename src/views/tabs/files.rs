@@ -1,6 +1,6 @@
 use super::BuildableTabData;
 use crate::menu;
-use crate::util::{self, GetIfAllSame};
+use crate::util;
 use crate::views::table::{TableView, TableViewData};
 use crate::views::thread::ViewThread;
 use crate::Selection;
@@ -323,7 +323,9 @@ impl FilesState {
                 .descendants
                 .iter()
                 .map(|id| files_info[*id].priority)
-                .get_if_all_same();
+                .dedup()
+                .exactly_one()
+                .ok();
         }
 
         self.dirs_info = dirs_info;
