@@ -1,8 +1,7 @@
-use super::BuildableTabData;
+use super::{BuildableTabData, TabData};
 use crate::views::spin::SpinView;
 use crate::views::thread::ViewThread;
 use crate::views::{labeled_checkbox::LabeledCheckbox, linear_panel::LinearPanel};
-use crate::Selection;
 use async_trait::async_trait;
 use cursive::traits::Nameable;
 use cursive::traits::Resizable;
@@ -88,7 +87,7 @@ impl OptionsNames {
 }
 
 pub(super) struct OptionsData {
-    selection: Selection,
+    selection: InfoHash,
     current_options_send: watch::Sender<OptionsQuery>,
     apply_notify: Arc<Notify>,
     owner: TextContent,
@@ -106,10 +105,6 @@ impl OptionsData {
         });
 
         self.current_options_send.broadcast(new_options).unwrap();
-
-        let sel = self.get_selection();
-        assert!(sel.is_some());
-        let hash = sel.unwrap();
 
         let options = {
             let c = self.current_options_recv.borrow();
@@ -133,7 +128,9 @@ impl OptionsData {
             }
         };
 
-        session.set_torrent_options(&[hash], &options).await
+        session
+            .set_torrent_options(&[self.selection], &options)
+            .await
     }
 }
 
@@ -143,10 +140,7 @@ impl ViewThread for OptionsData {
         let deadline = time::Instant::now() + time::Duration::from_secs(1);
 
         if task::block_in_place(|| self.pending_options.read().unwrap().is_none()) {
-            let hash = match self.get_selection() {
-                Some(hash) => hash,
-                None => return Ok(()),
-            };
+            let hash = self.selection;
             let options = session.get_torrent_status::<OptionsQuery>(hash).await?;
             self.owner.set_content(&options.owner);
             self.current_options_send.broadcast(options).unwrap();
@@ -163,11 +157,7 @@ impl ViewThread for OptionsData {
     async fn reload(&mut self, session: &Session) -> deluge_rpc::Result<()> {
         task::block_in_place(|| self.pending_options.write().unwrap().take());
 
-        let hash = match self.get_selection() {
-            Some(hash) => hash,
-            None => return Ok(()),
-        };
-
+        let hash = self.selection;
         let options = session.get_torrent_status::<OptionsQuery>(hash).await?;
         self.owner.set_content(&options.owner);
         self.current_options_send.broadcast(options).unwrap();
@@ -176,10 +166,16 @@ impl ViewThread for OptionsData {
     }
 }
 
+impl TabData for OptionsData {
+    fn set_selection(&mut self, selection: InfoHash) {
+        self.selection = selection;
+    }
+}
+
 impl BuildableTabData for OptionsData {
     type V = LinearLayout;
 
-    fn view(selection: Selection) -> (Self::V, Self) {
+    fn view() -> (Self::V, Self) {
         let pending_options = Arc::new(RwLock::new(None));
         let (current_options_send, current_options_recv) = watch::channel(OptionsQuery::default());
         let names = OptionsNames::new();
@@ -330,7 +326,7 @@ impl BuildableTabData for OptionsData {
             .child(col3);
 
         let data = Self {
-            selection,
+            selection: InfoHash::default(),
             current_options_send,
             current_options_recv,
             owner: owner_content,
@@ -339,9 +335,5 @@ impl BuildableTabData for OptionsData {
             names,
         };
         (view, data)
-    }
-
-    fn get_selection(&self) -> Option<InfoHash> {
-        *self.selection.read().unwrap()
     }
 }

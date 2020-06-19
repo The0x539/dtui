@@ -1,7 +1,6 @@
-use super::{column, BuildableTabData};
+use super::{column, BuildableTabData, TabData};
 use crate::util;
 use crate::views::thread::ViewThread;
-use crate::Selection;
 use async_trait::async_trait;
 use cursive::align::HAlign;
 use cursive::views::{LinearLayout, TextContent, TextView};
@@ -24,7 +23,7 @@ struct TorrentDetails {
 }
 
 pub(super) struct DetailsData {
-    selection: Selection,
+    selection: InfoHash,
 
     top: TextContent,
     left: TextContent,
@@ -35,10 +34,7 @@ pub(super) struct DetailsData {
 #[async_trait]
 impl ViewThread for DetailsData {
     async fn update(&mut self, session: &Session) -> deluge_rpc::Result<()> {
-        let hash = match self.get_selection() {
-            Some(hash) => hash,
-            None => return Ok(()),
-        };
+        let hash = self.selection;
 
         let details = session.get_torrent_status::<TorrentDetails>(hash).await?;
 
@@ -74,10 +70,16 @@ impl ViewThread for DetailsData {
     }
 }
 
+impl TabData for DetailsData {
+    fn set_selection(&mut self, selection: InfoHash) {
+        self.selection = selection;
+    }
+}
+
 impl BuildableTabData for DetailsData {
     type V = LinearLayout;
 
-    fn view(selection: Selection) -> (Self::V, Self) {
+    fn view() -> (Self::V, Self) {
         let (top_view, top) = column(&["Name:", "Download Folder:"], HAlign::Left);
         let (left_view, left) = column(&["Total Size:", "Total Files:", "Hash:"], HAlign::Left);
         let (right_view, right) = column(&["Added:", "Completed:", "Pieces:"], HAlign::Left);
@@ -102,7 +104,8 @@ impl BuildableTabData for DetailsData {
             .child(bottom_view);
 
         let data = Self {
-            selection,
+            selection: InfoHash::default(),
+
             top,
             left,
             right,
@@ -110,9 +113,5 @@ impl BuildableTabData for DetailsData {
         };
 
         (view, data)
-    }
-
-    fn get_selection(&self) -> Option<InfoHash> {
-        *self.selection.read().unwrap()
     }
 }

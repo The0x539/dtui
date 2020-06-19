@@ -410,7 +410,7 @@ dependencies = [
 [[package]]
 name = "deluge-rpc"
 version = "0.7.0"
-source = "git+https://github.com/The0x539/rust-deluge-rpc.git?branch=trunk#f84077d0e99c8cd16e681a9d49052aa60aedc182"
+source = "git+https://github.com/The0x539/rust-deluge-rpc.git?branch=trunk#f744797f00b2db658abee00da3ff6b80059edddf"
 dependencies = [
  "deluge-rpc-macro",
  "enum-kinds",

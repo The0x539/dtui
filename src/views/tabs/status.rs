@@ -1,7 +1,6 @@
-use super::{column, BuildableTabData};
+use super::{column, BuildableTabData, TabData};
 use crate::util;
 use crate::views::thread::ViewThread;
-use crate::Selection;
 use async_trait::async_trait;
 use cursive::align::HAlign;
 use cursive::traits::Resizable;
@@ -43,7 +42,7 @@ struct TorrentStatus {
 }
 
 pub(super) struct StatusData {
-    selection: Selection,
+    selection: InfoHash,
 
     progress_label_send: watch::Sender<String>,
     progress_val: Counter,
@@ -54,11 +53,7 @@ pub(super) struct StatusData {
 #[async_trait]
 impl ViewThread for StatusData {
     async fn update(&mut self, session: &Session) -> deluge_rpc::Result<()> {
-        let hash = match self.get_selection() {
-            Some(hash) => hash,
-            None => return Ok(()),
-        };
-
+        let hash = self.selection;
         let status = session.get_torrent_status::<TorrentStatus>(hash).await?;
 
         let mut ryu_buf = ryu::Buffer::new();
@@ -117,10 +112,16 @@ impl ViewThread for StatusData {
     }
 }
 
+impl TabData for StatusData {
+    fn set_selection(&mut self, selection: InfoHash) {
+        self.selection = selection;
+    }
+}
+
 impl BuildableTabData for StatusData {
     type V = LinearLayout;
 
-    fn view(selection: Selection) -> (Self::V, Self) {
+    fn view() -> (Self::V, Self) {
         let (progress_label_send, progress_label_recv) = watch::channel(String::new());
 
         let progress_val = Counter::new(0);
@@ -162,16 +163,12 @@ impl BuildableTabData for StatusData {
         let view = LinearLayout::vertical().child(progress_bar).child(status);
 
         let data = StatusData {
-            selection,
+            selection: InfoHash::default(),
             progress_label_send,
             progress_val,
             columns: [col1_content, col2_content, col3_content],
         };
 
         (view, data)
-    }
-
-    fn get_selection(&self) -> Option<InfoHash> {
-        *self.selection.read().unwrap()
     }
 }

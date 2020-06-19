@@ -48,12 +48,13 @@ impl std::fmt::Display for Tab {
     }
 }
 
-trait BuildableTabData: ViewThread + Sized {
+trait TabData: ViewThread {
+    fn set_selection(&mut self, selection: InfoHash);
+}
+
+trait BuildableTabData: TabData + Sized {
     type V: View;
-
-    fn view(selection: Selection) -> (Self::V, Self);
-
-    fn get_selection(&self) -> Option<InfoHash>;
+    fn view() -> (Self::V, Self);
 }
 
 mod details;
@@ -94,7 +95,7 @@ pub(crate) struct TorrentTabsView {
 }
 
 impl TorrentTabsViewThread {
-    fn get_active_tab(&self) -> &dyn ViewThread {
+    fn get_active_tab(&self) -> &dyn TabData {
         match self.active_tab {
             Tab::Status => &self.status_data,
             Tab::Details => &self.details_data,
@@ -105,7 +106,7 @@ impl TorrentTabsViewThread {
         }
     }
 
-    fn get_active_tab_mut(&mut self) -> &mut dyn ViewThread {
+    fn get_active_tab_mut(&mut self) -> &mut dyn TabData {
         match self.active_tab {
             Tab::Status => &mut self.status_data,
             Tab::Details => &mut self.details_data,
@@ -150,10 +151,18 @@ impl ViewThread for TorrentTabsViewThread {
             self.should_reload = true;
         }
 
+        let selection = self.last_selection;
         if self.should_reload {
             self.should_reload = false;
-            self.get_active_tab_mut().reload(session).await?;
-        } else {
+            let tab = self.get_active_tab_mut();
+            if let Some(sel) = selection {
+                tab.set_selection(sel);
+                tab.reload(session).await?;
+            } else {
+                // TODO
+                // tab.clear();
+            }
+        } else if selection.is_some() {
             self.get_active_tab_mut().update(session).await?;
         }
 
@@ -175,12 +184,12 @@ impl TorrentTabsView {
         selection: Selection,
         selection_notify: Arc<Notify>,
     ) -> Self {
-        let (status_tab, status_data) = status::StatusData::view(selection.clone());
-        let (details_tab, details_data) = details::DetailsData::view(selection.clone());
-        let (options_tab, options_data) = options::OptionsData::view(selection.clone());
-        let (files_tab, files_data) = files::FilesData::view(selection.clone());
-        let (peers_tab, peers_data) = peers::PeersData::view(selection.clone());
-        let (trackers_tab, trackers_data) = trackers::TrackersData::view(selection.clone());
+        let (status_tab, status_data) = status::StatusData::view();
+        let (details_tab, details_data) = details::DetailsData::view();
+        let (options_tab, options_data) = options::OptionsData::view();
+        let (files_tab, files_data) = files::FilesData::view();
+        let (peers_tab, peers_data) = peers::PeersData::view();
+        let (trackers_tab, trackers_data) = trackers::TrackersData::view();
 
         let options_field_names = options_data.names.clone();
         let current_options_recv = options_data.current_options_recv.clone();

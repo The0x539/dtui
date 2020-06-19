@@ -1,10 +1,9 @@
-use super::BuildableTabData;
+use super::{BuildableTabData, TabData};
 use crate::menu;
 use crate::simple_slab::{SimpleSlab, SlabKey};
 use crate::util::fmt_bytes;
 use crate::views::table::{TableView, TableViewData};
 use crate::views::thread::ViewThread;
-use crate::Selection;
 use async_trait::async_trait;
 use cursive::event::Callback;
 use cursive::view::ViewWrapper;
@@ -537,20 +536,15 @@ impl ViewWrapper for FilesView {
     cursive::wrap_impl!(self.inner: TableView<FilesState>);
 }
 
-#[derive(Default)]
 pub(super) struct FilesData {
     state: Arc<RwLock<FilesState>>,
-    selection: Selection,
+    selection: InfoHash,
 }
 
 #[async_trait]
 impl ViewThread for FilesData {
     async fn update(&mut self, session: &Session) -> deluge_rpc::Result<()> {
-        let hash = match self.get_selection() {
-            Some(hash) => hash,
-            None => return Ok(()),
-        };
-
+        let hash = self.selection;
         let mut query = session.get_torrent_status_diff::<FilesQuery>(hash).await?;
 
         // Deluge is dumb, so this is always Some.
@@ -597,11 +591,7 @@ impl ViewThread for FilesData {
     }
 
     async fn reload(&mut self, session: &Session) -> deluge_rpc::Result<()> {
-        let hash = match self.get_selection() {
-            Some(hash) => hash,
-            // TODO: clear out state as necessary
-            None => return Ok(()),
-        };
+        let hash = self.selection;
 
         let query = session.get_torrent_status::<FilesQuery>(hash).await?;
 
@@ -618,13 +608,9 @@ impl ViewThread for FilesData {
         session: &Session,
         event: deluge_rpc::Event,
     ) -> deluge_rpc::Result<()> {
-        let hash = match self.get_selection() {
-            Some(hash) => hash,
-            None => return Ok(()), // No need to reload if nothing was selected to begin with
-        };
         use deluge_rpc::Event::*;
-        if let TorrentFileRenamed(h, _, _) | TorrentFolderRenamed(h, _, _) = event {
-            if hash == h {
+        if let TorrentFileRenamed(hash, _, _) | TorrentFolderRenamed(hash, _, _) = event {
+            if self.selection == hash {
                 // screw it. might've been a simple rename, might've been a move.
                 // either way, our code is fast enough that we can afford to just
                 // rebuild the tree.
@@ -633,6 +619,12 @@ impl ViewThread for FilesData {
             }
         }
         Ok(())
+    }
+}
+
+impl TabData for FilesData {
+    fn set_selection(&mut self, selection: InfoHash) {
+        self.selection = selection;
     }
 }
 
@@ -665,7 +657,7 @@ fn on_right_click(data: &mut FilesState, entry: &DirEntry, position: Vec2, _: Ve
 impl BuildableTabData for FilesData {
     type V = FilesView;
 
-    fn view(selection: Selection) -> (Self::V, Self) {
+    fn view() -> (Self::V, Self) {
         let columns = vec![
             (Column::Filename, 10),
             (Column::Size, 10),
@@ -679,11 +671,10 @@ impl BuildableTabData for FilesData {
         view.inner.set_on_right_click(on_right_click);
 
         let state = view.inner.get_data();
-        let data = FilesData { state, selection };
+        let data = FilesData {
+            state,
+            selection: InfoHash::default(),
+        };
         (view, data)
-    }
-
-    fn get_selection(&self) -> Option<InfoHash> {
-        *self.selection.read().unwrap()
     }
 }

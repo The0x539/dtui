@@ -1,8 +1,7 @@
-use super::BuildableTabData;
+use super::{BuildableTabData, TabData};
 use crate::util;
 use crate::views::table::{TableView, TableViewData};
 use crate::views::thread::ViewThread;
-use crate::Selection;
 use async_trait::async_trait;
 use cursive::Printer;
 use deluge_rpc::{InfoHash, Query, Session};
@@ -195,16 +194,13 @@ impl TableViewData for PeersTableData {
 pub(super) struct PeersData {
     state: Arc<RwLock<PeersTableData>>,
     was_empty: bool,
-    selection: Selection,
+    selection: InfoHash,
 }
 
 #[async_trait]
 impl ViewThread for PeersData {
     async fn update(&mut self, session: &Session) -> deluge_rpc::Result<()> {
-        let hash = match self.get_selection() {
-            Some(hash) => hash,
-            None => return Ok(()),
-        };
+        let hash = self.selection;
 
         let query = session.get_torrent_status::<PeersQuery>(hash).await?;
 
@@ -222,10 +218,7 @@ impl ViewThread for PeersData {
     }
 
     async fn reload(&mut self, session: &Session) -> deluge_rpc::Result<()> {
-        let hash = match self.get_selection() {
-            Some(hash) => hash,
-            None => return Ok(()),
-        };
+        let hash = self.selection;
 
         // Get two different locks, so that we can have a moment of empty data.
         // The alternative is a moment of data for the old torrent.
@@ -245,10 +238,16 @@ impl ViewThread for PeersData {
     }
 }
 
+impl TabData for PeersData {
+    fn set_selection(&mut self, selection: InfoHash) {
+        self.selection = selection;
+    }
+}
+
 impl BuildableTabData for PeersData {
     type V = TableView<PeersTableData>;
 
-    fn view(selection: Selection) -> (Self::V, Self) {
+    fn view() -> (Self::V, Self) {
         let columns = vec![
             (Column::Address, 10),
             (Column::Client, 10),
@@ -263,14 +262,10 @@ impl BuildableTabData for PeersData {
         let state = view.get_data();
         let data = PeersData {
             state,
-            selection,
+            selection: InfoHash::default(),
             was_empty: true,
         };
 
         (view, data)
-    }
-
-    fn get_selection(&self) -> Option<InfoHash> {
-        *self.selection.read().unwrap()
     }
 }

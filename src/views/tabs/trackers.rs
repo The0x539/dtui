@@ -1,7 +1,6 @@
-use super::{column, BuildableTabData};
+use super::{column, BuildableTabData, TabData};
 use crate::util;
 use crate::views::thread::ViewThread;
-use crate::Selection;
 use async_trait::async_trait;
 use cursive::align::HAlign;
 use cursive::traits::Resizable;
@@ -22,18 +21,14 @@ struct TrackersQuery {
 }
 
 pub(super) struct TrackersData {
-    selection: Selection,
+    selection: InfoHash,
     content: TextContent,
 }
 
 #[async_trait]
 impl ViewThread for TrackersData {
     async fn update(&mut self, session: &Session) -> deluge_rpc::Result<()> {
-        let hash = match self.get_selection() {
-            Some(hash) => hash,
-            None => return Ok(()),
-        };
-
+        let hash = self.selection;
         let query = session.get_torrent_status::<TrackersQuery>(hash).await?;
 
         self.content.set_content(
@@ -51,10 +46,16 @@ impl ViewThread for TrackersData {
     }
 }
 
+impl TabData for TrackersData {
+    fn set_selection(&mut self, selection: InfoHash) {
+        self.selection = selection;
+    }
+}
+
 impl BuildableTabData for TrackersData {
     type V = LinearLayout;
 
-    fn view(selection: Selection) -> (Self::V, Self) {
+    fn view() -> (Self::V, Self) {
         let rows = [
             "Total Trackers:",
             "Current Tracker:",
@@ -74,14 +75,10 @@ impl BuildableTabData for TrackersData {
         col_view.insert_child(0, left_col);
 
         let data = TrackersData {
-            selection,
+            selection: InfoHash::default(),
             content: col_content,
         };
 
         (col_view, data)
-    }
-
-    fn get_selection(&self) -> Option<InfoHash> {
-        *self.selection.read().unwrap()
     }
 }
