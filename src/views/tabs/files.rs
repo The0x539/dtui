@@ -5,8 +5,10 @@ use crate::views::table::{TableView, TableViewData};
 use crate::views::thread::ViewThread;
 use crate::Selection;
 use async_trait::async_trait;
+use cursive::event::Callback;
 use cursive::view::ViewWrapper;
 use cursive::Printer;
+use cursive::Vec2;
 use deluge_rpc::{FilePriority, InfoHash, Query, Session};
 use itertools::Itertools;
 use serde::Deserialize;
@@ -630,6 +632,30 @@ impl ViewThread for FilesData {
     }
 }
 
+fn on_double_click(data: &mut FilesState, entry: &DirEntry, _: Vec2, _: Vec2) -> Callback {
+    if let DirEntry::Dir(id) = *entry {
+        let dir = DirEntry::Dir(id);
+        if data.dirs_info[id].collapsed {
+            data.uncollapse_dir(dir);
+        } else {
+            data.collapse_dir(dir);
+        }
+    }
+    Callback::dummy()
+}
+
+fn on_right_click(data: &mut FilesState, entry: &DirEntry, position: Vec2, _: Vec2) -> Callback {
+    let hash = data.active_torrent.unwrap();
+    let full_path = data.get_full_path(*entry);
+    match *entry {
+        DirEntry::Dir(id) => {
+            let files = &data.dirs_info[id].descendants;
+            menu::files_tab_folder_menu(hash, files, &full_path, position)
+        }
+        DirEntry::File(id) => menu::files_tab_file_menu(hash, id, &full_path, position),
+    }
+}
+
 impl BuildableTabData for FilesData {
     type V = FilesView;
 
@@ -643,30 +669,8 @@ impl BuildableTabData for FilesData {
         let mut view = FilesView {
             inner: TableView::new(columns),
         };
-        view.inner
-            .set_on_double_click(|data: &mut FilesState, entry: &DirEntry, _, _| {
-                if let DirEntry::Dir(id) = *entry {
-                    let dir = DirEntry::Dir(id);
-                    if data.dirs_info[id].collapsed {
-                        data.uncollapse_dir(dir);
-                    } else {
-                        data.collapse_dir(dir);
-                    }
-                }
-                cursive::event::Callback::dummy()
-            });
-        view.inner
-            .set_on_right_click(|data: &mut FilesState, entry: &DirEntry, position, _| {
-                let hash = data.active_torrent.unwrap();
-                let full_path = data.get_full_path(*entry);
-                match *entry {
-                    DirEntry::Dir(id) => {
-                        let files = &data.dirs_info[id].descendants;
-                        menu::files_tab_folder_menu(hash, files, &full_path, position)
-                    }
-                    DirEntry::File(id) => menu::files_tab_file_menu(hash, id, &full_path, position),
-                }
-            });
+        view.inner.set_on_double_click(on_double_click);
+        view.inner.set_on_right_click(on_right_click);
 
         let state = view.inner.get_data();
         let data = FilesData { state, selection };
