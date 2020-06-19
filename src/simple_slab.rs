@@ -3,7 +3,51 @@
 // real Slab, there is no need to keep track of vacant slots, and since a SimpleSlab cannot be
 // "sparse", a large, mostly-empty SimpleSlab is not slow to iterate.
 
+use std::marker::PhantomData;
 use std::ops::{Index, IndexMut};
+
+#[derive(Debug)]
+pub struct SlabKey<T>(usize, PhantomData<T>);
+
+impl<T> Default for SlabKey<T> {
+    fn default() -> Self {
+        Self(0, PhantomData)
+    }
+}
+
+impl<T> Clone for SlabKey<T> {
+    fn clone(&self) -> Self {
+        Self(self.0, PhantomData)
+    }
+}
+
+impl<T> Copy for SlabKey<T> {}
+
+impl<T> From<usize> for SlabKey<T> {
+    fn from(value: usize) -> Self {
+        Self(value, PhantomData)
+    }
+}
+
+impl<T> From<SlabKey<T>> for usize {
+    fn from(value: SlabKey<T>) -> Self {
+        value.0
+    }
+}
+
+impl<T> PartialEq for SlabKey<T> {
+    fn eq(&self, other: &Self) -> bool {
+        self.0 == other.0
+    }
+}
+
+impl<T> Eq for SlabKey<T> {}
+
+impl<T> PartialEq<usize> for SlabKey<T> {
+    fn eq(&self, other: &usize) -> bool {
+        self.0 == *other
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SimpleSlab<T>(Vec<T>);
@@ -59,21 +103,21 @@ impl<T> SimpleSlab<T> {
         self.0.into_iter()
     }
 
-    pub fn get(&self, key: usize) -> Option<&T> {
-        self.0.get(key)
+    pub fn get(&self, key: SlabKey<T>) -> Option<&T> {
+        self.0.get(key.0)
     }
 
-    pub fn get_mut(&mut self, key: usize) -> Option<&mut T> {
-        self.0.get_mut(key)
+    pub fn get_mut(&mut self, key: SlabKey<T>) -> Option<&mut T> {
+        self.0.get_mut(key.0)
     }
 
-    pub fn insert(&mut self, val: T) -> usize {
+    pub fn insert(&mut self, val: T) -> SlabKey<T> {
         self.0.push(val);
-        self.len() - 1
+        SlabKey(self.len() - 1, PhantomData)
     }
 
-    pub fn contains(&self, key: usize) -> bool {
-        key < self.len()
+    pub fn contains(&self, key: SlabKey<T>) -> bool {
+        key.0 < self.len()
     }
 
     pub fn drain<'a>(&'a mut self) -> impl Iterator<Item = T> + 'a {
@@ -114,16 +158,16 @@ impl<'a, T> IntoIterator for &'a mut SimpleSlab<T> {
     }
 }
 
-impl<T> Index<usize> for SimpleSlab<T> {
+impl<T> Index<SlabKey<T>> for SimpleSlab<T> {
     type Output = T;
 
-    fn index(&self, index: usize) -> &Self::Output {
-        &self.0[index]
+    fn index(&self, index: SlabKey<T>) -> &Self::Output {
+        &self.0[index.0]
     }
 }
 
-impl<T> IndexMut<usize> for SimpleSlab<T> {
-    fn index_mut(&mut self, index: usize) -> &mut Self::Output {
-        &mut self.0[index]
+impl<T> IndexMut<SlabKey<T>> for SimpleSlab<T> {
+    fn index_mut(&mut self, index: SlabKey<T>) -> &mut Self::Output {
+        &mut self.0[index.0]
     }
 }

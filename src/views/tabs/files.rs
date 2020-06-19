@@ -1,6 +1,6 @@
 use super::BuildableTabData;
 use crate::menu;
-use crate::simple_slab::SimpleSlab;
+use crate::simple_slab::{SimpleSlab, SlabKey};
 use crate::util::fmt_bytes;
 use crate::views::table::{TableView, TableViewData};
 use crate::views::thread::ViewThread;
@@ -40,8 +40,9 @@ impl Default for Column {
     }
 }
 
-struct File {
-    parent: usize,
+#[derive(Debug, Default)]
+pub(crate) struct File {
+    parent: DirKey,
     //index: usize,
     depth: usize,
     name: String,
@@ -50,23 +51,26 @@ struct File {
     priority: FilePriority,
 }
 
-#[derive(Default)]
-struct Dir {
-    parent: Option<usize>,
+#[derive(Debug, Default)]
+pub(crate) struct Dir {
+    parent: Option<DirKey>,
     depth: usize,
     name: String,
     children: HashMap<String, DirEntry>,
-    descendants: Vec<usize>,
+    descendants: Vec<FileKey>,
     size: u64,
     progress: f64,
     priority: Option<FilePriority>,
     collapsed: bool,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) type FileKey = SlabKey<File>;
+pub(crate) type DirKey = SlabKey<Dir>;
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub(crate) enum DirEntry {
-    File(usize), // an index into a Vec<File>
-    Dir(usize),  // an index into a Slab<Dir>
+    File(FileKey), // an index into a Vec<File>
+    Dir(DirKey),   // an index into a Slab<Dir>
 }
 
 impl DirEntry {
@@ -99,7 +103,7 @@ pub(crate) struct FilesState {
     rows: Vec<DirEntry>,
     files_info: SimpleSlab<File>,
     dirs_info: SimpleSlab<Dir>,
-    root_dir: usize,
+    root_dir: DirKey,
     sort_column: Column,
     descending_sort: bool,
 }
@@ -126,7 +130,7 @@ impl FilesState {
         get_size: u64 = size;
         get_progress: f64 = progress;
         get_depth: usize = depth;
-        get_parent: Option<usize> = parent.into();
+        get_parent: Option<DirKey> = parent.into();
         get_priority: Option<FilePriority> = priority.into();
         get_base_name: &str = name.as_str();
     }
@@ -242,7 +246,7 @@ impl FilesState {
                 // TODO: Result
                 assert!(!dir_name.is_empty());
                 depth += 1;
-                self.dirs_info[cwd].descendants.push(i);
+                self.dirs_info[cwd].descendants.push(FileKey::from(i));
 
                 if let Some(entry) = self.dirs_info[cwd].children.get(dir_name) {
                     cwd = match entry {
@@ -293,7 +297,7 @@ impl FilesState {
             assert!(!self.dirs_info[cwd].children.contains_key(file_name));
             self.dirs_info[cwd]
                 .children
-                .insert(file_name.clone(), DirEntry::File(i));
+                .insert(file_name.clone(), DirEntry::File(FileKey::from(i)));
         }
 
         self.files_info.shrink_to_fit();
@@ -364,7 +368,7 @@ impl FilesState {
         self.sort_stable();
     }
 
-    fn compare_dirs(&self, a: usize, b: usize) -> Ordering {
+    fn compare_dirs(&self, a: DirKey, b: DirKey) -> Ordering {
         let (a, b) = (&self.dirs_info[a], &self.dirs_info[b]);
 
         match self.sort_column {
@@ -378,7 +382,7 @@ impl FilesState {
         }
     }
 
-    fn compare_files(&self, a: usize, b: usize) -> Ordering {
+    fn compare_files(&self, a: FileKey, b: FileKey) -> Ordering {
         let (a, b) = (&self.files_info[a], &self.files_info[b]);
 
         match self.sort_column {
@@ -567,13 +571,13 @@ impl ViewThread for FilesData {
 
         if let Some(progress) = query.file_progress.take() {
             for (idx, val) in progress.into_iter().enumerate() {
-                state.files_info[idx].progress = val;
+                state.files_info[idx.into()].progress = val;
             }
         }
 
         if let Some(priorities) = query.file_priorities.take() {
             for (idx, val) in priorities.into_iter().enumerate() {
-                state.files_info[idx].priority = val;
+                state.files_info[idx.into()].priority = val;
             }
         }
 
@@ -647,10 +651,17 @@ fn on_right_click(data: &mut FilesState, entry: &DirEntry, position: Vec2, _: Ve
     let full_path = data.get_full_path(*entry);
     match *entry {
         DirEntry::Dir(id) => {
-            let files = &data.dirs_info[id].descendants;
-            menu::files_tab_folder_menu(hash, files, &full_path, position)
+            let files = data.dirs_info[id]
+                .descendants
+                .iter()
+                .copied()
+                .map(usize::from)
+                .collect::<Vec<usize>>();
+            menu::files_tab_folder_menu(hash, &files, &full_path, position)
         }
-        DirEntry::File(id) => menu::files_tab_file_menu(hash, id, &full_path, position),
+        DirEntry::File(id) => {
+            menu::files_tab_file_menu(hash, usize::from(id), &full_path, position)
+        }
     }
 }
 
