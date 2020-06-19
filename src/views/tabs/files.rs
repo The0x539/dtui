@@ -651,13 +651,16 @@ fn on_right_click(data: &mut FilesState, entry: &DirEntry, position: Vec2, _: Ve
     let full_path = data.get_full_path(*entry);
     match *entry {
         DirEntry::Dir(id) => {
-            let files = data.dirs_info[id]
-                .descendants
-                .iter()
-                .copied()
-                .map(usize::from)
-                .collect::<Vec<usize>>();
-            menu::files_tab_folder_menu(hash, &files, &full_path, position)
+            // FileKey is an alias for SlabKey<File>.
+            // SlabKey<T> is a #[repr(transparent)] wrapper around usize.
+            // Therefore, it is safe to transmute between FileKey and usize.
+            // It is also safe to transmute between &[FileKey] and &[usize].
+            let files: &[usize] = unsafe {
+                let keys: &[FileKey] = &data.dirs_info[id].descendants;
+                static_assertions::assert_eq_size!(FileKey, usize);
+                std::mem::transmute::<&[FileKey], &[usize]>(keys)
+            };
+            menu::files_tab_folder_menu(hash, files, &full_path, position)
         }
         DirEntry::File(id) => {
             menu::files_tab_file_menu(hash, usize::from(id), &full_path, position)

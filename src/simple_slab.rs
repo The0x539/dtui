@@ -7,6 +7,7 @@ use std::marker::PhantomData;
 use std::ops::{Index, IndexMut};
 
 #[derive(Debug)]
+#[repr(transparent)]
 pub struct SlabKey<T>(usize, PhantomData<T>);
 
 impl<T> Default for SlabKey<T> {
