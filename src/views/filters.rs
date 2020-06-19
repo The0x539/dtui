@@ -1,16 +1,16 @@
-use cursive::traits::*;
-use cursive::Printer;
-use fnv::FnvHashMap;
-use cursive::event::{Event, EventResult, MouseEvent, MouseButton};
-use cursive::vec::Vec2;
-use tokio::sync::{watch, Notify};
-use std::collections::BTreeMap;
-use deluge_rpc::{FilterKey, FilterDict, Session};
-use tokio::task::JoinHandle;
-use std::sync::{Arc, RwLock};
-use async_trait::async_trait;
 use super::thread::ViewThread;
 use crate::SessionHandle;
+use async_trait::async_trait;
+use cursive::event::{Event, EventResult, MouseButton, MouseEvent};
+use cursive::traits::*;
+use cursive::vec::Vec2;
+use cursive::Printer;
+use deluge_rpc::{FilterDict, FilterKey, Session};
+use fnv::FnvHashMap;
+use std::collections::BTreeMap;
+use std::sync::{Arc, RwLock};
+use tokio::sync::{watch, Notify};
+use tokio::task::JoinHandle;
 
 use super::scroll::ScrollInner;
 
@@ -45,18 +45,21 @@ struct FiltersViewThread {
 }
 
 impl FiltersViewThread {
-    fn new(
-        categories: Arc<RwLock<Categories>>,
-        filters_recv: watch::Receiver<FilterDict>,
-    ) -> Self {
+    fn new(categories: Arc<RwLock<Categories>>, filters_recv: watch::Receiver<FilterDict>) -> Self {
         let update_notifier = Arc::new(Notify::new());
-        Self { categories, filters_recv, update_notifier }
+        Self {
+            categories,
+            filters_recv,
+            update_notifier,
+        }
     }
 
     fn should_show(&self, key: FilterKey, filter: &(String, u64)) -> bool {
         let (val, hits) = filter;
 
-        if *hits > 0 || false /* TODO: "show zero hits" pref */ {
+        if *hits > 0 || false
+        /* TODO: "show zero hits" pref */
+        {
             true
         } else if self.filters_recv.borrow().get(&key).contains(&val) {
             true
@@ -91,7 +94,13 @@ impl FiltersViewThread {
 
         for (key, mut filters) in new_tree.into_iter() {
             filters.retain(|filter| self.should_show(key, filter));
-            categories.insert(key, Category { filters, collapsed: false });
+            categories.insert(
+                key,
+                Category {
+                    filters,
+                    collapsed: false,
+                },
+            );
         }
 
         if let Some(owners) = categories.get_mut(&FilterKey::Owner) {
@@ -188,7 +197,7 @@ impl FiltersView {
             Some(Row::Parent(key)) => {
                 let x = &mut categories.get_mut(&key).unwrap().collapsed;
                 *x = !*x;
-            },
+            }
             Some(Row::Child(key, idx)) => {
                 let filters = &mut categories.get_mut(&key).unwrap().filters;
 
@@ -201,7 +210,9 @@ impl FiltersView {
                     if (key, val.as_str()) != (FilterKey::Owner, "") {
                         for i in 0..filters.len() {
                             if filters[i].0 == val {
-                                if filters[i].1 == 0 { filters.remove(i); }
+                                if filters[i].1 == 0 {
+                                    filters.remove(i);
+                                }
                                 break;
                             }
                         }
@@ -214,7 +225,7 @@ impl FiltersView {
                     .expect("Couldn't send new view filters");
 
                 self.filters_notify.notify();
-            },
+            }
             None => (),
         }
     }
@@ -260,7 +271,7 @@ impl ScrollInner for FiltersView {
                     '▾'
                 };
                 printer.print((0, 0), &format!("{} {}", c, key));
-            },
+            }
             Some(Row::Child(key, idx)) => {
                 let (filter, hits) = &categories[&key].filters[idx];
                 let c = if self.active_filters.get(&key) == Some(filter) {
@@ -274,10 +285,13 @@ impl ScrollInner for FiltersView {
                     (FilterKey::Label, "") => "No Label",
                     (_, s) => s,
                 };
-                let nspaces = printer.size.x.saturating_sub(3 + filter.len() + digit_width(*hits));
+                let nspaces = printer
+                    .size
+                    .x
+                    .saturating_sub(3 + filter.len() + digit_width(*hits));
                 let spaces = " ".repeat(nspaces);
                 printer.print((0, 0), &format!(" {} {}{}{}", c, filter, spaces, hits));
-            },
+            }
             None => (),
         }
     }
@@ -287,27 +301,35 @@ impl View for FiltersView {
     fn draw(&self, printer: &Printer) {
         for y in 0..printer.output_size.y {
             let row = y + printer.content_offset.y;
-            let printer = printer
-                .offset((0, row))
-                .cropped((printer.output_size.x, 1));
+            let printer = printer.offset((0, row)).cropped((printer.output_size.x, 1));
             self.draw_row(&printer, row);
         }
     }
 
     fn required_size(&mut self, _: Vec2) -> Vec2 {
         let categories = self.categories.read().unwrap();
-        (Self::content_width(&categories), Self::content_height(&categories)).into()
+        (
+            Self::content_width(&categories),
+            Self::content_height(&categories),
+        )
+            .into()
     }
 
-    fn take_focus(&mut self, _: cursive::direction::Direction) -> bool { true }
+    fn take_focus(&mut self, _: cursive::direction::Direction) -> bool {
+        true
+    }
 
     fn on_event(&mut self, event: Event) -> EventResult {
         match event {
-            Event::Mouse { offset, position, event } => match event {
+            Event::Mouse {
+                offset,
+                position,
+                event,
+            } => match event {
                 MouseEvent::Press(MouseButton::Left) => {
                     self.click(position.y.saturating_sub(offset.y));
                     EventResult::Consumed(None)
-                },
+                }
                 _ => EventResult::Ignored,
             },
             _ => EventResult::Ignored,

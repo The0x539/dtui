@@ -1,13 +1,13 @@
 use super::{column, BuildableTabData};
-use crate::views::thread::ViewThread;
-use deluge_rpc::{Query, InfoHash, Session};
-use serde::Deserialize;
-use cursive::views::{TextContent, LinearLayout, TextView};
-use cursive::align::HAlign;
 use crate::util;
-use async_trait::async_trait;
-use static_assertions::const_assert_eq;
+use crate::views::thread::ViewThread;
 use crate::Selection;
+use async_trait::async_trait;
+use cursive::align::HAlign;
+use cursive::views::{LinearLayout, TextContent, TextView};
+use deluge_rpc::{InfoHash, Query, Session};
+use serde::Deserialize;
+use static_assertions::const_assert_eq;
 
 #[derive(Debug, Clone, Deserialize, Query)]
 struct TorrentDetails {
@@ -42,27 +42,33 @@ impl ViewThread for DetailsData {
 
         let details = session.get_torrent_status::<TorrentDetails>(hash).await?;
 
-        self.top.set_content([
-            details.name,
-            details.download_location,
-        ].join("\n"));
+        self.top
+            .set_content([details.name, details.download_location].join("\n"));
 
-        self.left.set_content([
-            util::fmt_bytes(details.total_size),
-            details.num_files.to_string(),
-            hash.to_string(),
-        ].join("\n"));
+        self.left.set_content(
+            [
+                util::fmt_bytes(details.total_size),
+                details.num_files.to_string(),
+                hash.to_string(),
+            ]
+            .join("\n"),
+        );
 
-        self.right.set_content([
-            util::fdate(details.time_added),
-            util::fdate_or_dash(details.completed_time),
-            format!("{} ({})", details.num_pieces, util::fmt_bytes(details.piece_length).replace(".0", "")),
-        ].join("\n"));
+        self.right.set_content(
+            [
+                util::fdate(details.time_added),
+                util::fdate_or_dash(details.completed_time),
+                format!(
+                    "{} ({})",
+                    details.num_pieces,
+                    util::fmt_bytes(details.piece_length).replace(".0", "")
+                ),
+            ]
+            .join("\n"),
+        );
 
-        self.bottom.set_content([
-            details.creator,
-            details.comment,
-        ].join("\n"));
+        self.bottom
+            .set_content([details.creator, details.comment].join("\n"));
 
         Ok(())
     }
@@ -95,7 +101,13 @@ impl BuildableTabData for DetailsData {
             .child(middle_view)
             .child(bottom_view);
 
-        let data = Self { selection, top, left, right, bottom };
+        let data = Self {
+            selection,
+            top,
+            left,
+            right,
+            bottom,
+        };
 
         (view, data)
     }

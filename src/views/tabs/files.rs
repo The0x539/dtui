@@ -1,22 +1,27 @@
-use deluge_rpc::{FilePriority, Query, Session, InfoHash};
-use serde::Deserialize;
-use slab::Slab;
-use std::collections::HashMap;
-use std::cmp::Ordering;
-use cursive::Printer;
-use crate::util::{self, GetIfAllSame};
-use std::sync::{Arc, RwLock};
 use super::BuildableTabData;
+use crate::menu;
+use crate::util::{self, GetIfAllSame};
+use crate::views::table::{TableView, TableViewData};
+use crate::views::thread::ViewThread;
+use crate::Selection;
 use async_trait::async_trait;
 use cursive::view::ViewWrapper;
-use crate::views::table::{TableViewData, TableView};
+use cursive::Printer;
+use deluge_rpc::{FilePriority, InfoHash, Query, Session};
 use itertools::Itertools;
-use crate::menu;
-use crate::Selection;
-use crate::views::thread::ViewThread;
+use serde::Deserialize;
+use slab::Slab;
+use std::cmp::Ordering;
+use std::collections::HashMap;
+use std::sync::{Arc, RwLock};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum Column { Filename, Size, Progress, Priority }
+pub(crate) enum Column {
+    Filename,
+    Size,
+    Progress,
+    Priority,
+}
 impl AsRef<str> for Column {
     fn as_ref(&self) -> &'static str {
         match self {
@@ -27,7 +32,11 @@ impl AsRef<str> for Column {
         }
     }
 }
-impl Default for Column { fn default() -> Self { Self::Filename } }
+impl Default for Column {
+    fn default() -> Self {
+        Self::Filename
+    }
+}
 
 struct File {
     parent: usize,
@@ -195,7 +204,11 @@ impl FilesState {
     }
 
     fn build_tree(&mut self, query: FilesQuery) {
-        let FilesQuery { files, file_progress, file_priorities } = query;
+        let FilesQuery {
+            files,
+            file_progress,
+            file_priorities,
+        } = query;
 
         assert_eq!(files.len(), file_progress.len());
         assert_eq!(files.len(), file_priorities.len());
@@ -236,7 +249,7 @@ impl FilesState {
                         DirEntry::Dir(id) => {
                             assert_eq!(depth, self.dirs_info[*id].depth);
                             *id
-                        },
+                        }
                         // TODO: Result
                         DirEntry::File(_) => panic!("Unexpected file"),
                     };
@@ -306,7 +319,8 @@ impl FilesState {
 
             dir.progress /= dir.descendants.len() as f64;
 
-            dir.priority = dir.descendants
+            dir.priority = dir
+                .descendants
                 .iter()
                 .map(|id| files_info[*id].priority)
                 .get_if_all_same();
@@ -330,11 +344,7 @@ impl FilesState {
         // or something
         // I don't really know
         // this is a really complicated problem
-        let mut children: Vec<DirEntry> = self.dirs_info[id]
-            .children
-            .values()
-            .copied()
-            .collect();
+        let mut children: Vec<DirEntry> = self.dirs_info[id].children.values().copied().collect();
 
         children.sort_unstable_by(|a, b| self.compare_rows(a, b));
 
@@ -358,7 +368,10 @@ impl FilesState {
         match self.sort_column {
             Column::Filename => a.name.cmp(&b.name).reverse(),
             Column::Size => a.size.cmp(&b.size),
-            Column::Progress => a.progress.partial_cmp(&b.progress).expect("well-behaved floats"),
+            Column::Progress => a
+                .progress
+                .partial_cmp(&b.progress)
+                .expect("well-behaved floats"),
             Column::Priority => a.priority.cmp(&b.priority),
         }
     }
@@ -369,7 +382,10 @@ impl FilesState {
         match self.sort_column {
             Column::Filename => a.name.cmp(&b.name).reverse(),
             Column::Size => a.size.cmp(&b.size),
-            Column::Progress => a.progress.partial_cmp(&b.progress).expect("well-behaved floats"),
+            Column::Progress => a
+                .progress
+                .partial_cmp(&b.progress)
+                .expect("well-behaved floats"),
             Column::Priority => a.priority.cmp(&b.priority),
         }
     }
@@ -405,11 +421,12 @@ impl FilesState {
 
         self.push_children(&mut new_entries, dir);
 
-        let idx = self.rows
+        let idx = self
+            .rows
             .binary_search_by(|b| self.compare_rows(&b, &dir))
             .unwrap();
 
-        self.rows.splice(idx+1..idx+1, new_entries);
+        self.rows.splice(idx + 1..idx + 1, new_entries);
     }
 }
 
@@ -449,22 +466,22 @@ impl TableViewData for FilesState {
                 let c = if dir.collapsed { '▸' } else { '▾' };
                 let text = format!("{} {}", c, dir.name);
                 printer.print((dir.depth, 0), &text);
-            },
+            }
 
             (Column::Filename, DirEntry::File(id)) => {
                 let file = &self.files_info[id];
                 printer.print((file.depth, 0), &file.name);
-            },
+            }
 
             (Column::Size, entry) => {
                 let size = self.get_size(entry);
                 printer.print((0, 0), &util::fmt_bytes(size));
-            },
+            }
 
             (Column::Progress, entry) => {
                 let progress = self.get_progress(entry);
                 printer.print((0, 0), &progress.to_string());
-            },
+            }
 
             (Column::Priority, entry) => {
                 let priority = self.get_priority(entry);
@@ -476,7 +493,7 @@ impl TableViewData for FilesState {
                     FilePriority::High => "High",
                 });
                 printer.print((0, 0), s);
-            },
+            }
         }
     }
 
@@ -499,7 +516,9 @@ impl TableViewData for FilesState {
             (DirEntry::File(a), DirEntry::File(b)) => self.compare_files(a, b),
         };
 
-        if self.descending_sort { ord = ord.reverse(); }
+        if self.descending_sort {
+            ord = ord.reverse();
+        }
 
         ord
     }
@@ -586,7 +605,11 @@ impl ViewThread for FilesData {
         Ok(())
     }
 
-    async fn on_event(&mut self, session: &Session, event: deluge_rpc::Event) -> deluge_rpc::Result<()> {
+    async fn on_event(
+        &mut self,
+        session: &Session,
+        event: deluge_rpc::Event,
+    ) -> deluge_rpc::Result<()> {
         let hash = match self.get_selection() {
             Some(hash) => hash,
             None => return Ok(()), // No need to reload if nothing was selected to begin with
@@ -615,31 +638,33 @@ impl BuildableTabData for FilesData {
             (Column::Progress, 10),
             (Column::Priority, 10),
         ];
-        let mut view = FilesView { inner: TableView::new(columns) };
-        view.inner.set_on_double_click(|data: &mut FilesState, entry: &DirEntry, _, _| {
-            if let DirEntry::Dir(id) = *entry {
-                let dir = DirEntry::Dir(id);
-                if data.dirs_info[id].collapsed {
-                    data.uncollapse_dir(dir);
-                } else {
-                    data.collapse_dir(dir);
+        let mut view = FilesView {
+            inner: TableView::new(columns),
+        };
+        view.inner
+            .set_on_double_click(|data: &mut FilesState, entry: &DirEntry, _, _| {
+                if let DirEntry::Dir(id) = *entry {
+                    let dir = DirEntry::Dir(id);
+                    if data.dirs_info[id].collapsed {
+                        data.uncollapse_dir(dir);
+                    } else {
+                        data.collapse_dir(dir);
+                    }
                 }
-            }
-            cursive::event::Callback::dummy()
-        });
-        view.inner.set_on_right_click(|data: &mut FilesState, entry: &DirEntry, position, _| {
-            let hash = data.active_torrent.unwrap();
-            let full_path = data.get_full_path(*entry);
-            match *entry {
-                DirEntry::Dir(id) => {
-                    let files = &data.dirs_info[id].descendants;
-                    menu::files_tab_folder_menu(hash, files, &full_path, position)
-                },
-                DirEntry::File(id) => {
-                    menu::files_tab_file_menu(hash, id, &full_path, position)
-                },
-            }
-        });
+                cursive::event::Callback::dummy()
+            });
+        view.inner
+            .set_on_right_click(|data: &mut FilesState, entry: &DirEntry, position, _| {
+                let hash = data.active_torrent.unwrap();
+                let full_path = data.get_full_path(*entry);
+                match *entry {
+                    DirEntry::Dir(id) => {
+                        let files = &data.dirs_info[id].descendants;
+                        menu::files_tab_folder_menu(hash, files, &full_path, position)
+                    }
+                    DirEntry::File(id) => menu::files_tab_file_menu(hash, id, &full_path, position),
+                }
+            });
 
         let state = view.inner.get_data();
         let data = FilesData { state, selection };

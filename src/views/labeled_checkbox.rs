@@ -1,8 +1,8 @@
-use cursive::view::ViewWrapper;
-use cursive::views::{PaddedView, Checkbox};
-use cursive::Printer;
 use cursive::event::EventResult;
+use cursive::view::ViewWrapper;
+use cursive::views::{Checkbox, PaddedView};
 use cursive::Cursive;
+use cursive::Printer;
 
 use crate::form::Form;
 
@@ -33,7 +33,8 @@ impl LabeledCheckbox {
     }
 
     pub fn disabled(mut self) -> Self {
-        self.disable(); self
+        self.disable();
+        self
     }
 
     pub fn enable(&mut self) {
@@ -41,7 +42,8 @@ impl LabeledCheckbox {
     }
 
     pub fn enabled(mut self) -> Self {
-        self.enable(); self
+        self.enable();
+        self
     }
 
     pub fn set_enabled(&mut self, enabled: bool) {
@@ -49,7 +51,8 @@ impl LabeledCheckbox {
     }
 
     pub fn with_enabled(mut self, enabled: bool) -> Self {
-        self.set_enabled(enabled); self
+        self.set_enabled(enabled);
+        self
     }
 
     pub fn is_enabled(&self) -> bool {
@@ -61,7 +64,8 @@ impl LabeledCheckbox {
     }
 
     pub fn on_change<F: 'static + Fn(&mut Cursive, bool)>(mut self, on_change: F) -> Self {
-        self.set_on_change(on_change); self
+        self.set_on_change(on_change);
+        self
     }
 
     pub fn toggle(&mut self) -> EventResult {
@@ -73,7 +77,8 @@ impl LabeledCheckbox {
     }
 
     pub fn checked(mut self) -> Self {
-        self.check(); self
+        self.check();
+        self
     }
 
     pub fn is_checked(&self) -> bool {
@@ -85,7 +90,8 @@ impl LabeledCheckbox {
     }
 
     pub fn unchecked(mut self) -> Self {
-        self.uncheck(); self
+        self.uncheck();
+        self
     }
 
     pub fn set_checked(&mut self, checked: bool) -> EventResult {
@@ -93,7 +99,8 @@ impl LabeledCheckbox {
     }
 
     pub fn with_checked(mut self, checked: bool) -> Self {
-        self.set_checked(checked); self
+        self.set_checked(checked);
+        self
     }
 }
 

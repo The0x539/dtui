@@ -1,19 +1,21 @@
 use super::BuildableTabData;
-use deluge_rpc::{Query, InfoHash, Session};
-use serde::Deserialize;
-use cursive::views::{EditView, LinearLayout, TextView, DummyView, Button, Panel, EnableableView, TextContent};
-use cursive::traits::Resizable;
-use async_trait::async_trait;
 use crate::views::spin::SpinView;
-use tokio::sync::watch;
-use crate::views::{linear_panel::LinearPanel, labeled_checkbox::LabeledCheckbox};
+use crate::views::thread::ViewThread;
+use crate::views::{labeled_checkbox::LabeledCheckbox, linear_panel::LinearPanel};
+use crate::Selection;
+use async_trait::async_trait;
+use cursive::traits::Nameable;
+use cursive::traits::Resizable;
+use cursive::views::{
+    Button, DummyView, EditView, EnableableView, LinearLayout, Panel, TextContent, TextView,
+};
+use deluge_rpc::{InfoHash, Query, Session};
+use serde::Deserialize;
 use std::sync::{Arc, RwLock};
+use tokio::sync::watch;
 use tokio::sync::Notify;
 use tokio::task;
 use tokio::time;
-use cursive::traits::Nameable;
-use crate::Selection;
-use crate::views::thread::ViewThread;
 
 #[derive(Default, Debug, Clone, Deserialize, Query)]
 pub(super) struct OptionsQuery {
@@ -160,7 +162,7 @@ impl ViewThread for OptionsData {
 
     async fn reload(&mut self, session: &Session) -> deluge_rpc::Result<()> {
         task::block_in_place(|| self.pending_options.write().unwrap().take());
-        
+
         let hash = match self.get_selection() {
             Some(hash) => hash,
             None => return Ok(()),
@@ -183,19 +185,17 @@ impl BuildableTabData for OptionsData {
         let names = OptionsNames::new();
 
         macro_rules! set {
-            ($obj:ident.$field:ident) => {
-                {
-                    let cloned_arc = $obj.clone();
-                    let current_options_recv = current_options_recv.clone();
-                    move |_, v| {
-                        cloned_arc
-                            .write()
-                            .unwrap()
-                            .get_or_insert_with(|| current_options_recv.borrow().clone())
-                            .$field = v;
-                    }
+            ($obj:ident.$field:ident) => {{
+                let cloned_arc = $obj.clone();
+                let current_options_recv = current_options_recv.clone();
+                move |_, v| {
+                    cloned_arc
+                        .write()
+                        .unwrap()
+                        .get_or_insert_with(|| current_options_recv.borrow().clone())
+                        .$field = v;
                 }
-            }
+            }};
         }
 
         let bandwidth_limits = {
@@ -254,8 +254,8 @@ impl BuildableTabData for OptionsData {
             };
 
             let apply_notify = apply_notify.clone();
-            let apply = Button::new("Apply", move |_| apply_notify.notify())
-                .with_name(&names.apply_button);
+            let apply =
+                Button::new("Apply", move |_| apply_notify.notify()).with_name(&names.apply_button);
             let apply_panel = Panel::new(apply);
 
             LinearLayout::vertical()
@@ -268,8 +268,8 @@ impl BuildableTabData for OptionsData {
         let owner_content = TextContent::new("");
 
         let col3 = {
-            let owner_text = TextView::new_with_content(owner_content.clone())
-                .with_name(&names.owner);
+            let owner_text =
+                TextView::new_with_content(owner_content.clone()).with_name(&names.owner);
 
             let owner = LinearLayout::horizontal()
                 .child(TextView::new("Owner: "))

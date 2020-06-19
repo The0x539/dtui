@@ -1,10 +1,10 @@
-use std::cmp::{PartialEq, Ordering};
-use std::sync::{Arc, RwLock};
+use std::cmp::{Ordering, PartialEq};
 use std::ops::Deref;
+use std::sync::{Arc, RwLock};
 
 use super::{
-    table::{TableViewData, TableView},
     labeled_checkbox::LabeledCheckbox,
+    table::{TableView, TableViewData},
 };
 use crate::config;
 use crate::form::Form;
@@ -15,16 +15,20 @@ use tokio::task;
 use deluge_rpc::Session;
 
 use cursive::{
-    Printer,
-    views::{Button, LinearLayout, Panel, DummyView},
     view::ViewWrapper,
+    views::{Button, DummyView, LinearLayout, Panel},
+    Printer,
 };
 use uuid::Uuid;
 
 type FnvIndexMap<K, V> = indexmap::IndexMap<K, V, fnv::FnvBuildHasher>;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-pub(crate) enum Column { Status, Host, Version }
+pub(crate) enum Column {
+    Status,
+    Host,
+    Version,
+}
 impl AsRef<str> for Column {
     fn as_ref(&self) -> &'static str {
         match self {
@@ -53,9 +57,21 @@ impl Connection {
 
 impl From<config::Host> for Connection {
     fn from(val: config::Host) -> Self {
-        let config::Host { username, password, port, address } = val;
+        let config::Host {
+            username,
+            password,
+            port,
+            address,
+        } = val;
         let (version, session) = Default::default();
-        Self { username, password, port, address, version, session }
+        Self {
+            username,
+            password,
+            port,
+            address,
+            version,
+            session,
+        }
     }
 }
 
@@ -86,12 +102,22 @@ impl TableViewData for ConnectionTableData {
     type RowValue = Connection;
     type Rows = Vec<Uuid>;
 
-    fn sort_column(&self) -> Self::Column { Column::Host }
-    fn descending_sort(&self) -> bool { true }
+    fn sort_column(&self) -> Self::Column {
+        Column::Host
+    }
+    fn descending_sort(&self) -> bool {
+        true
+    }
 
-    fn rows(&self) -> &Self::Rows { &self.rows }
-    fn rows_mut(&mut self) -> &mut Self::Rows { &mut self.rows }
-    fn set_rows(&mut self, val: Self::Rows) { self.rows = val; }
+    fn rows(&self) -> &Self::Rows {
+        &self.rows
+    }
+    fn rows_mut(&mut self) -> &mut Self::Rows {
+        &mut self.rows
+    }
+    fn set_rows(&mut self, val: Self::Rows) {
+        self.rows = val;
+    }
 
     fn set_sort_column(&mut self, _: Self::Column) {}
     fn set_descending_sort(&mut self, _: bool) {}
@@ -117,13 +143,16 @@ impl TableViewData for ConnectionTableData {
                 } else {
                     print("Offline");
                 }
-            },
-            Column::Host => print(&format!("{}@{}:{}", connection.username, connection.address, connection.port)),
+            }
+            Column::Host => print(&format!(
+                "{}@{}:{}",
+                connection.username, connection.address, connection.port
+            )),
             Column::Version => {
                 if let Some(s) = connection.version.read().unwrap().deref() {
                     print(s);
                 }
-            },
+            }
         }
     }
 }
@@ -158,7 +187,8 @@ impl ConnectionManagerView {
         let cfg = config::get_config();
         let cmgr = &cfg.read().unwrap().connection_manager;
 
-        let connections: FnvIndexMap<Uuid, Connection> = cmgr.hosts
+        let connections: FnvIndexMap<Uuid, Connection> = cmgr
+            .hosts
             .iter()
             .map(|(id, host)| (*id, host.clone().into()))
             .collect();
@@ -170,7 +200,11 @@ impl ConnectionManagerView {
 
         let auto_connect = current_host.get_id() == autoconnect_host;
 
-        let cols = vec![(Column::Status, 9), (Column::Host, 50), (Column::Version, 11)];
+        let cols = vec![
+            (Column::Status, 9),
+            (Column::Host, 50),
+            (Column::Version, 11),
+        ];
         let table = TableView::<ConnectionTableData>::new(cols);
         let table_data = table.get_data();
         {
@@ -181,7 +215,11 @@ impl ConnectionManagerView {
             data.autoconnect_host = autoconnect_host;
             if let Some((id, session)) = current_host.into_both() {
                 data.current_host.replace(id);
-                data.connections[&id].session.write().unwrap().replace(session);
+                data.connections[&id]
+                    .session
+                    .write()
+                    .unwrap()
+                    .replace(session);
             }
 
             for connection in data.connections.values_mut() {
@@ -207,11 +245,11 @@ impl ConnectionManagerView {
             .child(Button::new("Stop Daemon", |_| ()));
 
         let startup_options = {
-            let auto_connect_checkbox = LabeledCheckbox::new("Auto-connect to selected daemon")
-                .with_checked(auto_connect);
+            let auto_connect_checkbox =
+                LabeledCheckbox::new("Auto-connect to selected daemon").with_checked(auto_connect);
 
-            let hide_dialog_checkbox = LabeledCheckbox::new("Hide this dialog")
-                .with_checked(hide_dialog);
+            let hide_dialog_checkbox =
+                LabeledCheckbox::new("Hide this dialog").with_checked(hide_dialog);
 
             let content = LinearLayout::vertical()
                 .child(auto_connect_checkbox)
@@ -245,20 +283,17 @@ impl Form for ConnectionManagerView {
             .ok()
             .unwrap();
 
-        let data = table.get_data();
+        let data: Arc<RwLock<ConnectionTableData>> = table.get_data();
 
         // TODO: Save prefs BEFORE THIS POINT.
         // Starting now, there will be early returns.
         let selected: Uuid = table.get_selection().copied()?;
 
-        std::mem::drop(table);
-        let mut data = Arc::try_unwrap(data) // Arc<RwLock<T>> -> Result<RwLock<T>, Arc<RwLock<T>>>
-            .ok()                            // Result<RwLock<T>, Arc<RwLock<T>>> -> Option<RwLock<T>>
-            .unwrap()                        // Option<RwLock<T>> -> RwLock<T>
-            .into_inner()                    // RwLock<T> -> LockResult<T>
-            .unwrap();                       // LockResult<T> -> T
+        drop(table);
+        let mut data = Arc::try_unwrap(data).ok().unwrap().into_inner().unwrap();
 
-        let connection = data.connections
+        let connection = data
+            .connections
             .remove(&selected)
             .expect("No selection; the connection button ought to be disabled.");
 

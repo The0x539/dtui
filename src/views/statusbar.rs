@@ -1,17 +1,17 @@
+use super::thread::ViewThread;
+use crate::util;
+use crate::SessionHandle;
+use async_trait::async_trait;
 use cursive::traits::*;
 use cursive::Printer;
-use crate::util;
-use std::net::IpAddr;
+use deluge_rpc::{Query, Session};
 use serde::Deserialize;
-use deluge_rpc::{Session, Query};
-use tokio::task::JoinHandle;
-use tokio::sync::watch;
-use tokio::time;
+use std::fmt::{self, Display, Formatter};
+use std::net::IpAddr;
 use std::sync::{Arc, RwLock};
-use std::fmt::{Display, Formatter, self};
-use super::thread::ViewThread;
-use async_trait::async_trait;
-use crate::SessionHandle;
+use tokio::sync::watch;
+use tokio::task::JoinHandle;
+use tokio::time;
 
 #[derive(Default, Debug, Clone, Copy)]
 struct StatusBarData {
@@ -49,18 +49,32 @@ struct ConfigQuery {
 impl Display for StatusBarData {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         f.write_str(" ⇄ ")?;
-        f.write_str(&util::fmt_pair(util::fmt_bytes, self.num_peers, self.max_peers))?;
+        f.write_str(&util::fmt_pair(
+            util::fmt_bytes,
+            self.num_peers,
+            self.max_peers,
+        ))?;
         f.write_str(" ")?;
 
         f.write_str(" ↓ ")?;
-        f.write_str(&util::fmt_speed_pair(self.download_rate, self.max_download_rate))?;
+        f.write_str(&util::fmt_speed_pair(
+            self.download_rate,
+            self.max_download_rate,
+        ))?;
         f.write_str(" ")?;
 
         f.write_str(" ↑ ")?;
-        f.write_str(&util::fmt_speed_pair(self.upload_rate, self.max_upload_rate))?;
+        f.write_str(&util::fmt_speed_pair(
+            self.upload_rate,
+            self.max_upload_rate,
+        ))?;
         f.write_str(" ")?;
 
-        write!(f, " ⇵ {}:{} B/s ", self.protocol_traffic.0, self.protocol_traffic.1)?;
+        write!(
+            f,
+            " ⇵ {}:{} B/s ",
+            self.protocol_traffic.0, self.protocol_traffic.1
+        )?;
 
         write!(f, " 💾 {} ", util::fmt_bytes(self.free_space))?;
 
@@ -86,9 +100,7 @@ struct StatusBarViewThread {
 }
 
 impl StatusBarViewThread {
-    pub(crate) fn new(
-        data: Arc<RwLock<StatusBarData>>,
-    ) -> Self {
+    pub(crate) fn new(data: Arc<RwLock<StatusBarData>>) -> Self {
         Self { data }
     }
 }
@@ -103,7 +115,8 @@ impl ViewThread for StatusBarViewThread {
             session.get_free_space(None),
         )?;
 
-        /* stupid async borrow checker */ {
+        /* stupid async borrow checker */
+        {
             let mut data = self.data.write().unwrap();
 
             data.ip = Some(ip);
@@ -119,7 +132,7 @@ impl ViewThread for StatusBarViewThread {
 
             data.max_peers = match config.max_connections_global {
                 n if n > 0 => Some(n as u64),
-                _ => None
+                _ => None,
             };
             data.max_download_rate = config.max_download_speed;
             data.max_upload_rate = config.max_upload_speed;
@@ -128,7 +141,9 @@ impl ViewThread for StatusBarViewThread {
         Ok(())
     }
 
-    fn tick(&self) -> time::Duration { time::Duration::from_secs(1) }
+    fn tick(&self) -> time::Duration {
+        time::Duration::from_secs(1)
+    }
 }
 
 impl StatusBarView {

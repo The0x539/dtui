@@ -1,32 +1,22 @@
-use std::sync::{Arc, RwLock};
-use deluge_rpc::{Session, InfoHash};
 use super::thread::ViewThread;
 use async_trait::async_trait;
-use tokio::sync::{watch, Notify};
-use cursive_tabs::TabPanel;
-use tokio::task::{self, JoinHandle};
-use cursive::traits::*;
-use cursive::view::ViewWrapper;
 use cursive::align::HAlign;
-use cursive::vec ::Vec2;
+use cursive::traits::*;
+use cursive::vec::Vec2;
+use cursive::view::ViewWrapper;
 use cursive::views::{
-    TextView,
-    LinearLayout,
-    DummyView,
-    TextContent,
-    EnableableView,
-    Panel,
-    Button,
-    EditView,
+    Button, DummyView, EditView, EnableableView, LinearLayout, Panel, TextContent, TextView,
 };
+use cursive_tabs::TabPanel;
+use deluge_rpc::{InfoHash, Session};
 use futures::FutureExt;
+use std::sync::{Arc, RwLock};
+use tokio::sync::{watch, Notify};
+use tokio::task::{self, JoinHandle};
 
 use crate::{Selection, SessionHandle};
 
-use crate::views::{
-    labeled_checkbox::LabeledCheckbox,
-    spin::SpinView,
-};
+use crate::views::{labeled_checkbox::LabeledCheckbox, spin::SpinView};
 
 fn column(rows: &[&str], h_align: HAlign) -> (LinearLayout, TextContent) {
     let labels = TextView::new(rows.join("\n")).effect(cursive::theme::Effect::Bold);
@@ -43,7 +33,14 @@ fn column(rows: &[&str], h_align: HAlign) -> (LinearLayout, TextContent) {
 }
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
-pub(crate) enum Tab { Status, Details, Options, Files, Peers, Trackers }
+pub(crate) enum Tab {
+    Status,
+    Details,
+    Options,
+    Files,
+    Peers,
+    Trackers,
+}
 
 impl std::fmt::Display for Tab {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
@@ -59,11 +56,11 @@ trait BuildableTabData: ViewThread + Sized {
     fn get_selection(&self) -> Option<InfoHash>;
 }
 
-mod status;
 mod details;
-mod options;
 mod files;
+mod options;
 mod peers;
+mod status;
 mod trackers;
 
 struct TorrentTabsViewThread {
@@ -99,22 +96,22 @@ pub(crate) struct TorrentTabsView {
 impl TorrentTabsViewThread {
     fn get_active_tab(&self) -> &dyn ViewThread {
         match self.active_tab {
-            Tab::Status   => &self.status_data,
-            Tab::Details  => &self.details_data,
-            Tab::Options  => &self.options_data,
-            Tab::Files    => &self.files_data,
-            Tab::Peers    => &self.peers_data,
+            Tab::Status => &self.status_data,
+            Tab::Details => &self.details_data,
+            Tab::Options => &self.options_data,
+            Tab::Files => &self.files_data,
+            Tab::Peers => &self.peers_data,
             Tab::Trackers => &self.trackers_data,
         }
     }
 
     fn get_active_tab_mut(&mut self) -> &mut dyn ViewThread {
         match self.active_tab {
-            Tab::Status   => &mut self.status_data,
-            Tab::Details  => &mut self.details_data,
-            Tab::Options  => &mut self.options_data,
-            Tab::Files    => &mut self.files_data,
-            Tab::Peers    => &mut self.peers_data,
+            Tab::Status => &mut self.status_data,
+            Tab::Details => &mut self.details_data,
+            Tab::Options => &mut self.options_data,
+            Tab::Files => &mut self.files_data,
+            Tab::Peers => &mut self.peers_data,
             Tab::Trackers => &mut self.trackers_data,
         }
     }
@@ -128,11 +125,13 @@ impl ViewThread for TorrentTabsViewThread {
         Ok(())
     }
 
-    async fn on_event(&mut self, session: &Session, event: deluge_rpc::Event) -> deluge_rpc::Result<()> {
+    async fn on_event(
+        &mut self,
+        session: &Session,
+        event: deluge_rpc::Event,
+    ) -> deluge_rpc::Result<()> {
         if self.selection.read().unwrap().is_some() {
-            self.get_active_tab_mut()
-                .on_event(session, event)
-                .await?;
+            self.get_active_tab_mut().on_event(session, event).await?;
         }
         Ok(())
     }
@@ -153,13 +152,9 @@ impl ViewThread for TorrentTabsViewThread {
 
         if self.should_reload {
             self.should_reload = false;
-            self.get_active_tab_mut()
-                .reload(session)
-                .await?;
+            self.get_active_tab_mut().reload(session).await?;
         } else {
-            self.get_active_tab_mut()
-                .update(session)
-                .await?;
+            self.get_active_tab_mut().update(session).await?;
         }
 
         Ok(())
@@ -220,7 +215,8 @@ impl TorrentTabsView {
             .with_tab(Tab::Peers, peers_tab)
             .with_tab(Tab::Trackers, trackers_tab)
             //.with_bar_placement(cursive_tabs::Placement::VerticalLeft)
-            .with_active_tab(active_tab).unwrap();
+            .with_active_tab(active_tab)
+            .unwrap();
 
         Self {
             view,
@@ -262,21 +258,25 @@ impl ViewWrapper for TorrentTabsView {
 
     fn wrap_layout(&mut self, size: Vec2) {
         if self.active_tab == Tab::Options {
-            if let Some(opts) = task::block_in_place(|| self.pending_options.read().unwrap().clone()) {
+            if let Some(opts) =
+                task::block_in_place(|| self.pending_options.read().unwrap().clone())
+            {
                 let names = &self.options_field_names;
                 let view = &mut self.view;
 
                 view.call_on_name(
                     &names.ratio_limit_panel,
                     |v: &mut EnableableView<Panel<LinearLayout>>| v.set_enabled(opts.stop_at_ratio),
-                ).unwrap();
+                )
+                .unwrap();
 
-                view.call_on_name(
-                    &names.move_completed_path,
-                    |v: &mut EditView| v.set_enabled(opts.move_completed),
-                ).unwrap();
+                view.call_on_name(&names.move_completed_path, |v: &mut EditView| {
+                    v.set_enabled(opts.move_completed)
+                })
+                .unwrap();
 
-                view.call_on_name(&names.apply_button, Button::enable).unwrap();
+                view.call_on_name(&names.apply_button, Button::enable)
+                    .unwrap();
 
                 return;
             } else if let Some(opts) = self.current_options_recv.recv().now_or_never() {
@@ -293,12 +293,10 @@ impl ViewWrapper for TorrentTabsView {
                 type Spin<T> = SpinView<T, RangeFrom<T>>;
 
                 macro_rules! update {
-                    ($type:ty, $method:ident($field:ident)) => {
-                        {
-                            let cb = |v: &mut $type| v.$method(opts.$field);
-                            view.call_on_name(&names.$field, cb).unwrap();
-                        }
-                    }
+                    ($type:ty, $method:ident($field:ident)) => {{
+                        let cb = |v: &mut $type| v.$method(opts.$field);
+                        view.call_on_name(&names.$field, cb).unwrap();
+                    }};
                 }
 
                 update!(Spin<f64>, set_val(max_download_speed));
@@ -316,24 +314,26 @@ impl ViewWrapper for TorrentTabsView {
                 update!(LabeledCheckbox, set_checked(sequential_download));
                 update!(LabeledCheckbox, set_checked(super_seeding));
                 update!(LabeledCheckbox, set_checked(move_completed));
-                view.call_on_name(
-                    &names.move_completed_path,
-                    |v: &mut EditView| v.set_content(&opts.move_completed_path),
-                ).unwrap();
+                view.call_on_name(&names.move_completed_path, |v: &mut EditView| {
+                    v.set_content(&opts.move_completed_path)
+                })
+                .unwrap();
 
                 // And now for the "secondary" updates.
 
                 view.call_on_name(
                     &names.ratio_limit_panel,
                     |v: &mut EnableableView<Panel<LinearLayout>>| v.set_enabled(opts.stop_at_ratio),
-                ).unwrap();
+                )
+                .unwrap();
 
-                view.call_on_name(
-                    &names.move_completed_path,
-                    |v: &mut EditView| v.set_enabled(opts.move_completed),
-                ).unwrap();
+                view.call_on_name(&names.move_completed_path, |v: &mut EditView| {
+                    v.set_enabled(opts.move_completed)
+                })
+                .unwrap();
 
-                view.call_on_name(&names.apply_button, Button::disable).unwrap();
+                view.call_on_name(&names.apply_button, Button::disable)
+                    .unwrap();
             }
         }
 

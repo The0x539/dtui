@@ -1,9 +1,4 @@
-use cursive::theme::{
-    Theme,
-    Palette,
-    Color::Rgb,
-    PaletteColor::*,
-};
+use cursive::theme::{Color::Rgb, Palette, PaletteColor::*, Theme};
 
 pub fn dracula() -> Theme {
     let mut palette = Palette::default();
@@ -19,5 +14,8 @@ pub fn dracula() -> Theme {
     palette[HighlightInactive] = palette[Tertiary];
     palette[HighlightText] = palette[Primary];
 
-    Theme { palette, ..Theme::default() }
+    Theme {
+        palette,
+        ..Theme::default()
+    }
 }

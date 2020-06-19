@@ -1,8 +1,8 @@
 use std::rc::Rc;
 
-use cursive::Cursive;
 use cursive::view::{View, ViewWrapper};
-use cursive::views::{Dialog, EditView, TextArea, ResizedView};
+use cursive::views::{Dialog, EditView, ResizedView, TextArea};
+use cursive::Cursive;
 
 pub trait Form: View + Sized + 'static {
     type Data;

@@ -1,16 +1,16 @@
-use serde::Deserialize;
-use std::net::SocketAddr;
-use fnv::{FnvHashMap, FnvHashSet};
-use deluge_rpc::{Query, InfoHash, Session};
-use crate::views::table::{TableViewData, TableView};
-use std::cmp::Ordering;
-use cursive::Printer;
-use std::sync::{Arc, RwLock};
-use async_trait::async_trait;
 use super::BuildableTabData;
 use crate::util;
-use crate::Selection;
+use crate::views::table::{TableView, TableViewData};
 use crate::views::thread::ViewThread;
+use crate::Selection;
+use async_trait::async_trait;
+use cursive::Printer;
+use deluge_rpc::{InfoHash, Query, Session};
+use fnv::{FnvHashMap, FnvHashSet};
+use serde::Deserialize;
+use std::cmp::Ordering;
+use std::net::SocketAddr;
+use std::sync::{Arc, RwLock};
 
 fn stupid_bool<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<bool, D::Error> {
     u8::deserialize(deserializer).map(|v| v != 0)
@@ -30,11 +30,21 @@ pub(super) struct Peer {
 }
 
 #[derive(Debug, Clone, Deserialize, Query)]
-struct PeersQuery { peers: Vec<Peer> }
+struct PeersQuery {
+    peers: Vec<Peer>,
+}
 
 // TODO: stop reimplementing this. I already had a macro for it in deluge-rpc
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum Column { Country, IsSeed, Address, Client, Progress, DownSpeed, UpSpeed }
+pub(super) enum Column {
+    Country,
+    IsSeed,
+    Address,
+    Client,
+    Progress,
+    DownSpeed,
+    UpSpeed,
+}
 impl AsRef<str> for Column {
     fn as_ref(&self) -> &'static str {
         match self {
@@ -49,7 +59,11 @@ impl AsRef<str> for Column {
     }
 }
 
-impl Default for Column { fn default() -> Self { Self::Address } }
+impl Default for Column {
+    fn default() -> Self {
+        Self::Address
+    }
+}
 
 // TODO: establish a consistent naming convention for the various view-related structs
 #[derive(Default)]
@@ -132,13 +146,13 @@ impl TableViewData for PeersTableData {
         let speed = |n| util::fmt_bytes(n) + "/s";
         let print = |s| printer.print((0, 0), s);
         match col {
-            Column::Country   => print(&peer.country),
-            Column::IsSeed    => print(&peer.seed.to_string()),
-            Column::Address   => print(&peer.addr.to_string()),
-            Column::Client    => print(&peer.client),
-            Column::Progress  => print(&peer.progress.to_string()),
+            Column::Country => print(&peer.country),
+            Column::IsSeed => print(&peer.seed.to_string()),
+            Column::Address => print(&peer.addr.to_string()),
+            Column::Client => print(&peer.client),
+            Column::Progress => print(&peer.progress.to_string()),
             Column::DownSpeed => print(&speed(peer.down_speed)),
-            Column::UpSpeed   => print(&speed(peer.up_speed)),
+            Column::UpSpeed => print(&speed(peer.up_speed)),
         }
     }
 
@@ -158,7 +172,10 @@ impl TableViewData for PeersTableData {
                     Column::IsSeed => a.seed.cmp(&b.seed),
                     Column::Address => unreachable!(),
                     Column::Client => a.client.cmp(&b.client),
-                    Column::Progress => a.progress.partial_cmp(&b.progress).expect("well-behaved floats"),
+                    Column::Progress => a
+                        .progress
+                        .partial_cmp(&b.progress)
+                        .expect("well-behaved floats"),
                     Column::DownSpeed => a.down_speed.cmp(&b.down_speed),
                     Column::UpSpeed => a.up_speed.cmp(&b.up_speed),
                 }
@@ -167,7 +184,9 @@ impl TableViewData for PeersTableData {
 
         ord = ord.then(addr_ord);
 
-        if self.descending_sort { ord = ord.reverse(); }
+        if self.descending_sort {
+            ord = ord.reverse();
+        }
 
         ord
     }
@@ -242,7 +261,11 @@ impl BuildableTabData for PeersData {
 
         let view = TableView::new(columns);
         let state = view.get_data();
-        let data = PeersData { state, selection, was_empty: true };
+        let data = PeersData {
+            state,
+            selection,
+            was_empty: true,
+        };
 
         (view, data)
     }

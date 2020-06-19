@@ -1,7 +1,7 @@
+use cursive::event::{Event, EventResult, MouseButton, MouseEvent};
 use cursive::traits::*;
-use cursive::view::{ScrollBase, ViewWrapper};
 use cursive::vec::Vec2;
-use cursive::event::{Event, EventResult, MouseEvent, MouseButton};
+use cursive::view::{ScrollBase, ViewWrapper};
 use cursive::Printer;
 
 // This entire module only exists because ScrollView has janky mouse support.
@@ -14,7 +14,10 @@ pub(crate) trait ScrollInner: View + Sized {
     }
 }
 
-impl<W: ViewWrapper> ScrollInner for W where W::V: ScrollInner {
+impl<W: ViewWrapper> ScrollInner for W
+where
+    W::V: ScrollInner,
+{
     fn draw_row(&self, printer: &Printer, row: usize) {
         self.with_view(|v| v.draw_row(printer, row));
     }
@@ -28,7 +31,11 @@ pub(crate) struct ScrollWrapper<V: ScrollInner> {
 
 impl<V: ScrollInner> ScrollWrapper<V> {
     fn new(inner: V) -> Self {
-        Self { inner, scrollbase: ScrollBase::new(), width: 0 }
+        Self {
+            inner,
+            scrollbase: ScrollBase::new(),
+            width: 0,
+        }
     }
 }
 
@@ -54,7 +61,8 @@ impl<V: ScrollInner> ViewWrapper for ScrollWrapper<V> {
         } else {
             sb.right_padding
         };
-        self.inner.layout((size.x - additional_width, sb.content_height).into());
+        self.inner
+            .layout((size.x - additional_width, sb.content_height).into());
         self.width = size.x;
 
         if sb.start_line + sb.view_height > sb.content_height {
@@ -76,7 +84,11 @@ impl<V: ScrollInner> ViewWrapper for ScrollWrapper<V> {
     fn wrap_on_event(&mut self, event: Event) -> EventResult {
         let sb = &mut self.scrollbase;
         match event {
-            Event::Mouse { offset, position, event } => {
+            Event::Mouse {
+                offset,
+                position,
+                event,
+            } => {
                 let pos = position.saturating_sub(offset);
                 // If the click is on the scrollbar, don't tell the inner view about it
                 // Otherwise, give it a chance to consume the event
@@ -96,26 +108,26 @@ impl<V: ScrollInner> ViewWrapper for ScrollWrapper<V> {
                     MouseEvent::WheelUp => {
                         sb.scroll_up(1);
                         EventResult::Consumed(None)
-                    },
+                    }
                     MouseEvent::WheelDown => {
                         sb.scroll_down(1);
                         EventResult::Consumed(None)
-                    },
+                    }
                     MouseEvent::Press(MouseButton::Left) => {
                         sb.start_drag(pos, self.width);
                         EventResult::Consumed(None)
-                    },
+                    }
                     MouseEvent::Hold(MouseButton::Left) => {
                         sb.drag(pos);
                         EventResult::Consumed(None)
-                    },
+                    }
                     MouseEvent::Release(MouseButton::Left) => {
                         sb.release_grab();
                         EventResult::Consumed(None)
-                    },
+                    }
                     _ => EventResult::Ignored,
                 }
-            },
+            }
 
             // TODO: keyboard scrolling
 

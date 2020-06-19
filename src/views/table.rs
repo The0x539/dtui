@@ -2,12 +2,12 @@ use std::cmp::Ordering;
 use std::ops::DerefMut;
 use std::sync::{Arc, RwLock};
 
-use cursive::Printer;
-use cursive::View;
-use cursive::view::ScrollBase;
-use cursive::Vec2;
-use cursive::event::{Event, EventResult, MouseEvent, MouseButton, Callback};
 use cursive::direction::Direction;
+use cursive::event::{Callback, Event, EventResult, MouseButton, MouseEvent};
+use cursive::view::ScrollBase;
+use cursive::Printer;
+use cursive::Vec2;
+use cursive::View;
 
 pub(crate) trait TableViewData: Default {
     type Column: Copy + Eq + AsRef<str>;
@@ -55,12 +55,7 @@ pub(crate) trait TableViewData: Default {
 
     fn draw_cell(&self, printer: &Printer, row: &Self::RowValue, column: Self::Column);
 
-    fn draw_row(
-        &self,
-        printer: &Printer,
-        columns: &[(Self::Column, usize)],
-        row: &Self::RowValue,
-    ) {
+    fn draw_row(&self, printer: &Printer, columns: &[(Self::Column, usize)], row: &Self::RowValue) {
         let mut x = 0;
         for (column, width) in columns {
             let printer = printer.offset((x, 0)).cropped((*width, 1));
@@ -76,20 +71,26 @@ macro_rules! impl_table {
         rows = self.$rows:ident;
         descending_sort = self.$sort:ident;
     ) => {
-        fn sort_column(&self) -> Self::Column { self.$col }
-        fn descending_sort(&self) -> bool { self.$sort }
-        fn rows(&self) -> &Self::Rows { &self.$rows }
-        fn rows_mut(&mut self) -> &mut Self::Rows { &mut self.$rows }
-        fn set_rows(&mut self, val: Self::Rows) { self.$rows = val; }
-    }
+        fn sort_column(&self) -> Self::Column {
+            self.$col
+        }
+        fn descending_sort(&self) -> bool {
+            self.$sort
+        }
+        fn rows(&self) -> &Self::Rows {
+            &self.$rows
+        }
+        fn rows_mut(&mut self) -> &mut Self::Rows {
+            &mut self.$rows
+        }
+        fn set_rows(&mut self, val: Self::Rows) {
+            self.$rows = val;
+        }
+    };
 }
 
-pub(super) trait TableCallback<T: TableViewData> = Fn(
-    &mut T,
-    &<T as TableViewData>::RowIndex,
-    Vec2,
-    Vec2,
-) -> Callback + 'static;
+pub(super) trait TableCallback<T: TableViewData> =
+    Fn(&mut T, &<T as TableViewData>::RowIndex, Vec2, Vec2) -> Callback + 'static;
 type BoxedTableCallback<T> = Box<dyn TableCallback<T>>;
 
 pub(crate) struct TableView<T: TableViewData> {
@@ -176,7 +177,10 @@ impl<T: TableViewData> TableView<T> {
     }
 }
 
-impl<T: TableViewData> View for TableView<T> where Self: 'static {
+impl<T: TableViewData> View for TableView<T>
+where
+    Self: 'static,
+{
     fn draw(&self, printer: &Printer) {
         let Vec2 { x: w, y: h } = printer.size;
 
@@ -187,7 +191,11 @@ impl<T: TableViewData> View for TableView<T> where Self: 'static {
             let mut name = String::from(column.as_ref());
 
             if *column == data.sort_column() {
-                let c = if data.descending_sort() { " ▼" } else { " ▲" };
+                let c = if data.descending_sort() {
+                    " ▼"
+                } else {
+                    " ▲"
+                };
                 name.push_str(c);
             }
 
@@ -206,10 +214,9 @@ impl<T: TableViewData> View for TableView<T> where Self: 'static {
 
         self.scrollbase.draw(&printer.offset((0, 2)), |p, i| {
             if let Some(row) = data.rows().get(i) {
-                p.with_selection(
-                    self.selected.contains(row),
-                    |p| data.draw_row(p, &self.columns, data.get_row_value(row)),
-                );
+                p.with_selection(self.selected.contains(row), |p| {
+                    data.draw_row(p, &self.columns, data.get_row_value(row))
+                });
             }
         });
     }
@@ -219,10 +226,7 @@ impl<T: TableViewData> View for TableView<T> where Self: 'static {
     }
 
     fn layout(&mut self, size: Vec2) {
-        let others_width = self.columns[1..]
-            .iter()
-            .map(|(_, w)| w+1)
-            .sum::<usize>();
+        let others_width = self.columns[1..].iter().map(|(_, w)| w + 1).sum::<usize>();
 
         self.columns[0].1 = size.x - others_width;
 
@@ -230,15 +234,23 @@ impl<T: TableViewData> View for TableView<T> where Self: 'static {
 
         sb.view_height = size.y - 2;
         sb.content_height = self.data.read().unwrap().rows().len();
-        sb.start_line = sb.start_line.min(sb.content_height.saturating_sub(sb.view_height));
+        sb.start_line = sb
+            .start_line
+            .min(sb.content_height.saturating_sub(sb.view_height));
     }
 
-    fn take_focus(&mut self, _: Direction) -> bool { true }
+    fn take_focus(&mut self, _: Direction) -> bool {
+        true
+    }
 
     fn on_event(&mut self, event: Event) -> EventResult {
         // Un-prime double click on anything appropriate
         match event {
-            Event::Mouse { position, offset, event } => {
+            Event::Mouse {
+                position,
+                offset,
+                event,
+            } => {
                 if position.saturating_sub(offset).y < 2 {
                     self.double_click_primed = false;
                 } else if event.button() != Some(MouseButton::Left) {
@@ -250,15 +262,19 @@ impl<T: TableViewData> View for TableView<T> where Self: 'static {
         }
 
         match event {
-            Event::Mouse { offset, position, event } => match event {
+            Event::Mouse {
+                offset,
+                position,
+                event,
+            } => match event {
                 MouseEvent::WheelUp => {
                     self.scrollbase.scroll_up(1);
                     return EventResult::Consumed(None);
-                },
+                }
                 MouseEvent::WheelDown => {
                     self.scrollbase.scroll_down(1);
                     return EventResult::Consumed(None);
-                },
+                }
                 MouseEvent::Press(MouseButton::Left) => {
                     let mut pos = position.saturating_sub(offset);
 
@@ -281,7 +297,6 @@ impl<T: TableViewData> View for TableView<T> where Self: 'static {
                         let i = pos.y + sb.start_line;
                         let mut data = self.data.write().unwrap();
                         if let Some(&row) = data.rows().get(i) {
-
                             let mut res = EventResult::Consumed(None);
 
                             let selection_changed = !self.selected.contains(&row);
@@ -313,7 +328,7 @@ impl<T: TableViewData> View for TableView<T> where Self: 'static {
                             return res;
                         }
                     }
-                },
+                }
                 MouseEvent::Press(MouseButton::Right) if position.y >= offset.y + 2 => {
                     let pos = position.saturating_sub(offset + (0, 2));
                     let i = pos.y + self.scrollbase.start_line;
@@ -340,13 +355,13 @@ impl<T: TableViewData> View for TableView<T> where Self: 'static {
                             offset,
                         );
                     }
-                },
+                }
                 MouseEvent::Hold(MouseButton::Left) if position.y >= offset.y + 2 => {
                     let pos = position.saturating_sub(offset + (0, 2));
                     self.scrollbase.drag(pos);
                     self.double_click_primed = false;
                     return EventResult::Consumed(None);
-                },
+                }
                 MouseEvent::Release(MouseButton::Left) => {
                     if self.scrollbase.is_dragging() {
                         self.scrollbase.release_grab();
@@ -361,7 +376,7 @@ impl<T: TableViewData> View for TableView<T> where Self: 'static {
                     }
 
                     return EventResult::Consumed(None);
-                },
+                }
                 _ => (),
             },
             _ => (),

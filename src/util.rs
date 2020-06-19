@@ -6,7 +6,9 @@ pub fn fmt_bytes(amt: u64) -> String {
 }
 
 pub fn fmt_bytes_limit(amt: f64) -> String {
-    ByteSize((amt * 1024.0) as u64).to_string_as(true).replace(".0", "")
+    ByteSize((amt * 1024.0) as u64)
+        .to_string_as(true)
+        .replace(".0", "")
 }
 
 pub fn fmt_speed_pair(val: u64, max: f64) -> String {
@@ -25,7 +27,9 @@ pub fn fmt_pair<T, U: Display, F: FnMut(T) -> U>(mut f: F, a: T, b: Option<T>) -
 }
 
 pub fn digit_width(mut n: u64) -> usize {
-    if n == 0 { return 1; }
+    if n == 0 {
+        return 1;
+    }
 
     let mut digits = 0;
     while n > 0 {

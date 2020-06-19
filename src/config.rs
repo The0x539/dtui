@@ -1,13 +1,13 @@
 use std::sync::{Arc, RwLock};
 
-use uuid::Uuid;
-use serde::{Serialize, Deserialize};
 use lazy_static::lazy_static;
+use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 
 type FnvIndexMap<K, V> = indexmap::IndexMap<K, V, fnv::FnvBuildHasher>;
 
 const APP_NAME: &str = "dtui";
- 
+
 #[derive(Clone, Serialize, Deserialize)]
 pub struct Host {
     pub username: String,

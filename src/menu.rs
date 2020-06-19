@@ -1,26 +1,25 @@
-use cursive::Cursive;
-use cursive::views::{TextArea, MenuPopup};
-use cursive::traits::*;
 use cursive::event::Callback;
-use cursive::Vec2;
 use cursive::menu::MenuTree;
+use cursive::traits::*;
+use cursive::views::{MenuPopup, TextArea};
+use cursive::Cursive;
+use cursive::Vec2;
 use futures::executor::block_on;
 use serde::Deserialize;
-use uuid::Uuid;
-use tokio::task;
-use std::rc::Rc;
 use std::future::Future;
+use std::rc::Rc;
 use std::sync::Arc;
+use tokio::task;
+use uuid::Uuid;
 
 use crate::form::Form;
 use crate::{AppState, SessionHandle};
 
 use crate::views::{
-    remove_torrent::RemoveTorrentPrompt,
-    connection_manager::ConnectionManagerView,
+    connection_manager::ConnectionManagerView, remove_torrent::RemoveTorrentPrompt,
 };
 
-use deluge_rpc::{Session, TorrentOptions, FilePriority, Query, InfoHash};
+use deluge_rpc::{FilePriority, InfoHash, Query, Session, TorrentOptions};
 
 trait CursiveWithSession<'a> {
     fn session(&'a mut self) -> &'a Session;
@@ -29,7 +28,10 @@ trait CursiveWithSession<'a> {
         f(&self.session())
     }
 
-    fn with_session_blocking<T: Future, F: FnOnce(&'a Session) -> T>(&'a mut self, f: F) -> T::Output {
+    fn with_session_blocking<T: Future, F: FnOnce(&'a Session) -> T>(
+        &'a mut self,
+        f: F,
+    ) -> T::Output {
         block_on(self.with_session(f))
     }
 }
@@ -70,10 +72,7 @@ pub fn add_torrent_dialog(siv: &mut Cursive) {
     siv.add_layer(dialog);
 }
 
-fn replace_session(
-    siv: &mut Cursive,
-    new: Option<(Uuid, Arc<Session>, String, String)>,
-) {
+fn replace_session(siv: &mut Cursive, new: Option<(Uuid, Arc<Session>, String, String)>) {
     let handle = match new {
         Some((id, mut session, username, password)) => {
             assert_eq!(Arc::strong_count(&session), 1);
@@ -88,7 +87,8 @@ fn replace_session(
     };
     siv.with_user_data(|app_state: &mut AppState| {
         task::block_in_place(|| block_on(app_state.replace(handle))).unwrap();
-    }).unwrap();
+    })
+    .unwrap();
 }
 
 pub fn show_connection_manager(siv: &mut Cursive) {
@@ -109,7 +109,9 @@ async fn set_single_file_priority(
     priority: FilePriority,
 ) -> deluge_rpc::Result<()> {
     #[derive(Debug, Clone, Deserialize, Query)]
-    struct FilePriorities { file_priorities: Vec<FilePriority> }
+    struct FilePriorities {
+        file_priorities: Vec<FilePriority>,
+    }
 
     let mut priorities = {
         let response = session.get_torrent_status::<FilePriorities>(hash).await;
@@ -132,7 +134,9 @@ async fn set_multi_file_priority(
     priority: FilePriority,
 ) -> deluge_rpc::Result<()> {
     #[derive(Debug, Clone, Deserialize, Query)]
-    struct FilePriorities { file_priorities: Vec<FilePriority> }
+    struct FilePriorities {
+        file_priorities: Vec<FilePriority>,
+    }
 
     let mut priorities = {
         let response = session.get_torrent_status::<FilePriorities>(hash).await;
@@ -181,24 +185,26 @@ pub fn files_tab_file_menu(
     old_name: &str,
     position: Vec2,
 ) -> Callback {
-    let make_cb = move |priority| wsbu!(|ses| {
-        set_single_file_priority(ses, hash, index, priority)
-    });
+    let make_cb =
+        move |priority| wsbu!(|ses| { set_single_file_priority(ses, hash, index, priority) });
 
     let old_name = Rc::from(old_name);
     let cb = move |siv: &mut Cursive| {
         let old_name = Rc::clone(&old_name);
         let menu_tree = MenuTree::new()
-            .leaf("Rename", move |siv| rename_file_dialog(siv, hash, index, &old_name))
+            .leaf("Rename", move |siv| {
+                rename_file_dialog(siv, hash, index, &old_name)
+            })
             .delimiter()
-            .leaf("Skip",   make_cb(FilePriority::Skip))
-            .leaf("Low",    make_cb(FilePriority::Low))
+            .leaf("Skip", make_cb(FilePriority::Skip))
+            .leaf("Low", make_cb(FilePriority::Low))
             .leaf("Normal", make_cb(FilePriority::Normal))
-            .leaf("High",   make_cb(FilePriority::High));
+            .leaf("High", make_cb(FilePriority::High));
 
         let menu_popup = MenuPopup::new(Rc::new(menu_tree));
 
-        siv.screen_mut().add_layer_at(cursive::XY::absolute(position), menu_popup);
+        siv.screen_mut()
+            .add_layer_at(cursive::XY::absolute(position), menu_popup);
     };
     Callback::from_fn(cb)
 }
@@ -212,25 +218,26 @@ pub fn files_tab_folder_menu(
     let files = Rc::from(files);
     let make_cb = move |priority| {
         let files = Rc::clone(&files);
-        wsbu!(|ses| {
-            set_multi_file_priority(ses, hash, &files, priority)
-        })
+        wsbu!(|ses| { set_multi_file_priority(ses, hash, &files, priority) })
     };
 
     let name = Rc::<str>::from(name);
     let cb = move |siv: &mut Cursive| {
         let name = name.clone();
         let menu_tree = MenuTree::new()
-            .leaf("Rename", move |siv| rename_folder_dialog(siv, hash, name.clone()))
+            .leaf("Rename", move |siv| {
+                rename_folder_dialog(siv, hash, name.clone())
+            })
             .delimiter()
-            .leaf("Skip",   make_cb(FilePriority::Skip))
-            .leaf("Low",    make_cb(FilePriority::Low))
+            .leaf("Skip", make_cb(FilePriority::Skip))
+            .leaf("Low", make_cb(FilePriority::Low))
             .leaf("Normal", make_cb(FilePriority::Normal))
-            .leaf("High",   make_cb(FilePriority::High));
+            .leaf("High", make_cb(FilePriority::High));
 
         let menu_popup = MenuPopup::new(Rc::new(menu_tree));
 
-        siv.screen_mut().add_layer_at(cursive::XY::absolute(position), menu_popup);
+        siv.screen_mut()
+            .add_layer_at(cursive::XY::absolute(position), menu_popup);
     };
     Callback::from_fn(cb)
 }
@@ -261,7 +268,9 @@ pub fn torrent_context_menu(hash: InfoHash, name: &str, position: Vec2) -> Callb
             .leaf("Update Tracker", wsbu!(|s| s.force_reannounce(&hash_slice)))
             .leaf("Edit Trackers", |_| todo!())
             .delimiter()
-            .leaf("Remove Torrent", move |siv| remove_torrent_dialog(siv, hash, &name))
+            .leaf("Remove Torrent", move |siv| {
+                remove_torrent_dialog(siv, hash, &name)
+            })
             .delimiter()
             .leaf("Force Re-check", wsbu!(|s| s.force_recheck(&hash_slice)))
             .leaf("Move Download Folder", |_| todo!())
@@ -269,7 +278,8 @@ pub fn torrent_context_menu(hash: InfoHash, name: &str, position: Vec2) -> Callb
 
         let menu_popup = MenuPopup::new(Rc::new(menu_tree));
 
-        siv.screen_mut().add_layer_at(cursive::XY::absolute(position), menu_popup);
+        siv.screen_mut()
+            .add_layer_at(cursive::XY::absolute(position), menu_popup);
     };
     Callback::from_fn(cb)
 }

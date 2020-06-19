@@ -1,23 +1,25 @@
-use cursive::traits::*;
-use cursive::views::{EditView, LinearLayout, TextView, Button, DummyView};
-use cursive::view::ViewWrapper;
-use uuid::Uuid;
-use cursive::event::{Event, EventResult, Callback, AnyCb};
-use cursive::view::Selector;
-use std::rc::Rc;
-use cursive::Cursive;
 use crate::form::Form;
+use cursive::event::{AnyCb, Callback, Event, EventResult};
+use cursive::traits::*;
+use cursive::view::Selector;
+use cursive::view::ViewWrapper;
+use cursive::views::{Button, DummyView, EditView, LinearLayout, TextView};
+use cursive::Cursive;
+use std::rc::Rc;
+use uuid::Uuid;
 
 use std::{
-    convert::From,
-    cmp::PartialOrd,
     cmp::PartialEq,
-    ops::{RangeBounds, Bound},
+    cmp::PartialOrd,
+    convert::From,
     fmt::Display,
+    ops::{Bound, RangeBounds},
     str::FromStr,
 };
 
-pub trait Spinnable: Default + PartialEq + PartialOrd + From<u8> + Copy + Display + FromStr {
+pub trait Spinnable:
+    Default + PartialEq + PartialOrd + From<u8> + Copy + Display + FromStr
+{
     fn is_float() -> bool;
 
     fn checked_incr(self) -> Option<Self>;
@@ -57,20 +59,36 @@ pub trait Spinnable: Default + PartialEq + PartialOrd + From<u8> + Copy + Displa
 }
 
 impl Spinnable for u64 {
-    fn is_float() -> bool { false }
-    fn checked_incr(self) -> Option<Self> { self.checked_add(1) }
-    fn checked_decr(self) -> Option<Self> { self.checked_sub(1) }
-    fn allows_negative(_: &impl RangeBounds<Self>) -> bool { false }
+    fn is_float() -> bool {
+        false
+    }
+    fn checked_incr(self) -> Option<Self> {
+        self.checked_add(1)
+    }
+    fn checked_decr(self) -> Option<Self> {
+        self.checked_sub(1)
+    }
+    fn allows_negative(_: &impl RangeBounds<Self>) -> bool {
+        false
+    }
 }
 
 impl Spinnable for i64 {
-    fn is_float() -> bool { false }
-    fn checked_incr(self) -> Option<Self> { self.checked_add(1) }
-    fn checked_decr(self) -> Option<Self> { self.checked_sub(1) }
+    fn is_float() -> bool {
+        false
+    }
+    fn checked_incr(self) -> Option<Self> {
+        self.checked_add(1)
+    }
+    fn checked_decr(self) -> Option<Self> {
+        self.checked_sub(1)
+    }
 }
 
 impl Spinnable for f64 {
-    fn is_float() -> bool { true }
+    fn is_float() -> bool {
+        true
+    }
     fn checked_incr(self) -> Option<Self> {
         Some(self + 1.0).filter(|x| x.is_finite())
     }
@@ -88,9 +106,11 @@ pub(crate) struct SpinView<T: Spinnable, B: RangeBounds<T>> {
     on_modify: Option<Rc<dyn Fn(&mut Cursive, T)>>,
 }
 
-impl<T: Spinnable, B: RangeBounds<T>> SpinView<T, B> where Self: 'static {
+impl<T: Spinnable, B: RangeBounds<T>> SpinView<T, B>
+where
+    Self: 'static,
+{
     pub(crate) fn new(title: Option<&str>, label: Option<&str>, bounds: B) -> Self {
-        
         let val = T::default();
 
         let id = Rc::new(Uuid::new_v4().to_string());
@@ -102,7 +122,8 @@ impl<T: Spinnable, B: RangeBounds<T>> SpinView<T, B> where Self: 'static {
         let edit = EditView::new()
             .content(val.to_string())
             .on_edit(move |s, content, _| {
-                s.call_on_name(&id0, |v: &mut Self| v.parse_content(content)).unwrap();
+                s.call_on_name(&id0, |v: &mut Self| v.parse_content(content))
+                    .unwrap();
             })
             .on_submit(move |s, _content| {
                 let cb = s.call_on_name(&id1, Self::submit).unwrap();
@@ -136,10 +157,19 @@ impl<T: Spinnable, B: RangeBounds<T>> SpinView<T, B> where Self: 'static {
 
         let own_id = String::clone(id.as_ref());
 
-        Self { bounds, val, own_id, edit_id, inner, on_modify: None }
+        Self {
+            bounds,
+            val,
+            own_id,
+            edit_id,
+            inner,
+            on_modify: None,
+        }
     }
 
-    pub fn get_val(&self) -> T { self.val }
+    pub fn get_val(&self) -> T {
+        self.val
+    }
 
     pub fn set_val(&mut self, new_val: T) -> Callback {
         self.val = new_val;
@@ -147,7 +177,10 @@ impl<T: Spinnable, B: RangeBounds<T>> SpinView<T, B> where Self: 'static {
         if let Some(f) = self.on_modify.as_ref() {
             let f = f.clone();
             let val = self.val;
-            Callback::from_fn(move |s| { cb(s); f(s, val); })
+            Callback::from_fn(move |s| {
+                cb(s);
+                f(s, val);
+            })
         } else {
             cb
         }
@@ -201,7 +234,9 @@ impl<T: Spinnable, B: RangeBounds<T>> SpinView<T, B> where Self: 'static {
 }
 
 impl<T: Spinnable, B: RangeBounds<T>> ViewWrapper for SpinView<T, B>
-where Self: 'static {
+where
+    Self: 'static,
+{
     cursive::wrap_impl!(self.inner: LinearLayout);
 
     fn wrap_on_event(&mut self, event: Event) -> EventResult {
@@ -210,11 +245,13 @@ where Self: 'static {
                 match ch {
                     '0'..='9' => (),
 
-                    '.' if T::is_float()
-                        && !self.get_content().contains('.') => (),
+                    '.' if T::is_float() && !self.get_content().contains('.') => (),
 
                     '-' if T::allows_negative(&self.bounds)
-                        && !self.get_content().contains('-') => (),
+                        && !self.get_content().contains('-') =>
+                    {
+                        ()
+                    }
 
                     _ => return EventResult::Ignored,
                 }
@@ -227,7 +264,7 @@ where Self: 'static {
     fn wrap_call_on_any(&mut self, sel: &Selector, cb: AnyCb) {
         match sel {
             Selector::Name(name) if name == &self.own_id => cb(self),
-            sel => self.inner.call_on_any(sel, cb)
+            sel => self.inner.call_on_any(sel, cb),
         }
     }
 }
@@ -244,4 +281,3 @@ where
         self.get_val()
     }
 }
-

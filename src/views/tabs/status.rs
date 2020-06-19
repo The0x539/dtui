@@ -1,15 +1,15 @@
 use super::{column, BuildableTabData};
+use crate::util;
+use crate::views::thread::ViewThread;
+use crate::Selection;
+use async_trait::async_trait;
+use cursive::align::HAlign;
 use cursive::traits::Resizable;
-use deluge_rpc::{Query, TorrentState, Session, InfoHash};
+use cursive::utils::Counter;
+use cursive::views::{DummyView, LinearLayout, ProgressBar, TextContent};
+use deluge_rpc::{InfoHash, Query, Session, TorrentState};
 use serde::Deserialize;
 use tokio::sync::watch;
-use cursive::views::{DummyView, TextContent, LinearLayout, ProgressBar};
-use cursive::align::HAlign;
-use cursive::utils::Counter;
-use crate::util;
-use async_trait::async_trait;
-use crate::Selection;
-use crate::views::thread::ViewThread;
 
 #[derive(Debug, Clone, Deserialize, Query)]
 struct TorrentStatus {
@@ -64,33 +64,54 @@ impl ViewThread for StatusData {
         let mut ryu_buf = ryu::Buffer::new();
 
         self.progress_val.set((status.progress * 100.0) as usize);
-        let label = format!("{} {}%", status.state, ryu_buf.format_finite(status.progress));
+        let label = format!(
+            "{} {}%",
+            status.state,
+            ryu_buf.format_finite(status.progress)
+        );
         self.progress_label_send.broadcast(label).unwrap();
 
-        self.columns[0].set_content([
-            util::fmt_speed_pair(status.download_payload_rate, status.max_download_speed),
-            util::fmt_speed_pair(status.upload_payload_rate, status.max_upload_speed),
-            util::fmt_pair(util::fmt_bytes, status.total_downloaded, Some(status.total_payload_download)),
-            util::fmt_pair(util::fmt_bytes, status.total_uploaded, Some(status.total_payload_upload)),
-        ].join("\n"));
+        self.columns[0].set_content(
+            [
+                util::fmt_speed_pair(status.download_payload_rate, status.max_download_speed),
+                util::fmt_speed_pair(status.upload_payload_rate, status.max_upload_speed),
+                util::fmt_pair(
+                    util::fmt_bytes,
+                    status.total_downloaded,
+                    Some(status.total_payload_download),
+                ),
+                util::fmt_pair(
+                    util::fmt_bytes,
+                    status.total_uploaded,
+                    Some(status.total_payload_upload),
+                ),
+            ]
+            .join("\n"),
+        );
 
         let nonnegative = |n: i64| (n >= 0).then_some(n as u64);
 
-        self.columns[1].set_content([
-            util::fmt_pair(|x| x, status.num_seeds, nonnegative(status.total_seeds)),
-            util::fmt_pair(|x| x, status.num_peers, nonnegative(status.total_peers)),
-            ryu_buf.format(status.ratio).to_owned(),
-            ryu_buf.format(status.availability).to_owned(),
-            status.seed_rank.to_string(),
-        ].join("\n"));
+        self.columns[1].set_content(
+            [
+                util::fmt_pair(|x| x, status.num_seeds, nonnegative(status.total_seeds)),
+                util::fmt_pair(|x| x, status.num_peers, nonnegative(status.total_peers)),
+                ryu_buf.format(status.ratio).to_owned(),
+                ryu_buf.format(status.availability).to_owned(),
+                status.seed_rank.to_string(),
+            ]
+            .join("\n"),
+        );
 
-        self.columns[2].set_content([
-            util::ftime_or_dash(status.eta),
-            util::ftime_or_dash(status.active_time),
-            util::ftime_or_dash(status.seeding_time),
-            util::ftime_or_dash(status.time_since_transfer),
-            util::fdate_or_dash(status.last_seen_complete),
-        ].join("\n"));
+        self.columns[2].set_content(
+            [
+                util::ftime_or_dash(status.eta),
+                util::ftime_or_dash(status.active_time),
+                util::ftime_or_dash(status.seeding_time),
+                util::ftime_or_dash(status.time_since_transfer),
+                util::fdate_or_dash(status.last_seen_complete),
+            ]
+            .join("\n"),
+        );
 
         Ok(())
     }
@@ -111,8 +132,20 @@ impl BuildableTabData for StatusData {
 
         let (col1, col2, col3) = (
             ["Down Speed:", "Up Speed:", "Downloaded:", "Uploaded:"],
-            ["Seeds:", "Peers:", "Share Ratio:", "Availability:", "Seed Rank:"],
-            ["ETA Time:", "Active Time:", "Seeding Time:", "Last Transfer:", "Complete Seen:"],
+            [
+                "Seeds:",
+                "Peers:",
+                "Share Ratio:",
+                "Availability:",
+                "Seed Rank:",
+            ],
+            [
+                "ETA Time:",
+                "Active Time:",
+                "Seeding Time:",
+                "Last Transfer:",
+                "Complete Seen:",
+            ],
         );
 
         let (col1_view, col1_content) = column(&col1, HAlign::Center);
@@ -126,9 +159,7 @@ impl BuildableTabData for StatusData {
             .child(DummyView.fixed_width(3))
             .child(col3_view);
 
-        let view = LinearLayout::vertical()
-            .child(progress_bar)
-            .child(status);
+        let view = LinearLayout::vertical().child(progress_bar).child(status);
 
         let data = StatusData {
             selection,

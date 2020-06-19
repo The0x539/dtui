@@ -1,8 +1,8 @@
-use cursive::views::{LinearLayout, PaddedView};
-use cursive::view::{View, ViewWrapper};
 use cursive::direction::Orientation;
-use cursive::Printer;
 use cursive::vec::Vec2;
+use cursive::view::{View, ViewWrapper};
+use cursive::views::{LinearLayout, PaddedView};
+use cursive::Printer;
 
 struct Child<V> {
     inner: PaddedView<V>,
@@ -17,7 +17,11 @@ impl<V: View> Child<V> {
             Orientation::Horizontal => (1, 0, 1, 1),
         };
         let inner = PaddedView::lrtb(l, r, t, b, view);
-        Self { inner, orientation, title }
+        Self {
+            inner,
+            orientation,
+            title,
+        }
     }
 }
 
@@ -25,14 +29,14 @@ impl<V: View> ViewWrapper for Child<V> {
     cursive::wrap_impl!(self.inner: PaddedView<V>);
 
     fn wrap_draw(&self, printer: &Printer) {
-        let Vec2 {x: px, y: py} = printer.size;
+        let Vec2 { x: px, y: py } = printer.size;
         let (px1, py1) = (px.saturating_sub(1), py.saturating_sub(1));
         match self.orientation {
             Orientation::Vertical => {
                 printer.print_vline((0, 0), px, "│");
                 printer.print_vline((px1, 0), py, "│");
                 printer.print_hdelim((0, 0), px);
-            },
+            }
             Orientation::Horizontal => {
                 printer.print_hline((0, 0), px, "─");
                 printer.print_hline((0, py1), px, "─");
@@ -46,7 +50,10 @@ impl<V: View> ViewWrapper for Child<V> {
 
         if let Some(title) = &self.title {
             let text = format!("┤{}├", title);
-            printer.offset((1, 0)).shrinked(shrinkage).print((0, 0), &text);
+            printer
+                .offset((1, 0))
+                .shrinked(shrinkage)
+                .print((0, 0), &text);
         }
 
         self.inner.draw(printer)
@@ -77,9 +84,13 @@ impl LinearPanel {
     }
 
     #[allow(dead_code)]
-    pub fn horizontal() -> Self { Self::new(Orientation::Horizontal) }
+    pub fn horizontal() -> Self {
+        Self::new(Orientation::Horizontal)
+    }
 
-    pub fn vertical()   -> Self { Self::new(Orientation::Vertical)   }
+    pub fn vertical() -> Self {
+        Self::new(Orientation::Vertical)
+    }
 
     pub fn add_child(&mut self, view: impl View, title: Option<&str>) {
         let child = Child::new(view, self.orientation, title.map(String::from));
@@ -103,10 +114,8 @@ impl ViewWrapper for LinearPanel {
         printer.print_hline((0, y), x, "─");
 
         for (pos, ch) in Iterator::zip(
-            [(0, 0), (x, 0),
-             (0, y), (x, y)].iter(),
-            ["┌", "┐",
-             "└", "┘"].iter(),
+            [(0, 0), (x, 0), (0, y), (x, y)].iter(),
+            ["┌", "┐", "└", "┘"].iter(),
         ) {
             printer.print(*pos, ch);
         }

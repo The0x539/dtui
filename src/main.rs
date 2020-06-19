@@ -4,32 +4,28 @@
 #![feature(drain_filter)]
 #![feature(trait_alias)]
 
-use deluge_rpc::{Session, FilterDict, InfoHash, AuthLevel};
-use tokio::sync::{watch, Notify, Barrier};
-use futures::FutureExt;
-use uuid::Uuid;
-use cursive::Cursive;
-use cursive::traits::*;
-use cursive::views::{LinearLayout, Panel};
 use cursive::direction::Orientation;
 use cursive::menu::MenuTree;
+use cursive::traits::*;
+use cursive::views::{LinearLayout, Panel};
+use cursive::Cursive;
+use deluge_rpc::{AuthLevel, FilterDict, InfoHash, Session};
+use futures::FutureExt;
 use std::sync::{Arc, RwLock};
+use tokio::sync::{watch, Barrier, Notify};
+use uuid::Uuid;
 
 mod views;
 use views::{
-    filters::FiltersView,
+    filters::FiltersView, scroll::ScrollInner, statusbar::StatusBarView, tabs::TorrentTabsView,
     torrents::TorrentsView,
-    statusbar::StatusBarView,
-    tabs::TorrentTabsView,
-
-    scroll::ScrollInner,
 };
 
-mod util;
-mod themes;
+mod config;
 mod form;
 mod menu;
-mod config;
+mod themes;
+mod util;
 
 type Selection = Arc<RwLock<Option<InfoHash>>>;
 
@@ -48,7 +44,11 @@ pub(crate) enum SessionHandle {
 impl SessionHandle {
     fn new(id: Uuid, session: Arc<Session>) -> Self {
         let barrier = Arc::new(Barrier::new(SESSION_HANDLE_REF_COUNT));
-        Self::Connected { id, session, barrier }
+        Self::Connected {
+            id,
+            session,
+            barrier,
+        }
     }
 
     fn get_id(&self) -> Option<Uuid> {
@@ -73,7 +73,10 @@ impl SessionHandle {
     }
 
     async fn claim(self) -> Option<Session> {
-        if let Self::Connected { session, barrier, .. } = self {
+        if let Self::Connected {
+            session, barrier, ..
+        } = self
+        {
             barrier.wait().await;
             assert_eq!(Arc::strong_count(&session), 1);
             Some(Arc::try_unwrap(session).unwrap())
@@ -83,7 +86,10 @@ impl SessionHandle {
     }
 
     async fn relinquish(self) {
-        if let Self::Connected { session, barrier, .. } = self {
+        if let Self::Connected {
+            session, barrier, ..
+        } = self
+        {
             assert_ne!(Arc::strong_count(&session), 1);
             drop(session);
             barrier.wait().await;
@@ -91,7 +97,9 @@ impl SessionHandle {
     }
 }
 impl Default for SessionHandle {
-    fn default() -> Self { Self::Disconnected }
+    fn default() -> Self {
+        Self::Disconnected
+    }
 }
 
 struct AppState {
@@ -167,27 +175,26 @@ async fn main() -> deluge_rpc::Result<()> {
         selection_notify.clone(),
         filters_recv.clone(),
         filters_notify.clone(),
-    ).with_name("torrents");
+    )
+    .with_name("torrents");
 
     let filters = FiltersView::new(
         session_recv.clone(),
         filters_send,
         filters_recv.clone(),
         filters_notify,
-    ).with_name("filters").into_scroll_wrapper();
+    )
+    .with_name("filters")
+    .into_scroll_wrapper();
 
-    let status_bar = StatusBarView::new(session_recv.clone())
-        .with_name("status");
+    let status_bar = StatusBarView::new(session_recv.clone()).with_name("status");
 
     let torrents_ui = LinearLayout::new(Orientation::Horizontal)
         .child(Panel::new(filters).title("Filters"))
         .child(Panel::new(torrents).title("Torrents"));
 
-    let torrent_tabs = TorrentTabsView::new(
-        session_recv.clone(),
-        selection,
-        selection_notify,
-    ).with_name("tabs");
+    let torrent_tabs =
+        TorrentTabsView::new(session_recv.clone(), selection, selection_notify).with_name("tabs");
 
     // No more cloning the receiver after this point.
     // It's important to drop so that we can unwrap the Arc<SessionHandle> on close.
@@ -210,23 +217,29 @@ async fn main() -> deluge_rpc::Result<()> {
 
     siv.add_global_callback('q', Cursive::quit);
     siv.add_global_callback(cursive::event::Key::Esc, |siv| {
-        if siv.screen().len() > 1 { siv.pop_layer(); }
+        if siv.screen().len() > 1 {
+            siv.pop_layer();
+        }
     });
     siv.add_global_callback(cursive::event::Event::Refresh, Cursive::clear);
 
     siv.menubar()
-        .add_subtree("File",
+        .add_subtree(
+            "File",
             MenuTree::new()
                 .leaf("Add torrent", menu::add_torrent_dialog)
                 .leaf("Create torrent", |_| ())
                 .delimiter()
                 .leaf("Quit and shutdown daemon", menu::quit_and_shutdown_daemon)
                 .delimiter()
-                .leaf("Quit", Cursive::quit))
-        .add_subtree("Edit",
+                .leaf("Quit", Cursive::quit),
+        )
+        .add_subtree(
+            "Edit",
             MenuTree::new()
                 .leaf("Preferences", |_| ())
-                .leaf("Connection Manager", menu::show_connection_manager));
+                .leaf("Connection Manager", menu::show_connection_manager),
+        );
 
     siv.add_fullscreen_layer(main_ui);
 
@@ -238,10 +251,14 @@ async fn main() -> deluge_rpc::Result<()> {
     let disconnected = app_state.shutdown();
 
     let hs = (
-        siv.call_on_name("torrents", TorrentsView::take_thread).unwrap(),
-        siv.call_on_name("filters", FiltersView::take_thread).unwrap(),
-        siv.call_on_name("status", StatusBarView::take_thread).unwrap(),
-        siv.call_on_name("tabs", TorrentTabsView::take_thread).unwrap(),
+        siv.call_on_name("torrents", TorrentsView::take_thread)
+            .unwrap(),
+        siv.call_on_name("filters", FiltersView::take_thread)
+            .unwrap(),
+        siv.call_on_name("status", StatusBarView::take_thread)
+            .unwrap(),
+        siv.call_on_name("tabs", TorrentTabsView::take_thread)
+            .unwrap(),
     );
 
     type R = deluge_rpc::Result<()>;

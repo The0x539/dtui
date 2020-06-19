@@ -1,13 +1,14 @@
 use cursive::view::ViewWrapper;
-use cursive::views::{LinearLayout, TextView, DummyView};
+use cursive::views::{DummyView, LinearLayout, TextView};
 
-use crate::views::labeled_checkbox::LabeledCheckbox;
 use crate::form::Form;
+use crate::views::labeled_checkbox::LabeledCheckbox;
 
 pub(crate) struct RemoveTorrentPrompt {
     inner: LinearLayout,
 }
 
+#[rustfmt::skip]
 const WARNING_TRIANGLE: &str = concat!(
     "   ▄   \n",
     "  ▟▀▙  \n",

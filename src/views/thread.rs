@@ -1,10 +1,10 @@
-use std::sync::Arc;
-use tokio::sync::{watch, broadcast, Notify};
-use futures::FutureExt;
-use async_trait::async_trait;
-use tokio::time;
-use deluge_rpc::{Session, Event};
 use crate::SessionHandle;
+use async_trait::async_trait;
+use deluge_rpc::{Event, Session};
+use futures::FutureExt;
+use std::sync::Arc;
+use tokio::sync::{broadcast, watch, Notify};
+use tokio::time;
 
 type Result = deluge_rpc::Result<()>;
 
@@ -28,10 +28,10 @@ pub(crate) trait ViewThread: Send {
         Arc::new(Notify::new())
     }
 
-    async fn run(
-        mut self,
-        mut session_recv: watch::Receiver<SessionHandle>,
-    ) -> Result where Self: Sized {
+    async fn run(mut self, mut session_recv: watch::Receiver<SessionHandle>) -> Result
+    where
+        Self: Sized,
+    {
         let mut handle = session_recv
             .recv()
             .now_or_never()

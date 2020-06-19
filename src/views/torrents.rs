@@ -1,26 +1,31 @@
-use cursive::traits::*;
-use deluge_rpc::{Session, Query, InfoHash, FilterKey, FilterDict, TorrentState};
-use cursive::Printer;
-use tokio::sync::{watch, Notify};
-use std::sync::{Arc, RwLock};
-use cursive::utils::Counter;
-use cursive::views::ProgressBar;
-use tokio::task::JoinHandle;
-use tokio::time;
-use fnv::FnvHashMap;
-use futures::FutureExt;
-use async_trait::async_trait;
 use super::thread::ViewThread;
-use cursive::view::ViewWrapper;
 use crate::menu;
 use crate::{Selection, SessionHandle};
+use async_trait::async_trait;
+use cursive::traits::*;
+use cursive::utils::Counter;
+use cursive::view::ViewWrapper;
+use cursive::views::ProgressBar;
+use cursive::Printer;
+use deluge_rpc::{FilterDict, FilterKey, InfoHash, Query, Session, TorrentState};
+use fnv::FnvHashMap;
+use futures::FutureExt;
+use std::sync::{Arc, RwLock};
+use tokio::sync::{watch, Notify};
+use tokio::task::JoinHandle;
+use tokio::time;
 
-use super::table::{TableViewData, TableView};
+use super::table::{TableView, TableViewData};
 
 use crate::util::fmt_bytes;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum Column { Name, State, Size, Speed }
+pub(crate) enum Column {
+    Name,
+    State,
+    Size,
+    Speed,
+}
 impl AsRef<str> for Column {
     fn as_ref(&self) -> &'static str {
         match self {
@@ -33,7 +38,9 @@ impl AsRef<str> for Column {
 }
 
 impl Default for Column {
-    fn default() -> Self { Self::Name }
+    fn default() -> Self {
+        Self::Name
+    }
 }
 
 #[derive(Clone, Debug, serde::Deserialize, Query)]
@@ -57,24 +64,30 @@ impl Torrent {
     pub fn matches_filters(&self, filters: &FilterDict) -> bool {
         for (key, val) in filters.iter() {
             let cmp_val = match key {
-                FilterKey::State if val == "Active" => if self.is_active() {
-                    continue;
-                } else {
-                    return false;
+                FilterKey::State if val == "Active" => {
+                    if self.is_active() {
+                        continue;
+                    } else {
+                        return false;
+                    }
                 }
 
-                FilterKey::Tracker if val == "Error" => if self.has_tracker_error() {
-                    continue;
-                } else {
-                    return false;
+                FilterKey::Tracker if val == "Error" => {
+                    if self.has_tracker_error() {
+                        continue;
+                    } else {
+                        return false;
+                    }
                 }
 
-                FilterKey::State   => self.state.as_str(),
-                FilterKey::Owner   => self.owner.as_str(),
-                FilterKey::Label   => self.label.as_str(),
+                FilterKey::State => self.state.as_str(),
+                FilterKey::Owner => self.owner.as_str(),
+                FilterKey::Label => self.label.as_str(),
                 FilterKey::Tracker => self.tracker_host.as_str(),
             };
-            if val != cmp_val { return false; }
+            if val != cmp_val {
+                return false;
+            }
         }
         true
     }
@@ -137,7 +150,9 @@ impl TableViewData for TorrentsState {
         // Arbitrary, but consistent and domain-appropriate.
         ord = ord.then(a.cmp(b));
 
-        if self.descending_sort { ord = ord.reverse(); }
+        if self.descending_sort {
+            ord = ord.reverse();
+        }
 
         ord
     }
@@ -164,7 +179,7 @@ impl TableViewData for TorrentsState {
                     .with_value(Counter::new(tor.progress as usize))
                     .with_label(move |_, _| status_msg.to_owned())
                     .draw(printer);
-            },
+            }
             Column::Size => printer.print((0, 0), &fmt_bytes(tor.total_size)),
             Column::Speed => printer.print((0, 0), &(fmt_bytes(tor.upload_payload_rate) + "/s")),
         };
@@ -173,17 +188,18 @@ impl TableViewData for TorrentsState {
 
 impl TorrentsState {
     fn binary_search(&self, hash: &InfoHash) -> std::result::Result<usize, usize> {
-        self.rows.binary_search_by(|hash2| self.compare_rows(hash2, hash))
+        self.rows
+            .binary_search_by(|hash2| self.compare_rows(hash2, hash))
     }
 
     fn toggle_visibility(&mut self, hash: InfoHash) {
         match self.binary_search(&hash) {
             Ok(idx) => {
                 self.rows.remove(idx);
-            },
+            }
             Err(idx) => {
                 self.rows.insert(idx, hash);
-            },
+            }
         }
     }
 }
@@ -367,10 +383,10 @@ impl ViewThread for TorrentsViewThread {
             deluge_rpc::Event::TorrentAdded(hash, _from_state) => {
                 let new_torrent = session.get_torrent_status::<Torrent>(hash).await?;
                 self.add_torrent(hash, new_torrent);
-            },
+            }
             deluge_rpc::Event::TorrentRemoved(hash) => {
                 self.remove_torrent(hash);
-            },
+            }
             deluge_rpc::Event::TorrentStateChanged(hash, state) => {
                 let mut delta = FnvHashMap::default();
                 let diff = TorrentDiff {
@@ -379,7 +395,7 @@ impl ViewThread for TorrentsViewThread {
                 };
                 delta.insert(hash, diff);
                 self.apply_delta(delta);
-            },
+            }
             _ => (),
         }
         Ok(())
@@ -389,7 +405,9 @@ impl ViewThread for TorrentsViewThread {
         self.filters_notify.clone()
     }
 
-    fn tick(&self) -> time::Duration { time::Duration::from_secs(1) }
+    fn tick(&self) -> time::Duration {
+        time::Duration::from_secs(1)
+    }
 }
 
 impl TorrentsView {
@@ -419,7 +437,13 @@ impl TorrentsView {
             menu::torrent_context_menu(*sel, name, position)
         });
 
-        let thread_obj = TorrentsViewThread::new(inner.get_data(), selection, selection_notify, filters_recv, filters_notify);
+        let thread_obj = TorrentsViewThread::new(
+            inner.get_data(),
+            selection,
+            selection_notify,
+            filters_recv,
+            filters_notify,
+        );
         let thread = tokio::spawn(thread_obj.run(session_recv));
         Self { inner, thread }
     }

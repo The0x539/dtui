@@ -1,16 +1,16 @@
-use async_trait::async_trait;
 use super::{column, BuildableTabData};
-use deluge_rpc::{Query, Session, InfoHash};
-use cursive::align::HAlign;
-use cursive::views::{LinearLayout, TextContent, Button, DummyView};
-use cursive::traits::Resizable;
-use serde::Deserialize;
 use crate::util;
-use crate::Selection;
 use crate::views::thread::ViewThread;
+use crate::Selection;
+use async_trait::async_trait;
+use cursive::align::HAlign;
+use cursive::traits::Resizable;
+use cursive::views::{Button, DummyView, LinearLayout, TextContent};
+use deluge_rpc::{InfoHash, Query, Session};
+use serde::Deserialize;
 
 #[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq)]
-struct Tracker { /* we don't actually need any of this */ }
+struct Tracker {/* we don't actually need any of this */}
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Query)]
 struct TrackersQuery {
@@ -36,13 +36,16 @@ impl ViewThread for TrackersData {
 
         let query = session.get_torrent_status::<TrackersQuery>(hash).await?;
 
-        self.content.set_content([
-            query.trackers.len().to_string(),
-            query.tracker_host,
-            query.tracker_status,
-            util::ftime_or_dash(query.next_announce),
-            String::from(if query.private { "Yes" } else { "No" }),
-        ].join("\n"));
+        self.content.set_content(
+            [
+                query.trackers.len().to_string(),
+                query.tracker_host,
+                query.tracker_status,
+                util::ftime_or_dash(query.next_announce),
+                String::from(if query.private { "Yes" } else { "No" }),
+            ]
+            .join("\n"),
+        );
 
         Ok(())
     }
@@ -70,7 +73,10 @@ impl BuildableTabData for TrackersData {
 
         col_view.insert_child(0, left_col);
 
-        let data = TrackersData { selection, content: col_content };
+        let data = TrackersData {
+            selection,
+            content: col_content,
+        };
 
         (col_view, data)
     }
