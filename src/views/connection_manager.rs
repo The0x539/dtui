@@ -1,6 +1,5 @@
 use std::cell::RefCell;
 use std::cmp::{Ordering, PartialEq};
-use std::ops::Deref;
 use std::rc::Rc;
 use std::sync::{Arc, RwLock};
 
@@ -11,8 +10,10 @@ use super::{
 };
 use crate::config;
 use crate::form::Form;
+use crate::util::Eventual;
 use crate::SessionHandle;
 
+use tokio::sync::oneshot;
 use tokio::task;
 
 use deluge_rpc::Session;
@@ -44,38 +45,60 @@ impl AsRef<str> for Column {
 }
 
 pub(crate) struct Connection {
-    username: String,
-    password: String, // ¯\_(ツ)_/¯
     address: String,
     port: u16,
-    version: Arc<RwLock<Option<String>>>,
-    session: Arc<RwLock<Option<Arc<Session>>>>,
+    username: String,
+    password: String, // ¯\_(ツ)_/¯
+    version: Eventual<String>,
+    session: Eventual<Arc<Session>>,
 }
 
 // TODO: helper EqByKey trait in util?
 impl Connection {
+    fn new(host: &config::Host) -> Self {
+        let (ses_tx, ses_rx) = oneshot::channel::<Arc<Session>>();
+        let (ver_tx, ver_rx) = oneshot::channel::<String>();
+        let fut = connect(host.address.clone(), host.port, ses_tx, ver_tx);
+        task::spawn(fut);
+
+        Self {
+            address: host.address.clone(),
+            port: host.port,
+            username: host.username.clone(),
+            password: host.password.clone(),
+            version: Eventual::new(ver_rx),
+            session: Eventual::new(ses_rx),
+        }
+    }
+
+    fn existing(host: &config::Host, session: Arc<Session>) -> Self {
+        let (mut ver_tx, ver_rx) = oneshot::channel();
+        let (ses_tx, ses_rx) = oneshot::channel();
+        ses_tx.send(session.clone()).unwrap();
+
+        let fut = async move {
+            tokio::select! {
+                result = session.daemon_info() => match result {
+                    Ok(ver) => ver_tx.send(ver).unwrap_or(()),
+                    Err(_) => (),
+                },
+                _ = ver_tx.closed() => (),
+            }
+        };
+        task::spawn(fut);
+
+        Self {
+            address: host.address.clone(),
+            port: host.port,
+            username: host.username.clone(),
+            password: host.password.clone(),
+            version: Eventual::new(ver_rx),
+            session: Eventual::new(ses_rx),
+        }
+    }
+
     fn eq_key<'a>(&'a self) -> impl 'a + Eq {
         (&self.username, &self.address, self.port)
-    }
-}
-
-impl From<config::Host> for Connection {
-    fn from(val: config::Host) -> Self {
-        let config::Host {
-            username,
-            password,
-            port,
-            address,
-        } = val;
-        let (version, session) = Default::default();
-        Self {
-            username,
-            password,
-            port,
-            address,
-            version,
-            session,
-        }
     }
 }
 
@@ -140,9 +163,9 @@ impl TableViewData for ConnectionTableData {
             Column::Status => {
                 // uuuuuuugh, the catch-22 of passing draw-cell a value vs an index
                 if self.get_current_host().contains(&connection) {
-                    assert!(connection.session.read().unwrap().is_some());
+                    assert!(connection.session.get().is_some());
                     print("Connected");
-                } else if connection.session.read().unwrap().is_some() {
+                } else if connection.session.get().is_some() {
                     print("Online");
                 } else {
                     print("Offline");
@@ -153,8 +176,8 @@ impl TableViewData for ConnectionTableData {
                 connection.username, connection.address, connection.port
             )),
             Column::Version => {
-                if let Some(s) = connection.version.read().unwrap().deref() {
-                    print(s);
+                if let Some(s) = connection.version.get() {
+                    print(&s);
                 }
             }
         }
@@ -168,19 +191,28 @@ pub(crate) struct ConnectionManagerView {
 async fn connect(
     address: String,
     port: u16,
-    session_handle: Arc<RwLock<Option<Arc<Session>>>>,
-    version_handle: Arc<RwLock<Option<String>>>,
-) -> deluge_rpc::Result<()> {
+    mut session_tx: oneshot::Sender<Arc<Session>>,
+    mut version_tx: oneshot::Sender<String>,
+) {
     let endpoint = (address.as_str(), port);
-    let session = Session::connect(endpoint).await?;
-    let version = session.daemon_info().await?;
 
-    if let (Ok(mut ses), Ok(mut ver)) = (session_handle.write(), version_handle.write()) {
-        ses.replace(Arc::new(session));
-        ver.replace(version);
-    }
+    let info = async {
+        let session = Session::connect(endpoint).await?;
+        let version = session.daemon_info().await?;
+        deluge_rpc::Result::Ok((session, version))
+    };
 
-    Ok(())
+    let (ses, ver) = tokio::select! {
+        result = info => match result {
+            Ok(x) => x,
+            Err(_) => return (),
+        },
+        _ = session_tx.closed() => return (),
+        _ = version_tx.closed() => return (),
+    };
+
+    session_tx.send(Arc::new(ses)).unwrap_or(());
+    version_tx.send(ver).unwrap_or(());
 }
 
 impl ConnectionManagerView {
@@ -190,17 +222,8 @@ impl ConnectionManagerView {
 
         let cmgr = &config::read().connection_manager;
 
-        let connections: FnvIndexMap<Uuid, Connection> = cmgr
-            .hosts
-            .iter()
-            .map(|(id, host)| (*id, host.clone().into()))
-            .collect();
-
-        let mut threads = Vec::with_capacity(connections.len());
-
         let autoconnect_host = cmgr.autoconnect;
         let hide_dialog = cmgr.hide_on_start;
-        drop(cmgr);
 
         let auto_connect = current_host.get_id() == autoconnect_host;
 
@@ -214,41 +237,38 @@ impl ConnectionManagerView {
         let selected_connection = Rc::new(RefCell::new(None));
 
         let sel_clone_change = selected_connection.clone();
-        let on_sel_change = move |_: &mut _, sel: &Uuid, _, _| {
+        table.set_on_selection_change(move |_: &mut _, sel: &Uuid, _, _| {
             sel_clone_change.replace(Some(*sel));
             Callback::dummy()
-        };
-        table.set_on_selection_change(on_sel_change);
+        });
 
         let table_data = table.get_data();
         {
             let mut data = table_data.write().unwrap();
 
-            data.rows = connections.keys().copied().collect();
-            data.connections = connections;
+            data.rows = cmgr.hosts.keys().copied().collect();
+            let len = data.rows.len();
+            data.connections.reserve(len);
             data.autoconnect_host = autoconnect_host;
-            if let Some((id, session)) = current_host.into_both() {
+
+            let current_id = current_host.get_id();
+            if let Some(id) = current_id {
                 data.current_host.replace(id);
-                data.connections[&id]
-                    .session
-                    .write()
-                    .unwrap()
-                    .replace(session);
             }
 
-            for connection in data.connections.values_mut() {
-                if connection.session.read().unwrap().is_some() {
-                    continue;
-                }
-                let fut = connect(
-                    connection.address.clone(),
-                    connection.port,
-                    connection.session.clone(),
-                    connection.version.clone(),
-                );
-                threads.push(task::spawn(fut));
+            for (id, host) in &cmgr.hosts {
+                let conn = if current_id.contains(id) {
+                    let session = current_host.get_session().unwrap().clone();
+                    Connection::existing(host, session)
+                } else {
+                    Connection::new(host)
+                };
+
+                data.connections.insert(*id, conn);
             }
         }
+
+        drop(cmgr);
 
         let sel_clone_edit = selected_connection.clone();
         let table_data_clone_edit = table_data.clone();
@@ -268,7 +288,7 @@ impl ConnectionManagerView {
                     .write()
                     .unwrap()
                     .connections
-                    .insert(id, Connection::from(host.clone()));
+                    .insert(id, Connection::new(&host));
 
                 let mut cfg = config::write();
                 cfg.connection_manager.hosts.insert(id, host);
@@ -344,10 +364,10 @@ impl Form for ConnectionManagerView {
             .expect("No selection; the connection button ought to be disabled.");
 
         if data.current_host.contains(&selected) {
-            assert!(connection.session.read().unwrap().is_some());
+            assert!(connection.session.is_ready());
             None // Disconnect from current session
-        } else if let Some(session) = connection.session.write().unwrap().take() {
-            assert_eq!(Arc::strong_count(&session), 1);
+        } else if let Some(session) = connection.session.get() {
+            assert_eq!(Arc::strong_count(&session), 2);
             Some((selected, session, connection.username, connection.password))
         } else {
             todo!("No successfully connected session; the connect button should be disabled.")
