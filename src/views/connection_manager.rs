@@ -20,7 +20,7 @@ use deluge_rpc::Session;
 
 use cursive::{
     event::Callback,
-    view::ViewWrapper,
+    view::{View, ViewWrapper},
     views::{Button, DummyView, LinearLayout, Panel},
     Cursive, Printer,
 };
@@ -373,18 +373,24 @@ impl ViewWrapper for ConnectionManagerView {
     cursive::wrap_impl!(self.inner: LinearLayout);
 }
 
+// Entirely as soon as tuple-based layouts are implemented
+fn remove_last<T: View>(view: &mut LinearLayout) -> Box<T> {
+    assert_ne!(view.len(), 0);
+    let child = view.remove_child(view.len() - 1).unwrap();
+
+    assert!(child.is::<T>());
+    child.downcast::<T>().ok().unwrap()
+}
+
 impl Form for ConnectionManagerView {
     type Data = Option<(Uuid, Arc<Session>, String, String)>;
 
     fn into_data(self) -> Self::Data {
-        let Self { mut inner } = self;
+        let mut inner = self.inner;
 
-        let table = inner
-            .remove_child(0)
-            .unwrap()
-            .downcast::<TableView<ConnectionTableData>>()
-            .ok()
-            .unwrap();
+        remove_last::<Panel<LinearLayout>>(&mut inner); // startup options
+        remove_last::<LinearLayout>(&mut inner); // table buttons
+        let table = remove_last::<TableView<ConnectionTableData>>(&mut inner);
 
         let data: Arc<RwLock<ConnectionTableData>> = table.get_data();
 
@@ -393,6 +399,7 @@ impl Form for ConnectionManagerView {
         let selected: Uuid = table.get_selection().copied()?;
 
         drop(table);
+        assert_eq!(Arc::strong_count(&data), 1);
         let mut data = Arc::try_unwrap(data).ok().unwrap().into_inner().unwrap();
 
         let connection = data
