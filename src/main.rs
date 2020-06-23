@@ -65,13 +65,6 @@ impl SessionHandle {
         }
     }
 
-    fn into_both(self) -> Option<(Uuid, Arc<Session>)> {
-        match self {
-            Self::Connected { id, session, .. } => Some((id, session)),
-            Self::Disconnected => None,
-        }
-    }
-
     async fn claim(self) -> Option<Session> {
         if let Self::Connected {
             session, barrier, ..
