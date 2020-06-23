@@ -1,5 +1,7 @@
+use std::cell::RefCell;
 use std::cmp::{Ordering, PartialEq};
 use std::ops::Deref;
+use std::rc::Rc;
 use std::sync::{Arc, RwLock};
 
 use super::{
@@ -209,11 +211,11 @@ impl ConnectionManagerView {
         ];
         let mut table = TableView::<ConnectionTableData>::new(cols);
 
-        let selected_connection = Arc::new(RwLock::new(None));
+        let selected_connection = Rc::new(RefCell::new(None));
 
         let sel_clone_change = selected_connection.clone();
         let on_sel_change = move |_: &mut _, sel: &Uuid, _, _| {
-            *sel_clone_change.write().unwrap() = Some(*sel);
+            sel_clone_change.replace(Some(*sel));
             Callback::dummy()
         };
         table.set_on_selection_change(on_sel_change);
@@ -249,28 +251,32 @@ impl ConnectionManagerView {
         }
 
         let sel_clone_edit = selected_connection.clone();
-        let data_clone_edit = table_data.clone();
+        let table_data_clone_edit = table_data.clone();
         let edit_button = move |siv: &mut Cursive| {
-            let data_clone = data_clone_edit.clone();
-
-            let data = data_clone_edit.read().unwrap();
-            let sel = sel_clone_edit.read().unwrap();
+            let sel = sel_clone_edit.borrow();
             let id = sel.expect("Edit button should be disabled");
 
-            let conn = &data.connections[&id];
+            let conn = &table_data_clone_edit.read().unwrap().connections[&id];
 
             let view = EditHostView::new(&conn.address, conn.port, &conn.username, &conn.password);
             drop(conn);
 
-            let dialog = view
-                .into_dialog("Cancel", "Save", move |_, host: config::Host| {
-                    let mut data = data_clone.write().unwrap();
-                    data.connections.insert(id, Connection::from(host.clone()));
+            let table_data_clone_edit = table_data_clone_edit.clone();
 
-                    let mut cfg = config::write();
-                    cfg.connection_manager.hosts.insert(id, host);
-                    cfg.save();
-                })
+            let save_host = move |_: &mut _, host: config::Host| {
+                table_data_clone_edit
+                    .write()
+                    .unwrap()
+                    .connections
+                    .insert(id, Connection::from(host.clone()));
+
+                let mut cfg = config::write();
+                cfg.connection_manager.hosts.insert(id, host);
+                cfg.save();
+            };
+
+            let dialog = view
+                .into_dialog("Cancel", "Save", save_host)
                 .title("Edit Host");
 
             siv.add_layer(dialog)
