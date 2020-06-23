@@ -252,9 +252,7 @@ impl ConnectionManagerView {
             data.autoconnect_host = autoconnect_host;
 
             let current_id = current_host.get_id();
-            if let Some(id) = current_id {
-                data.current_host.replace(id);
-            }
+            data.current_host = current_id;
 
             for (id, host) in &cmgr.hosts {
                 let conn = if current_id.contains(id) {
@@ -269,6 +267,29 @@ impl ConnectionManagerView {
         }
 
         drop(cmgr);
+
+        let table_data_clone_add = table_data.clone();
+        let add_button = move |siv: &mut Cursive| {
+            let table_data_clone_add = table_data_clone_add.clone();
+            let save_host = move |_: &mut _, host: config::Host| {
+                let id = Uuid::new_v4();
+
+                let mut data = table_data_clone_add.write().unwrap();
+
+                data.connections.insert(id, Connection::new(&host));
+                data.rows.push(id);
+
+                let mut cfg = config::write();
+                cfg.connection_manager.hosts.insert(id, host);
+                cfg.save();
+            };
+
+            let dialog = EditHostView::default()
+                .into_dialog("Cancel", "Save", save_host)
+                .title("Add Host");
+
+            siv.add_layer(dialog);
+        };
 
         let sel_clone_edit = selected_connection.clone();
         let table_data_clone_edit = table_data.clone();
@@ -299,13 +320,29 @@ impl ConnectionManagerView {
                 .into_dialog("Cancel", "Save", save_host)
                 .title("Edit Host");
 
-            siv.add_layer(dialog)
+            siv.add_layer(dialog);
+        };
+
+        let sel_clone_remove = selected_connection.clone();
+        let table_data_clone_remove = table_data.clone();
+        let remove_button = move |_: &mut _| {
+            let mut sel = sel_clone_remove.borrow_mut();
+            let id = sel.take().expect("Remove button should be disabled");
+
+            let mut data = table_data_clone_remove.write().unwrap();
+
+            assert_eq!(data.current_host, Some(id));
+            data.current_host = None;
+
+            data.connections
+                .remove(&id)
+                .expect("Tried to remove nonexistent connection");
         };
 
         let buttons = LinearLayout::horizontal()
-            .child(Button::new("Add", |_| ()))
+            .child(Button::new("Add", add_button))
             .child(Button::new("Edit", edit_button))
-            .child(Button::new("Remove", |_| ()))
+            .child(Button::new("Remove", remove_button))
             .child(Button::new("Refresh", |_| ()))
             .child(DummyView)
             .child(Button::new("Stop Daemon", |_| ()));
