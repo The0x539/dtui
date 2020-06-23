@@ -334,9 +334,11 @@ impl TorrentsViewThread {
         let tor = &data.torrents[&hash];
 
         if tor.matches_filters(&self.filters) {
-            data.rows
-                .remove_item(&hash)
+            let idx = data
+                .binary_search(&hash)
                 .expect("infohash not found in rows despite torrent matching filters");
+
+            data.rows.remove(idx);
         }
 
         data.torrents.remove(&hash);
