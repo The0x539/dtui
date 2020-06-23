@@ -3,6 +3,7 @@ use std::ops::Deref;
 use std::sync::{Arc, RwLock};
 
 use super::{
+    edit_host::EditHostView,
     labeled_checkbox::LabeledCheckbox,
     table::{TableView, TableViewData},
 };
@@ -15,9 +16,10 @@ use tokio::task;
 use deluge_rpc::Session;
 
 use cursive::{
+    event::Callback,
     view::ViewWrapper,
     views::{Button, DummyView, LinearLayout, Panel},
-    Printer,
+    Cursive, Printer,
 };
 use uuid::Uuid;
 
@@ -184,8 +186,7 @@ impl ConnectionManagerView {
         // TODO: where did this handle come from?
         // is it an additional ref not listed in main.rs?
 
-        let cfg = config::get_config();
-        let cmgr = &cfg.read().unwrap().connection_manager;
+        let cmgr = &config::read().connection_manager;
 
         let connections: FnvIndexMap<Uuid, Connection> = cmgr
             .hosts
@@ -195,8 +196,9 @@ impl ConnectionManagerView {
 
         let mut threads = Vec::with_capacity(connections.len());
 
-        let autoconnect_host = None; // TODO: read from config
-        let hide_dialog = false; // TODO: read from config
+        let autoconnect_host = cmgr.autoconnect;
+        let hide_dialog = cmgr.hide_on_start;
+        drop(cmgr);
 
         let auto_connect = current_host.get_id() == autoconnect_host;
 
@@ -205,7 +207,17 @@ impl ConnectionManagerView {
             (Column::Host, 50),
             (Column::Version, 11),
         ];
-        let table = TableView::<ConnectionTableData>::new(cols);
+        let mut table = TableView::<ConnectionTableData>::new(cols);
+
+        let selected_connection = Arc::new(RwLock::new(None));
+
+        let sel_clone_change = selected_connection.clone();
+        let on_sel_change = move |_: &mut _, sel: &Uuid, _, _| {
+            *sel_clone_change.write().unwrap() = Some(*sel);
+            Callback::dummy()
+        };
+        table.set_on_selection_change(on_sel_change);
+
         let table_data = table.get_data();
         {
             let mut data = table_data.write().unwrap();
@@ -236,9 +248,37 @@ impl ConnectionManagerView {
             }
         }
 
+        let sel_clone_edit = selected_connection.clone();
+        let data_clone_edit = table_data.clone();
+        let edit_button = move |siv: &mut Cursive| {
+            let data_clone = data_clone_edit.clone();
+
+            let data = data_clone_edit.read().unwrap();
+            let sel = sel_clone_edit.read().unwrap();
+            let id = sel.expect("Edit button should be disabled");
+
+            let conn = &data.connections[&id];
+
+            let view = EditHostView::new(&conn.address, conn.port, &conn.username, &conn.password);
+            drop(conn);
+
+            let dialog = view
+                .into_dialog("Cancel", "Save", move |_, host: config::Host| {
+                    let mut data = data_clone.write().unwrap();
+                    data.connections.insert(id, Connection::from(host.clone()));
+
+                    let mut cfg = config::write();
+                    cfg.connection_manager.hosts.insert(id, host);
+                    cfg.save();
+                })
+                .title("Edit Host");
+
+            siv.add_layer(dialog)
+        };
+
         let buttons = LinearLayout::horizontal()
             .child(Button::new("Add", |_| ()))
-            .child(Button::new("Edit", |_| ()))
+            .child(Button::new("Edit", edit_button))
             .child(Button::new("Remove", |_| ()))
             .child(Button::new("Refresh", |_| ()))
             .child(DummyView)

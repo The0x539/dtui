@@ -1,4 +1,4 @@
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
 use lazy_static::lazy_static;
 use serde::{Deserialize, Serialize};
@@ -16,6 +16,18 @@ pub struct Host {
     pub port: u16,
 }
 
+impl Default for Host {
+    fn default() -> Self {
+        let (username, password, address) = Default::default();
+        Self {
+            username,
+            password,
+            address,
+            port: 58846,
+        }
+    }
+}
+
 #[derive(Default, Serialize, Deserialize)]
 pub struct ConnectionManagerConfig {
     pub autoconnect: Option<Uuid>,
@@ -29,7 +41,7 @@ pub struct Config {
 }
 
 impl Config {
-    fn save(&mut self) {
+    pub fn save(&mut self) {
         // Mutation isn't required, but exclusive access makes sense.
         // Moreover, if you didn't already have a mutable ref to the config,
         // then you can't possibly have any changes to save anyway.
@@ -50,4 +62,12 @@ lazy_static! {
 
 pub fn get_config() -> Arc<RwLock<Config>> {
     Arc::clone(&self::CONFIG)
+}
+
+pub fn read() -> RwLockReadGuard<'static, Config> {
+    self::CONFIG.read().unwrap()
+}
+
+pub fn write() -> RwLockWriteGuard<'static, Config> {
+    self::CONFIG.write().unwrap()
 }

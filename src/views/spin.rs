@@ -85,6 +85,21 @@ impl Spinnable for i64 {
     }
 }
 
+impl Spinnable for u16 {
+    fn is_float() -> bool {
+        false
+    }
+    fn checked_incr(self) -> Option<Self> {
+        self.checked_add(1)
+    }
+    fn checked_decr(self) -> Option<Self> {
+        self.checked_sub(1)
+    }
+    fn allows_negative(_: &impl RangeBounds<Self>) -> bool {
+        false
+    }
+}
+
 impl Spinnable for f64 {
     fn is_float() -> bool {
         true
@@ -184,6 +199,11 @@ where
         } else {
             cb
         }
+    }
+
+    pub fn with_val(mut self, val: T) -> Self {
+        let _: Callback = self.set_val(val);
+        self
     }
 
     pub fn set_on_modify<F: Fn(&mut Cursive, T) + 'static>(&mut self, cb: F) {

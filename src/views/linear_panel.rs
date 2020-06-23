@@ -1,22 +1,24 @@
 use cursive::direction::Orientation;
 use cursive::vec::Vec2;
-use cursive::view::{View, ViewWrapper};
-use cursive::views::{LinearLayout, PaddedView};
+use cursive::view::{IntoBoxedView, View, ViewWrapper};
+use cursive::views::{BoxedView, LinearLayout, PaddedView};
 use cursive::Printer;
 
-struct Child<V> {
-    inner: PaddedView<V>,
+type PaddedBoxedView = PaddedView<BoxedView>;
+
+struct Child {
+    inner: PaddedBoxedView,
     orientation: Orientation,
     title: Option<String>,
 }
 
-impl<V: View> Child<V> {
-    fn new(view: V, orientation: Orientation, title: Option<String>) -> Self {
+impl Child {
+    fn new(view: impl IntoBoxedView, orientation: Orientation, title: Option<String>) -> Self {
         let (l, r, t, b) = match orientation {
             Orientation::Vertical => (1, 1, 1, 0),
             Orientation::Horizontal => (1, 0, 1, 1),
         };
-        let inner = PaddedView::lrtb(l, r, t, b, view);
+        let inner = PaddedView::lrtb(l, r, t, b, BoxedView::boxed(view));
         Self {
             inner,
             orientation,
@@ -25,8 +27,8 @@ impl<V: View> Child<V> {
     }
 }
 
-impl<V: View> ViewWrapper for Child<V> {
-    cursive::wrap_impl!(self.inner: PaddedView<V>);
+impl ViewWrapper for Child {
+    cursive::wrap_impl!(self.inner: PaddedBoxedView);
 
     fn wrap_draw(&self, printer: &Printer) {
         let Vec2 { x: px, y: py } = printer.size;
@@ -92,14 +94,22 @@ impl LinearPanel {
         Self::new(Orientation::Vertical)
     }
 
-    pub fn add_child(&mut self, view: impl View, title: Option<&str>) {
+    pub fn add_child(&mut self, view: impl IntoBoxedView, title: Option<&str>) {
         let child = Child::new(view, self.orientation, title.map(String::from));
         self.inner.get_inner_mut().add_child(child);
     }
 
-    pub fn child(mut self, view: impl View, title: Option<&str>) -> Self {
+    pub fn child(mut self, view: impl IntoBoxedView, title: Option<&str>) -> Self {
         self.add_child(view, title);
         self
+    }
+
+    pub fn remove_child(&mut self, i: usize) -> Option<Box<dyn View>> {
+        let child_box = self.inner.get_inner_mut().remove_child(i)?;
+        let child_view = child_box.downcast::<Child>().ok().unwrap();
+        let padded = child_view.into_inner().ok().unwrap();
+        let boxed = padded.into_inner().ok().unwrap();
+        Some(BoxedView::unwrap(boxed))
     }
 }
 
