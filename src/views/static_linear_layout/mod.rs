@@ -1,17 +1,14 @@
-#![allow(unused_imports, dead_code)]
-
 mod view_tuple;
-pub use view_tuple::{ViewFn, ViewMutFn, ViewTuple};
+pub use view_tuple::ViewTuple;
 
 use cursive::{
     direction,
     event::{AnyCb, Event, EventResult, Key},
-    view::{IntoBoxedView, Selector, SizeCache, View, ViewPath},
-    Printer, Rect, Vec2, With, XY,
+    view::{Selector, SizeCache, View, ViewPath},
+    Printer, Rect, Vec2, XY,
 };
 
 use std::cmp::min;
-use std::ops::Deref;
 
 pub struct StaticLinearLayout<T> {
     children: T,
@@ -86,25 +83,6 @@ impl<'a, I: Iterator<Item = (usize, &'a ChildMetadata)>> Iterator for ChildRefIt
     }
 }
 
-#[derive(Copy, Clone)]
-struct GiveFocus(direction::Direction);
-impl ViewMutFn for GiveFocus {
-    type Output = bool;
-
-    fn call_mut(&mut self, view: &mut impl View) -> Self::Output {
-        view.take_focus(self.0)
-    }
-}
-
-struct GetRequiredSize(Vec2);
-impl ViewMutFn for GetRequiredSize {
-    type Output = Vec2;
-
-    fn call_mut(&mut self, view: &mut impl View) -> Self::Output {
-        view.required_size(self.0)
-    }
-}
-
 fn cap<'a, I: Iterator<Item = &'a mut usize>>(iter: I, max: usize) {
     let mut available = max;
     for item in iter {
@@ -115,6 +93,7 @@ fn cap<'a, I: Iterator<Item = &'a mut usize>>(iter: I, max: usize) {
     }
 }
 
+#[allow(dead_code)]
 impl<T: ViewTuple> StaticLinearLayout<T> {
     pub fn new(orientation: direction::Orientation, children: T) -> Self {
         StaticLinearLayout {
@@ -140,11 +119,12 @@ impl<T: ViewTuple> StaticLinearLayout<T> {
     }
 
     pub fn set_focus_index(&mut self, index: usize) -> Result<(), ()> {
-        let give_focus = GiveFocus(direction::Direction::none());
-
         if index >= self.len() {
             Err(())
-        } else if self.with_child_mut(index, give_focus) {
+        } else if self
+            .children
+            .take_focus(index, direction::Direction::none())
+        {
             self.focus = index;
             Ok(())
         } else {
@@ -176,19 +156,19 @@ impl<T: ViewTuple> StaticLinearLayout<T> {
         self.children
     }
 
-    pub fn with_child<F: ViewFn>(&self, i: usize, f: F) -> F::Output {
-        self.children.with_elem(i, f)
+    pub fn with_child<F: FnOnce(&dyn View) -> O, O>(&self, i: usize, f: F) -> O {
+        f(self.children.get(i))
     }
 
-    pub fn with_child_mut<F: ViewMutFn>(&mut self, i: usize, f: F) -> F::Output {
-        self.children.with_elem_mut(i, f)
+    pub fn with_child_mut<F: FnOnce(&mut dyn View) -> O, O>(&mut self, i: usize, f: F) -> O {
+        f(self.children.get_mut(i))
     }
 
-    pub fn with_focused<F: ViewFn>(&self, f: F) -> F::Output {
+    pub fn with_focused<F: FnOnce(&dyn View) -> O, O>(&self, f: F) -> O {
         self.with_child(self.focus, f)
     }
 
-    pub fn with_focused_mut<F: ViewMutFn>(&mut self, f: F) -> F::Output {
+    pub fn with_focused_mut<F: FnOnce(&mut dyn View) -> O, O>(&mut self, f: F) -> O {
         self.with_child_mut(self.focus, f)
     }
 
@@ -202,15 +182,9 @@ impl<T: ViewTuple> StaticLinearLayout<T> {
     }
 
     fn children_are_sleeping(&self) -> bool {
-        struct NeedsRelayout;
-        impl ViewFn for NeedsRelayout {
-            type Output = bool;
-            fn call(&mut self, view: &impl View) -> bool {
-                view.needs_relayout()
-            }
-        }
-
-        self.children.with_each(NeedsRelayout).contains(&true)
+        self.children
+            .with_each(|t, i| t.needs_relayout(i))
+            .contains(&true)
     }
 
     fn move_focus(&mut self, source: direction::Direction) -> EventResult {
@@ -223,7 +197,7 @@ impl<T: ViewTuple> StaticLinearLayout<T> {
                     break EventResult::Ignored;
                 }
                 focus -= 1;
-                if self.with_focused_mut(GiveFocus(source)) {
+                if self.children.take_focus(focus, source) {
                     self.focus = focus;
                     break EventResult::Consumed(None);
                 }
@@ -233,7 +207,7 @@ impl<T: ViewTuple> StaticLinearLayout<T> {
                 if focus == self.len() {
                     break EventResult::Ignored;
                 }
-                if self.with_focused_mut(GiveFocus(source)) {
+                if self.children.take_focus(focus, source) {
                     self.focus = focus;
                     break EventResult::Consumed(None);
                 }
@@ -260,8 +234,6 @@ impl<T: ViewTuple> StaticLinearLayout<T> {
 
             let position = *position.get(self.orientation);
 
-            let give_focus = GiveFocus(direction::Direction::none());
-
             for item in ChildRefIter::new(
                 self.child_metadata.iter().enumerate(),
                 self.orientation,
@@ -270,7 +242,10 @@ impl<T: ViewTuple> StaticLinearLayout<T> {
             ) {
                 let child_size = item.child.last_size.get(self.orientation);
                 if item.offset + child_size > position {
-                    if self.children.with_elem_mut(item.index, give_focus) {
+                    if self
+                        .children
+                        .take_focus(item.index, direction::Direction::none())
+                    {
                         self.focus = item.index;
                     }
                     break;
@@ -282,15 +257,6 @@ impl<T: ViewTuple> StaticLinearLayout<T> {
 
 impl<T: ViewTuple + 'static> View for StaticLinearLayout<T> {
     fn draw(&self, printer: &Printer) {
-        struct Draw<'a, 'b, 'c>(&'a Printer<'b, 'c>);
-        impl ViewFn for Draw<'_, '_, '_> {
-            type Output = ();
-
-            fn call(&mut self, view: &impl View) -> Self::Output {
-                view.draw(self.0)
-            }
-        }
-
         for item in ChildRefIter::new(
             self.child_metadata.iter().enumerate(),
             self.orientation,
@@ -301,7 +267,7 @@ impl<T: ViewTuple + 'static> View for StaticLinearLayout<T> {
                 .cropped(item.child.last_size)
                 .focused(item.index == self.focus);
 
-            self.with_child(item.index, Draw(&printer));
+            self.children.draw(item.index, &printer);
         }
     }
 
@@ -310,14 +276,6 @@ impl<T: ViewTuple + 'static> View for StaticLinearLayout<T> {
     }
 
     fn layout(&mut self, size: Vec2) {
-        struct Layout(Vec2);
-        impl ViewMutFn for Layout {
-            type Output = ();
-            fn call_mut(&mut self, view: &mut impl View) -> Self::Output {
-                view.layout(self.0)
-            }
-        }
-
         if self.get_cache(size).is_none() {
             self.required_size(size);
         }
@@ -328,7 +286,7 @@ impl<T: ViewTuple + 'static> View for StaticLinearLayout<T> {
 
         for item in ChildRefIter::new(self.child_metadata.iter().enumerate(), o, *size.get(o)) {
             let size = size.with_axis(o, item.length);
-            self.children.with_elem_mut(item.index, Layout(size));
+            self.children.layout(item.index, size);
             sizes.push(size);
         }
 
@@ -338,62 +296,44 @@ impl<T: ViewTuple + 'static> View for StaticLinearLayout<T> {
     }
 
     fn required_size(&mut self, req: Vec2) -> Vec2 {
-        struct RequiredSize<'a> {
-            size: Vec2,
-            metadata: &'a mut [ChildMetadata],
-            index: usize,
-        }
-        impl<'a> RequiredSize<'a> {
-            fn new(size: Vec2, metadata: &'a mut [ChildMetadata]) -> Self {
-                Self {
-                    size,
-                    metadata,
-                    index: 0,
-                }
-            }
-        }
-        impl ViewMutFn for RequiredSize<'_> {
-            type Output = Vec2;
-            fn call_mut(&mut self, view: &mut impl View) -> Self::Output {
-                let size = view.required_size(self.size);
-                self.metadata[self.index].required_size = size;
-                self.index += 1;
-                size
-            }
-        }
-
         if let Some(size) = self.get_cache(req) {
             return size;
         }
 
         let o = self.orientation;
 
-        let ideal_sizes = self
-            .children
-            .with_each_mut(RequiredSize::new(req, &mut self.child_metadata));
+        let mut metadata = std::mem::take(&mut self.child_metadata);
+
+        let ideal_sizes = self.children.with_each_mut(|t, i| {
+            let required_size = t.required_size(i, req);
+            metadata[i].required_size = required_size;
+            required_size
+        });
         let ideal = o.stack(ideal_sizes.iter());
 
         if ideal.fits_in(req) {
             self.cache = Some(SizeCache::build(ideal, req));
+            self.child_metadata = metadata;
             return ideal;
         }
 
         let budget_req = req.with_axis(o, 1);
 
-        let min_sizes = self
-            .children
-            .with_each_mut(RequiredSize::new(budget_req, &mut self.child_metadata));
+        let min_sizes = self.children.with_each_mut(|t, i| {
+            let required_size = t.required_size(i, budget_req);
+            metadata[i].required_size = required_size;
+            required_size
+        });
         let desperate = o.stack(min_sizes.iter());
 
         if desperate.get(o) > req.get(o) {
             cap(
-                self.child_metadata
-                    .iter_mut()
-                    .map(|c| c.required_size.get_mut(o)),
+                metadata.iter_mut().map(|c| c.required_size.get_mut(o)),
                 *req.get(o),
             );
 
             self.cache = None;
+            self.child_metadata = metadata;
             return desperate;
         }
 
@@ -426,17 +366,15 @@ impl<T: ViewTuple + 'static> View for StaticLinearLayout<T> {
             .map(|l| req.with_axis(o, l))
             .collect();
 
-        let mut final_sizes = Vec::with_capacity(self.len());
         for i in 0..self.len() {
-            let mut metadata = [ChildMetadata::default()];
-            final_sizes
-                .push(self.with_child_mut(i, RequiredSize::new(final_lengths[i], &mut metadata)));
-            self.child_metadata[i] = metadata[0];
+            let size = self.children.required_size(i, final_lengths[i]);
+            metadata[i].required_size = size;
         }
 
-        let compromise = o.stack(final_sizes.iter());
+        let compromise = o.stack(metadata.iter().map(|c| &c.required_size));
 
         self.cache = Some(SizeCache::build(compromise, req));
+        self.child_metadata = metadata;
 
         compromise
     }
@@ -446,7 +384,7 @@ impl<T: ViewTuple + 'static> View for StaticLinearLayout<T> {
             self.move_focus(source).is_consumed()
         } else {
             for i in 0..self.len() {
-                if self.with_child_mut(i, GiveFocus(source)) {
+                if self.children.take_focus(i, source) {
                     return true;
                 }
             }
@@ -455,14 +393,6 @@ impl<T: ViewTuple + 'static> View for StaticLinearLayout<T> {
     }
 
     fn on_event(&mut self, event: Event) -> EventResult {
-        struct OnEvent(Event);
-        impl ViewMutFn for OnEvent {
-            type Output = EventResult;
-            fn call_mut(&mut self, view: &mut impl View) -> Self::Output {
-                view.on_event(self.0.clone())
-            }
-        }
-
         if self.len() == 0 {
             return EventResult::Ignored;
         }
@@ -477,7 +407,8 @@ impl<T: ViewTuple + 'static> View for StaticLinearLayout<T> {
                 .unwrap();
 
             let offset = o.make_vec(item.offset, 0);
-            self.with_focused_mut(OnEvent(event.relativized(offset)))
+            self.children
+                .on_event(self.focus, event.relativized(offset))
         };
 
         if result.is_consumed() {
@@ -509,44 +440,29 @@ impl<T: ViewTuple + 'static> View for StaticLinearLayout<T> {
     }
 
     fn call_on_any<'a>(&mut self, selector: &Selector<'_>, callback: AnyCb<'a>) {
-        struct CallOnAny<'a, 'b, 'c>(&'a Selector<'b>, AnyCb<'c>);
-        impl ViewMutFn for CallOnAny<'_, '_, '_> {
-            type Output = ();
-            fn call_mut(&mut self, view: &mut impl View) -> Self::Output {
-                view.call_on_any(self.0, self.1)
-            }
-        }
-
         if let Selector::Path(ViewPath { ref path }) = selector {
             if let Some(index) = path.first().copied() {
+                // TODO: should this perhaps be part of ViewTuple?
                 if index < self.len() {
                     let new_path = ViewPath::from(&path[1..]);
                     let new_selector = Selector::Path(&new_path);
-                    self.with_child_mut(index, CallOnAny(&new_selector, callback))
+                    self.children.call_on_any(index, &new_selector, callback)
                 }
             }
         } else {
             for i in 0..self.len() {
-                self.with_child_mut(i, CallOnAny(selector, callback))
+                self.children.call_on_any(i, selector, callback)
             }
         }
     }
 
     fn focus_view(&mut self, selector: &Selector<'_>) -> Result<(), ()> {
-        struct FocusView<'a, 'b>(&'a Selector<'b>);
-        impl ViewMutFn for FocusView<'_, '_> {
-            type Output = Result<(), ()>;
-            fn call_mut(&mut self, view: &mut impl View) -> Self::Output {
-                view.focus_view(self.0)
-            }
-        }
-
         if let Selector::Path(ViewPath { ref path }) = selector {
             if let Some(index) = path.first().copied() {
                 if index < self.len() {
                     let new_path = ViewPath::from(&path[1..]);
                     let new_selector = Selector::Path(&new_path);
-                    self.with_child_mut(index, FocusView(&new_selector))
+                    self.children.focus_view(index, &new_selector)
                 } else {
                     Err(())
                 }
@@ -555,7 +471,7 @@ impl<T: ViewTuple + 'static> View for StaticLinearLayout<T> {
             }
         } else {
             for i in 0..self.len() {
-                if self.with_child_mut(i, FocusView(selector)).is_ok() {
+                if self.children.focus_view(i, selector).is_ok() {
                     return Ok(());
                 }
             }
@@ -564,14 +480,6 @@ impl<T: ViewTuple + 'static> View for StaticLinearLayout<T> {
     }
 
     fn important_area(&self, _: Vec2) -> Rect {
-        struct ImportantArea(Vec2);
-        impl ViewFn for ImportantArea {
-            type Output = Rect;
-            fn call(&mut self, view: &impl View) -> Self::Output {
-                view.important_area(self.0)
-            }
-        }
-
         if self.len() == 0 {
             return Rect::from((0, 0));
         }
@@ -585,7 +493,9 @@ impl<T: ViewTuple + 'static> View for StaticLinearLayout<T> {
         .unwrap();
 
         let offset = self.orientation.make_vec(item.offset, 0);
-        let rect = self.with_focused(ImportantArea(item.child.last_size));
+        let rect = self
+            .children
+            .important_area(item.index, item.child.last_size);
 
         rect + offset
     }
