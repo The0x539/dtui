@@ -6,7 +6,7 @@ pub use view_tuple::{ViewFn, ViewMutFn, ViewTuple};
 use cursive::{
     direction,
     event::{AnyCb, Event, EventResult, Key},
-    view::{IntoBoxedView, Selector, SizeCache, View},
+    view::{IntoBoxedView, Selector, SizeCache, View, ViewPath},
     Printer, Rect, Vec2, With, XY,
 };
 
@@ -334,15 +334,85 @@ impl<T: ViewTuple + 'static> View for StaticLinearLayout<T> {
         todo!()
     }
 
-    fn call_on_any<'a>(&mut self, _: &Selector<'_>, _: AnyCb<'a>) {
-        todo!()
+    fn call_on_any<'a>(&mut self, selector: &Selector<'_>, callback: AnyCb<'a>) {
+        struct CallOnAny<'a, 'b, 'c>(&'a Selector<'b>, AnyCb<'c>);
+        impl ViewMutFn for CallOnAny<'_, '_, '_> {
+            type Output = ();
+            fn call_mut(&mut self, view: &mut impl View) -> Self::Output {
+                view.call_on_any(self.0, self.1)
+            }
+        }
+
+        if let Selector::Path(ViewPath { ref path }) = selector {
+            if let Some(index) = path.first().copied() {
+                if index < self.len() {
+                    let new_path = ViewPath::from(&path[1..]);
+                    let new_selector = Selector::Path(&new_path);
+                    self.with_child_mut(index, CallOnAny(&new_selector, callback))
+                }
+            }
+        } else {
+            for i in 0..self.len() {
+                self.with_child_mut(i, CallOnAny(selector, callback))
+            }
+        }
     }
 
-    fn focus_view(&mut self, _: &Selector<'_>) -> Result<(), ()> {
-        todo!()
+    fn focus_view(&mut self, selector: &Selector<'_>) -> Result<(), ()> {
+        struct FocusView<'a, 'b>(&'a Selector<'b>);
+        impl ViewMutFn for FocusView<'_, '_> {
+            type Output = Result<(), ()>;
+            fn call_mut(&mut self, view: &mut impl View) -> Self::Output {
+                view.focus_view(self.0)
+            }
+        }
+
+        if let Selector::Path(ViewPath { ref path }) = selector {
+            if let Some(index) = path.first().copied() {
+                if index < self.len() {
+                    let new_path = ViewPath::from(&path[1..]);
+                    let new_selector = Selector::Path(&new_path);
+                    self.with_child_mut(index, FocusView(&new_selector))
+                } else {
+                    Err(())
+                }
+            } else {
+                Err(())
+            }
+        } else {
+            for i in 0..self.len() {
+                if self.with_child_mut(i, FocusView(selector)).is_ok() {
+                    return Ok(());
+                }
+            }
+            Err(())
+        }
     }
 
     fn important_area(&self, _: Vec2) -> Rect {
-        todo!()
+        struct ImportantArea(Vec2);
+        impl ViewFn for ImportantArea {
+            type Output = Rect;
+            fn call(&mut self, view: &impl View) -> Self::Output {
+                view.important_area(self.0)
+            }
+        }
+
+        if self.len() == 0 {
+            return Rect::from((0, 0));
+        }
+
+        let item = ChildRefIter::new(
+            self.child_metadata.iter().enumerate(),
+            self.orientation,
+            usize::MAX,
+        )
+        .nth(self.focus)
+        .unwrap();
+
+        let offset = self.orientation.make_vec(item.offset, 0);
+        let rect = self.with_focused(ImportantArea(item.child.last_size));
+
+        rect + offset
     }
 }
