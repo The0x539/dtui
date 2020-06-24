@@ -105,6 +105,16 @@ impl ViewMutFn for GetRequiredSize {
     }
 }
 
+fn cap<'a, I: Iterator<Item = &'a mut usize>>(iter: I, max: usize) {
+    let mut available = max;
+    for item in iter {
+        if *item > available {
+            *item = available;
+        }
+        available -= *item;
+    }
+}
+
 impl<T: ViewTuple> StaticLinearLayout<T> {
     pub fn new(orientation: direction::Orientation, children: T) -> Self {
         StaticLinearLayout {
@@ -210,28 +220,26 @@ impl<T: ViewTuple> StaticLinearLayout<T> {
         match source.relative(self.orientation) {
             Some(direction::Relative::Back) => loop {
                 if focus == 0 {
-                    break;
+                    break EventResult::Ignored;
                 }
                 focus -= 1;
                 if self.with_focused_mut(GiveFocus(source)) {
                     self.focus = focus;
-                    break;
+                    break EventResult::Consumed(None);
                 }
             },
             Some(direction::Relative::Front) => loop {
                 focus += 1;
                 if focus == self.len() {
-                    break;
+                    break EventResult::Ignored;
                 }
                 if self.with_focused_mut(GiveFocus(source)) {
                     self.focus = focus;
-                    break;
+                    break EventResult::Consumed(None);
                 }
             },
-            None => (),
+            None => EventResult::Ignored,
         }
-
-        return EventResult::Consumed(None);
     }
 
     fn check_focus_grab(&mut self, event: &Event) {
@@ -322,16 +330,151 @@ impl<T: ViewTuple + 'static> View for StaticLinearLayout<T> {
         }
     }
 
-    fn required_size(&mut self, _: Vec2) -> Vec2 {
-        todo!()
+    fn required_size(&mut self, req: Vec2) -> Vec2 {
+        struct RequiredSize(Vec2);
+        impl ViewMutFn for RequiredSize {
+            type Output = Vec2;
+            fn call_mut(&mut self, view: &mut impl View) -> Self::Output {
+                view.required_size(self.0)
+            }
+        }
+
+        if let Some(size) = self.get_cache(req) {
+            return size;
+        }
+
+        let o = self.orientation;
+
+        let ideal_sizes = self.children.with_each_mut(RequiredSize(req));
+        let ideal = o.stack(ideal_sizes.iter());
+
+        if ideal.fits_in(req) {
+            self.cache = Some(SizeCache::build(ideal, req));
+            return ideal;
+        }
+
+        let budget_req = req.with_axis(o, 1);
+
+        let min_sizes = self.children.with_each_mut(RequiredSize(budget_req));
+        let desperate = o.stack(min_sizes.iter());
+
+        if desperate.get(o) > req.get(o) {
+            cap(
+                self.child_metadata
+                    .iter_mut()
+                    .map(|c| c.required_size.get_mut(o)),
+                *req.get(o),
+            );
+
+            self.cache = None;
+            return desperate;
+        }
+
+        let mut available = o.get(&(req.saturating_sub(desperate)));
+        let mut overweight: Vec<(usize, usize)> = ideal_sizes
+            .iter()
+            .map(|v| o.get(v))
+            .zip(min_sizes.iter().map(|v| o.get(v)))
+            .map(|(a, b)| a.saturating_sub(b))
+            .enumerate()
+            .collect();
+
+        overweight.sort_by_key(|&(_, weight)| weight);
+        let mut allocations = vec![0; overweight.len()];
+
+        for (i, &(j, weight)) in overweight.iter().enumerate() {
+            let remaining = overweight.len() - i;
+            let budget = available / remaining;
+            let spent = min(budget, weight);
+            allocations[j] = spent;
+            available -= spent;
+        }
+
+        let final_lengths: Vec<Vec2> = min_sizes
+            .iter()
+            .map(|v| o.get(v))
+            .zip(allocations.iter())
+            .map(|(a, b)| a + b)
+            .map(|l| req.with_axis(o, l))
+            .collect();
+
+        let mut final_sizes = Vec::with_capacity(self.len());
+        for i in 0..self.len() {
+            final_sizes.push(self.with_child_mut(i, RequiredSize(final_lengths[i])));
+        }
+
+        let compromise = o.stack(final_sizes.iter());
+
+        self.cache = Some(SizeCache::build(compromise, req));
+
+        compromise
     }
 
-    fn take_focus(&mut self, _: direction::Direction) -> bool {
-        todo!()
+    fn take_focus(&mut self, source: direction::Direction) -> bool {
+        if source.relative(self.orientation).is_some() {
+            self.move_focus(source).is_consumed()
+        } else {
+            for i in 0..self.len() {
+                if self.with_child_mut(i, GiveFocus(source)) {
+                    return true;
+                }
+            }
+            return false;
+        }
     }
 
-    fn on_event(&mut self, _: Event) -> EventResult {
-        todo!()
+    fn on_event(&mut self, event: Event) -> EventResult {
+        struct OnEvent(Event);
+        impl ViewMutFn for OnEvent {
+            type Output = EventResult;
+            fn call_mut(&mut self, view: &mut impl View) -> Self::Output {
+                view.on_event(self.0.clone())
+            }
+        }
+
+        if self.len() == 0 {
+            return EventResult::Ignored;
+        }
+
+        self.check_focus_grab(&event);
+
+        let o = self.orientation;
+
+        let result = {
+            let item = ChildRefIter::new(self.child_metadata.iter().enumerate(), o, usize::MAX)
+                .nth(self.focus)
+                .unwrap();
+
+            let offset = o.make_vec(item.offset, 0);
+            self.with_focused_mut(OnEvent(event.relativized(offset)))
+        };
+
+        if result.is_consumed() {
+            return result;
+        }
+
+        use direction::{
+            Direction,
+            Orientation::{Horizontal, Vertical},
+        };
+
+        match event {
+            Event::Shift(Key::Tab) if self.focus > 0 => self.move_focus(Direction::back()),
+            Event::Key(Key::Tab) if self.focus + 1 < T::LEN => self.move_focus(Direction::front()),
+            Event::Key(Key::Left) if o == Horizontal && self.focus > 0 => {
+                self.move_focus(Direction::right())
+            }
+            Event::Key(Key::Up) if o == Vertical && self.focus > 0 => {
+                self.move_focus(Direction::down())
+            }
+            Event::Key(Key::Right) if o == Horizontal && self.focus + 1 < T::LEN => {
+                self.move_focus(Direction::left())
+            }
+            Event::Key(Key::Down) if self.orientation == Vertical && self.focus + 1 < T::LEN => {
+                self.move_focus(Direction::up())
+            }
+            _ => EventResult::Ignored,
+        }
     }
 
     fn call_on_any<'a>(&mut self, selector: &Selector<'_>, callback: AnyCb<'a>) {
