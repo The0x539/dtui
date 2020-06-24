@@ -324,18 +324,41 @@ impl<T: ViewTuple + 'static> View for StaticLinearLayout<T> {
 
         let o = self.orientation;
 
+        let mut sizes = Vec::with_capacity(self.len());
+
         for item in ChildRefIter::new(self.child_metadata.iter().enumerate(), o, *size.get(o)) {
             let size = size.with_axis(o, item.length);
             self.children.with_elem_mut(item.index, Layout(size));
+            sizes.push(size);
+        }
+
+        for (i, size) in sizes.into_iter().enumerate() {
+            self.child_metadata[i].last_size = size;
         }
     }
 
     fn required_size(&mut self, req: Vec2) -> Vec2 {
-        struct RequiredSize(Vec2);
-        impl ViewMutFn for RequiredSize {
+        struct RequiredSize<'a> {
+            size: Vec2,
+            metadata: &'a mut [ChildMetadata],
+            index: usize,
+        }
+        impl<'a> RequiredSize<'a> {
+            fn new(size: Vec2, metadata: &'a mut [ChildMetadata]) -> Self {
+                Self {
+                    size,
+                    metadata,
+                    index: 0,
+                }
+            }
+        }
+        impl ViewMutFn for RequiredSize<'_> {
             type Output = Vec2;
             fn call_mut(&mut self, view: &mut impl View) -> Self::Output {
-                view.required_size(self.0)
+                let size = view.required_size(self.size);
+                self.metadata[self.index].required_size = size;
+                self.index += 1;
+                size
             }
         }
 
@@ -345,7 +368,9 @@ impl<T: ViewTuple + 'static> View for StaticLinearLayout<T> {
 
         let o = self.orientation;
 
-        let ideal_sizes = self.children.with_each_mut(RequiredSize(req));
+        let ideal_sizes = self
+            .children
+            .with_each_mut(RequiredSize::new(req, &mut self.child_metadata));
         let ideal = o.stack(ideal_sizes.iter());
 
         if ideal.fits_in(req) {
@@ -355,7 +380,9 @@ impl<T: ViewTuple + 'static> View for StaticLinearLayout<T> {
 
         let budget_req = req.with_axis(o, 1);
 
-        let min_sizes = self.children.with_each_mut(RequiredSize(budget_req));
+        let min_sizes = self
+            .children
+            .with_each_mut(RequiredSize::new(budget_req, &mut self.child_metadata));
         let desperate = o.stack(min_sizes.iter());
 
         if desperate.get(o) > req.get(o) {
@@ -371,6 +398,7 @@ impl<T: ViewTuple + 'static> View for StaticLinearLayout<T> {
         }
 
         let mut available = o.get(&(req.saturating_sub(desperate)));
+
         let mut overweight: Vec<(usize, usize)> = ideal_sizes
             .iter()
             .map(|v| o.get(v))
@@ -400,7 +428,10 @@ impl<T: ViewTuple + 'static> View for StaticLinearLayout<T> {
 
         let mut final_sizes = Vec::with_capacity(self.len());
         for i in 0..self.len() {
-            final_sizes.push(self.with_child_mut(i, RequiredSize(final_lengths[i])));
+            let mut metadata = [ChildMetadata::default()];
+            final_sizes
+                .push(self.with_child_mut(i, RequiredSize::new(final_lengths[i], &mut metadata)));
+            self.child_metadata[i] = metadata[0];
         }
 
         let compromise = o.stack(final_sizes.iter());
