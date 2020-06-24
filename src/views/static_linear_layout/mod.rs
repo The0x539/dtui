@@ -134,7 +134,7 @@ impl<T: ViewTuple> StaticLinearLayout<T> {
 
         if index >= self.len() {
             Err(())
-        } else if self.children.with_elem_mut(index, give_focus) {
+        } else if self.with_child_mut(index, give_focus) {
             self.focus = index;
             Ok(())
         } else {
@@ -162,12 +162,24 @@ impl<T: ViewTuple> StaticLinearLayout<T> {
         &mut self.children
     }
 
+    pub fn into_children(self) -> T {
+        self.children
+    }
+
+    pub fn with_child<F: ViewFn>(&self, i: usize, f: F) -> F::Output {
+        self.children.with_elem(i, f)
+    }
+
+    pub fn with_child_mut<F: ViewMutFn>(&mut self, i: usize, f: F) -> F::Output {
+        self.children.with_elem_mut(i, f)
+    }
+
     pub fn with_focused<F: ViewFn>(&self, f: F) -> F::Output {
-        self.children.with_elem(self.focus, f)
+        self.with_child(self.focus, f)
     }
 
     pub fn with_focused_mut<F: ViewMutFn>(&mut self, f: F) -> F::Output {
-        self.children.with_elem_mut(self.focus, f)
+        self.with_child_mut(self.focus, f)
     }
 
     fn get_cache(&self, req: Vec2) -> Option<Vec2> {
@@ -281,7 +293,7 @@ impl<T: ViewTuple + 'static> View for StaticLinearLayout<T> {
                 .cropped(item.child.last_size)
                 .focused(item.index == self.focus);
 
-            self.children.with_elem(item.index, Draw(&printer));
+            self.with_child(item.index, Draw(&printer));
         }
     }
 
