@@ -15,30 +15,29 @@ pub trait Form: View + Sized + 'static {
         submit_label: impl Into<String>,
         on_submit: impl FnOnce(&mut Cursive, Self::Data) + 'static,
     ) -> Dialog {
-        let cb = {
-            let mut f = Some(on_submit);
-            move |siv: &mut Cursive| {
-                if let Some(f) = f.take() {
-                    let dialog: Box<Dialog> = siv
-                        .pop_layer()
-                        .expect("no layer")
-                        .downcast::<Dialog>()
-                        .ok()
-                        .expect("top layer wasn't a Dialog");
+        let mut f = Some(on_submit);
+        let cb = move |siv: &mut Cursive| {
+            let on_submit = match f.take() {
+                Some(f) => f,
+                None => return,
+            };
 
-                    let form: Box<Self> = dialog
-                        .into_content()
-                        .downcast::<Self>()
-                        .ok()
-                        .expect("dialog's contents weren't Self");
+            let dialog: Box<Dialog> = siv
+                .pop_layer()
+                .expect("no layer")
+                .downcast::<Dialog>()
+                .ok()
+                .expect("top layer wasn't a Dialog");
 
-                    let data = form.into_data();
+            let form: Box<Self> = dialog
+                .into_content()
+                .downcast::<Self>()
+                .ok()
+                .expect("dialog's contents weren't Self");
 
-                    f(siv, data);
-                } else {
-                    unreachable!("submit callback was called twice");
-                }
-            }
+            let data = form.into_data();
+
+            on_submit(siv, data);
         };
 
         Dialog::around(self)
