@@ -8,6 +8,7 @@ use futures::executor::block_on;
 use serde::Deserialize;
 use std::cell::{Ref, RefCell};
 use std::future::Future;
+use std::ops::Deref;
 use std::rc::Rc;
 use std::sync::Arc;
 use tokio::task;
@@ -24,21 +25,28 @@ use crate::views::{
 use deluge_rpc::{FilePriority, InfoHash, Query, Session, TorrentOptions};
 
 trait CursiveWithSession<'a> {
-    fn session(&'a mut self) -> Ref<'a, Session>;
+    type Ref: Deref<Target = Session> + 'a;
 
-    fn with_session<T, F: FnOnce(Ref<'a, Session>) -> T>(&'a mut self, f: F) -> T {
+    fn session(&'a mut self) -> Self::Ref;
+
+    fn with_session<T, F>(&'a mut self, f: F) -> T
+    where
+        F: FnOnce(Self::Ref) -> T,
+    {
         f(self.session())
     }
 
-    fn with_session_blocking<T: Future, F: FnOnce(Ref<'a, Session>) -> T>(
-        &'a mut self,
-        f: F,
-    ) -> T::Output {
+    fn with_session_blocking<T, F>(&'a mut self, f: F) -> T::Output
+    where
+        T: Future,
+        F: FnOnce(Self::Ref) -> T,
+    {
         block_on(self.with_session(f))
     }
 }
 
 // "with session blocking + unwrap"
+// Simple macro for more concisely performing RPC inside of Cursive callbacks.
 macro_rules! wsbu {
     // Invocation A: Using a Cursive object, execute a Session -> Future closure.
     ($siv:expr, $f:expr) => {
@@ -53,20 +61,24 @@ macro_rules! wsbu {
 
 // "wsbu + function"
 // Simple wsbu wrapper for calling a function that accepts a Session and some other args
+// If the invocation starts with `@siv;`, then wsbu invocation A will be used.
+// Otherwise, wsbu invocation B will be used.
 macro_rules! wsbuf {
-    // Invocation A: a method. Needs &Session.
+    // Invocation A: A method.
     ($(@$siv:expr;)? :$method:ident $(, $arg:expr)*) => {
-        wsbu!($($siv,)? async move |ses: Ref<Session>| ses.$method($($arg),*).await)
+        wsbu!($($siv,)? async move |ses| ses.$method($($arg),*).await)
     };
 
-    // Invocation B: A function. Needs Ref<Session>.
+    // Invocation B: A function.
     ($(@$siv:expr;)? $func:path $(, $arg:expr)*) => {
-        wsbu!($($siv,)? async move |ses: Ref<Session>| $func(&ses $(, $arg)*).await)
+        wsbu!($($siv,)? async move |ses| $func(&ses $(, $arg)*).await)
     };
 }
 
 impl<'a> CursiveWithSession<'a> for Cursive {
-    fn session(&'a mut self) -> Ref<'a, Session> {
+    type Ref = std::cell::Ref<'a, Session>;
+
+    fn session(&'a mut self) -> Self::Ref {
         let state_ref: Ref<'a, AppState> = self
             .user_data::<RefCell<AppState>>()
             .expect("Cursive object must contain an AppState")
@@ -82,12 +94,11 @@ impl<'a> CursiveWithSession<'a> for Cursive {
     }
 }
 
-fn add_torrent(siv: &mut Cursive, text: impl AsRef<str>) {
-    let text: &str = text.as_ref();
+fn add_torrent(siv: &mut Cursive, text: String) {
     let options = TorrentOptions::default();
     let http_headers = None;
 
-    wsbuf!(@siv; :add_torrent_url, text, &options, http_headers);
+    wsbuf!(@siv; :add_torrent_url, &text, &options, http_headers);
 }
 
 pub fn add_torrent_dialog(siv: &mut Cursive) {
@@ -99,18 +110,15 @@ pub fn add_torrent_dialog(siv: &mut Cursive) {
 }
 
 fn replace_session(siv: &mut Cursive, new: Option<(Uuid, Arc<Session>, String, String)>) {
-    let handle = match new {
-        Some((id, mut session, username, password)) => {
+    let handle = new
+        .map(|(id, mut session, user, pass)| {
             assert_eq!(Arc::strong_count(&session), 1);
-            let fut = Arc::get_mut(&mut session)
-                .unwrap()
-                .login(&username, &password);
-
+            let fut = Arc::get_mut(&mut session).unwrap().login(&user, &pass);
             block_on(fut).unwrap();
             SessionHandle::new(id, session)
-        }
-        None => SessionHandle::default(),
-    };
+        })
+        .unwrap_or_default();
+
     siv.with_user_data(|app_state: &mut AppState| {
         task::block_in_place(|| block_on(app_state.replace(handle))).unwrap();
     })
@@ -251,12 +259,12 @@ pub(crate) fn files_tab_folder_menu(
         }
     };
 
-    let name = Rc::<str>::from(name);
+    let mut name = Some(Rc::from(name));
     let cb = move |siv: &mut Cursive| {
-        let name = name.clone();
+        let name = name.take().unwrap();
         let menu_tree = MenuTree::new()
             .leaf("Rename", move |siv| {
-                rename_folder_dialog(siv, hash, name.clone())
+                rename_folder_dialog(siv, hash, Rc::clone(&name))
             })
             .delimiter()
             .leaf("Skip", make_cb(FilePriority::Skip))
@@ -269,11 +277,11 @@ pub(crate) fn files_tab_folder_menu(
         siv.screen_mut()
             .add_layer_at(cursive::XY::absolute(position), menu_popup);
     };
-    Callback::from_fn(cb)
+    Callback::from_fn_mut(cb)
 }
 
-fn remove_torrent_dialog(siv: &mut Cursive, hash: InfoHash, name: impl AsRef<str>) {
-    let dialog = RemoveTorrentPrompt::new_single(name.as_ref())
+fn remove_torrent_dialog(siv: &mut Cursive, hash: InfoHash, name: &str) {
+    let dialog = RemoveTorrentPrompt::new_single(name)
         .into_dialog("Cancel", "OK", move |siv, remove_data| {
             wsbuf!(@siv; :remove_torrent, hash, remove_data);
         })
@@ -283,9 +291,10 @@ fn remove_torrent_dialog(siv: &mut Cursive, hash: InfoHash, name: impl AsRef<str
 }
 
 pub fn torrent_context_menu(hash: InfoHash, name: &str, position: Vec2) -> Callback {
-    let name = Rc::<str>::from(name); // ugh, I hate doing this
+    let mut name = Some(Box::from(name)); // It's so dumb that this is necessary.
     let cb = move |siv: &mut Cursive| {
-        let name = Rc::clone(&name);
+        let name = name.take().unwrap();
+
         let menu_tree = MenuTree::new()
             .leaf("Pause", wsbuf!(:pause_torrent, hash))
             .leaf("Resume", wsbuf!(:resume_torrent, hash))
@@ -310,7 +319,7 @@ pub fn torrent_context_menu(hash: InfoHash, name: &str, position: Vec2) -> Callb
         siv.screen_mut()
             .add_layer_at(cursive::XY::absolute(position), menu_popup);
     };
-    Callback::from_fn(cb)
+    Callback::from_fn_mut(cb)
 }
 
 pub fn quit_and_shutdown_daemon(siv: &mut Cursive) {
