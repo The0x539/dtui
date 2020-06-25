@@ -1,3 +1,4 @@
+#![feature(async_closure)]
 #![feature(bool_to_option)]
 #![feature(option_result_contains)]
 #![feature(drain_filter)]
@@ -10,6 +11,7 @@ use cursive::views::{LinearLayout, Panel};
 use cursive::Cursive;
 use deluge_rpc::{AuthLevel, FilterDict, InfoHash, Session};
 use futures::FutureExt;
+use std::cell::RefCell;
 use std::sync::{Arc, RwLock};
 use tokio::sync::{watch, Barrier, Notify};
 use uuid::Uuid;
@@ -236,11 +238,14 @@ async fn main() -> deluge_rpc::Result<()> {
 
     siv.add_fullscreen_layer(main_ui);
 
-    siv.set_user_data(app_state);
+    siv.set_user_data(RefCell::new(app_state));
 
     siv.run();
 
-    let app_state = siv.take_user_data::<AppState>().unwrap();
+    let app_state = siv
+        .take_user_data::<RefCell<AppState>>()
+        .unwrap()
+        .into_inner();
     let disconnected = app_state.shutdown();
 
     let hs = (

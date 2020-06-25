@@ -6,6 +6,7 @@ use cursive::Cursive;
 use cursive::Vec2;
 use futures::executor::block_on;
 use serde::Deserialize;
+use std::cell::{Ref, RefCell};
 use std::future::Future;
 use std::rc::Rc;
 use std::sync::Arc;
@@ -23,13 +24,13 @@ use crate::views::{
 use deluge_rpc::{FilePriority, InfoHash, Query, Session, TorrentOptions};
 
 trait CursiveWithSession<'a> {
-    fn session(&'a mut self) -> &'a Session;
+    fn session(&'a mut self) -> Ref<'a, Session>;
 
-    fn with_session<T, F: FnOnce(&'a Session) -> T>(&'a mut self, f: F) -> T {
-        f(&self.session())
+    fn with_session<T, F: FnOnce(Ref<'a, Session>) -> T>(&'a mut self, f: F) -> T {
+        f(self.session())
     }
 
-    fn with_session_blocking<T: Future, F: FnOnce(&'a Session) -> T>(
+    fn with_session_blocking<T: Future, F: FnOnce(Ref<'a, Session>) -> T>(
         &'a mut self,
         f: F,
     ) -> T::Output {
@@ -37,23 +38,47 @@ trait CursiveWithSession<'a> {
     }
 }
 
+// "with session blocking + unwrap"
 macro_rules! wsbu {
+    // Invocation A: Using a Cursive object, execute a Session -> Future closure.
     ($siv:expr, $f:expr) => {
         $siv.with_session_blocking($f).unwrap()
     };
 
+    // Invocation B: Convert a Session -> Future closure using Invocation A.
     ($f:expr) => {
         move |siv: &mut Cursive| wsbu!(siv, $f)
     };
 }
 
+// "wsbu + function"
+// Simple wsbu wrapper for calling a function that accepts a Session and some other args
+macro_rules! wsbuf {
+    // Invocation A: a method. Needs &Session.
+    ($(@$siv:expr;)? :$method:ident $(, $arg:expr)*) => {
+        wsbu!($($siv,)? async move |ses: Ref<Session>| ses.$method($($arg),*).await)
+    };
+
+    // Invocation B: A function. Needs Ref<Session>.
+    ($(@$siv:expr;)? $func:path $(, $arg:expr)*) => {
+        wsbu!($($siv,)? async move |ses: Ref<Session>| $func(&ses $(, $arg)*).await)
+    };
+}
+
 impl<'a> CursiveWithSession<'a> for Cursive {
-    fn session(&'a mut self) -> &'a Session {
-        self.user_data::<AppState>()
-            .map(|app_state| app_state.get())
+    fn session(&'a mut self) -> Ref<'a, Session> {
+        let state_ref: Ref<'a, AppState> = self
+            .user_data::<RefCell<AppState>>()
             .expect("Cursive object must contain an AppState")
-            .get_session()
-            .expect("SessionHandle was unexpectedly empty")
+            .borrow();
+
+        Ref::map(state_ref, |state: &AppState| {
+            state
+                .get()
+                .get_session()
+                .expect("SessionHandle was unexpectedly empty")
+                .as_ref()
+        })
     }
 }
 
@@ -62,7 +87,7 @@ fn add_torrent(siv: &mut Cursive, text: impl AsRef<str>) {
     let options = TorrentOptions::default();
     let http_headers = None;
 
-    wsbu!(siv, |ses| ses.add_torrent_url(text, &options, http_headers));
+    wsbuf!(@siv; :add_torrent_url, text, &options, http_headers);
 }
 
 pub fn add_torrent_dialog(siv: &mut Cursive) {
@@ -161,7 +186,7 @@ fn rename_file_dialog(siv: &mut Cursive, hash: InfoHash, index: usize, old_name:
         .with(|v| v.set_cursor(old_name.len()))
         .into_dialog("Cancel", "Rename", move |siv, new_name| {
             let renames = &[(index as u64, new_name.as_str())];
-            wsbu!(siv, |ses| ses.rename_files(hash, renames));
+            wsbuf!(@siv; :rename_files, hash, renames);
         })
         .title("Rename File");
 
@@ -172,9 +197,11 @@ fn rename_folder_dialog(siv: &mut Cursive, hash: InfoHash, old_name: Rc<str>) {
     let dialog = TextArea::new()
         .content(old_name.as_ref())
         .with(|v| v.set_cursor(old_name.len()))
-        .into_dialog("Cancel", "Rename", move |siv, new_name| {
-            wsbu!(siv, |ses| ses.rename_folder(hash, &old_name, &new_name));
-        })
+        .into_dialog(
+            "Cancel",
+            "Rename",
+            move |siv, new_name| wsbuf!(@siv; :rename_folder, hash, &old_name, &new_name),
+        )
         .title("Rename Folder");
 
     siv.add_layer(dialog);
@@ -186,8 +213,7 @@ pub fn files_tab_file_menu(
     old_name: &str,
     position: Vec2,
 ) -> Callback {
-    let make_cb =
-        move |priority| wsbu!(|ses| { set_single_file_priority(ses, hash, index, priority) });
+    let make_cb = move |priority| wsbuf!(set_single_file_priority, hash, index, priority);
 
     let old_name = Rc::from(old_name);
     let cb = move |siv: &mut Cursive| {
@@ -219,7 +245,10 @@ pub(crate) fn files_tab_folder_menu(
     let files = Rc::from(files);
     let make_cb = move |priority| {
         let files = Rc::clone(&files);
-        wsbu!(|ses| { set_multi_file_priority(ses, hash, &files, priority) })
+        move |siv: &mut Cursive| {
+            let files = Rc::clone(&files);
+            wsbuf!(@siv; set_multi_file_priority, hash, &files, priority)
+        }
     };
 
     let name = Rc::<str>::from(name);
@@ -246,7 +275,7 @@ pub(crate) fn files_tab_folder_menu(
 fn remove_torrent_dialog(siv: &mut Cursive, hash: InfoHash, name: impl AsRef<str>) {
     let dialog = RemoveTorrentPrompt::new_single(name.as_ref())
         .into_dialog("Cancel", "OK", move |siv, remove_data| {
-            wsbu!(siv, |ses| ses.remove_torrent(hash, remove_data));
+            wsbuf!(@siv; :remove_torrent, hash, remove_data);
         })
         .title("Remove Torrent");
 
@@ -257,23 +286,22 @@ pub fn torrent_context_menu(hash: InfoHash, name: &str, position: Vec2) -> Callb
     let name = Rc::<str>::from(name); // ugh, I hate doing this
     let cb = move |siv: &mut Cursive| {
         let name = Rc::clone(&name);
-        let hash_slice = [hash];
         let menu_tree = MenuTree::new()
-            .leaf("Pause", wsbu!(|ses| ses.pause_torrent(hash)))
-            .leaf("Resume", wsbu!(|ses| ses.resume_torrent(hash)))
+            .leaf("Pause", wsbuf!(:pause_torrent, hash))
+            .leaf("Resume", wsbuf!(:resume_torrent, hash))
             .delimiter()
             .subtree("Options", MenuTree::new().delimiter())
             .delimiter()
             .subtree("Queue", MenuTree::new().delimiter())
             .delimiter()
-            .leaf("Update Tracker", wsbu!(|s| s.force_reannounce(&hash_slice)))
+            .leaf("Update Tracker", wsbuf!(:force_reannounce, &[hash]))
             .leaf("Edit Trackers", |_| todo!())
             .delimiter()
             .leaf("Remove Torrent", move |siv| {
                 remove_torrent_dialog(siv, hash, &name)
             })
             .delimiter()
-            .leaf("Force Re-check", wsbu!(|s| s.force_recheck(&hash_slice)))
+            .leaf("Force Re-check", wsbuf!(:force_recheck, &[hash]))
             .leaf("Move Download Folder", |_| todo!())
             .subtree("Label", MenuTree::new().delimiter());
 
@@ -286,6 +314,6 @@ pub fn torrent_context_menu(hash: InfoHash, name: &str, position: Vec2) -> Callb
 }
 
 pub fn quit_and_shutdown_daemon(siv: &mut Cursive) {
-    wsbu!(siv, Session::shutdown);
+    wsbuf!(@siv; :shutdown);
     siv.quit();
 }
