@@ -11,7 +11,6 @@ use std::future::Future;
 use std::ops::Deref;
 use std::rc::Rc;
 use std::sync::Arc;
-use tokio::task;
 use uuid::Uuid;
 
 use crate::form::Form;
@@ -119,15 +118,14 @@ fn replace_session(siv: &mut Cursive, new: Option<(Uuid, Arc<Session>, String, S
         })
         .unwrap_or_default();
 
-    siv.with_user_data(|app_state: &mut AppState| {
-        task::block_in_place(|| block_on(app_state.replace(handle))).unwrap();
-    })
-    .unwrap();
+    let app_state = siv.user_data::<RefCell<AppState>>().unwrap();
+    let fut = app_state.get_mut().replace(handle);
+    block_on(fut).unwrap();
 }
 
 pub fn show_connection_manager(siv: &mut Cursive) {
-    let app_state = siv.user_data::<AppState>().unwrap();
-    let session_handle = app_state.get().clone();
+    let app_state = siv.user_data::<RefCell<AppState>>().unwrap();
+    let session_handle = app_state.borrow().get().clone();
     let dialog = ConnectionManagerView::new(session_handle)
         .max_size((80, 20))
         .into_dialog("Close", "Connect/Disconnect", replace_session)
