@@ -153,3 +153,14 @@ impl<T> Eventual<T> {
         self.0.borrow().get().map(Clone::clone)
     }
 }
+
+macro_rules! enclose {
+    ($($var:ident),+ in $closure:expr) => {
+        {
+            $(
+                let $var = Clone::clone(&$var);
+            )+
+            $closure
+        }
+    }
+}

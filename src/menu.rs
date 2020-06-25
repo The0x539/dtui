@@ -6,9 +6,7 @@ use cursive::Cursive;
 use cursive::Vec2;
 use futures::executor::block_on;
 use serde::Deserialize;
-use std::cell::{Ref, RefCell};
 use std::future::Future;
-use std::ops::Deref;
 use std::rc::Rc;
 use std::sync::Arc;
 use uuid::Uuid;
@@ -24,7 +22,7 @@ use crate::views::{
 use deluge_rpc::{FilePriority, InfoHash, Query, Session, TorrentOptions};
 
 trait CursiveWithSession<'a> {
-    type Ref: Deref<Target = Session> + 'a;
+    type Ref: 'a;
 
     fn session(&'a mut self) -> Self::Ref;
 
@@ -70,26 +68,19 @@ macro_rules! wsbuf {
 
     // Invocation B: A function.
     ($(@$siv:expr;)? $func:path $(, $arg:expr)*) => {
-        wsbu!($($siv,)? async move |ses| $func(&ses $(, $arg)*).await)
+        wsbu!($($siv,)? async move |ses| $func(ses $(, $arg)*).await)
     };
 }
 
 impl<'a> CursiveWithSession<'a> for Cursive {
-    type Ref = std::cell::Ref<'a, Session>;
+    type Ref = &'a Arc<Session>;
 
     fn session(&'a mut self) -> Self::Ref {
-        let state_ref: Ref<'a, AppState> = self
-            .user_data::<RefCell<AppState>>()
+        self.user_data::<AppState>()
             .expect("Cursive object must contain an AppState")
-            .borrow();
-
-        Ref::map(state_ref, |state: &AppState| {
-            state
-                .get()
-                .get_session()
-                .expect("SessionHandle was unexpectedly empty")
-                .as_ref()
-        })
+            .get()
+            .get_session()
+            .expect("SessionHandle was unexpectedly empty")
     }
 }
 
@@ -118,14 +109,14 @@ fn replace_session(siv: &mut Cursive, new: Option<(Uuid, Arc<Session>, String, S
         })
         .unwrap_or_default();
 
-    let app_state = siv.user_data::<RefCell<AppState>>().unwrap();
-    let fut = app_state.get_mut().replace(handle);
+    let app_state = siv.user_data::<AppState>().unwrap();
+    let fut = app_state.replace(handle);
     block_on(fut).unwrap();
 }
 
 pub fn show_connection_manager(siv: &mut Cursive) {
-    let app_state = siv.user_data::<RefCell<AppState>>().unwrap();
-    let session_handle = app_state.borrow().get().clone();
+    let app_state = siv.user_data::<AppState>().unwrap();
+    let session_handle = app_state.get().clone();
     let dialog = ConnectionManagerView::new(session_handle)
         .max_size((80, 20))
         .into_dialog("Close", "Connect/Disconnect", replace_session)

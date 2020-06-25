@@ -1,4 +1,4 @@
-use std::cell::RefCell;
+use std::cell::Cell;
 use std::cmp::{Ordering, PartialEq};
 use std::rc::Rc;
 use std::sync::{Arc, RwLock};
@@ -234,47 +234,45 @@ impl ConnectionManagerView {
         ];
         let mut table = TableView::<ConnectionTableData>::new(cols);
 
-        let selected_connection = Rc::new(RefCell::new(None));
+        let selected_connection = Rc::new(Cell::new(None));
 
-        let sel_clone_change = selected_connection.clone();
-        table.set_on_selection_change(move |_: &mut _, sel: &Uuid, _, _| {
-            sel_clone_change.replace(Some(*sel));
+        let on_sel_change = enclose!(selected_connection in move |_: &mut _, sel: &Uuid, _, _| {
+            selected_connection.set(Some(*sel));
             Callback::dummy()
         });
+        table.set_on_selection_change(on_sel_change);
 
         let table_data = table.get_data();
-        {
-            let mut data = table_data.write().unwrap();
 
-            data.rows = cmgr.hosts.keys().copied().collect();
-            let len = data.rows.len();
-            data.connections.reserve(len);
-            data.autoconnect_host = autoconnect_host;
+        let mut data = table_data.write().unwrap();
 
-            let current_id = current_host.get_id();
-            data.current_host = current_id;
+        data.rows = cmgr.hosts.keys().copied().collect();
+        let len = data.rows.len();
+        data.connections.reserve(len);
+        data.autoconnect_host = autoconnect_host;
 
-            for (id, host) in &cmgr.hosts {
-                let conn = if current_id.contains(id) {
-                    let session = current_host.get_session().unwrap().clone();
-                    Connection::existing(host, session)
-                } else {
-                    Connection::new(host)
-                };
+        let current_id = current_host.get_id();
+        data.current_host = current_id;
 
-                data.connections.insert(*id, conn);
-            }
+        for (id, host) in &cmgr.hosts {
+            let conn = if current_id.contains(id) {
+                let session = current_host.get_session().unwrap().clone();
+                Connection::existing(host, session)
+            } else {
+                Connection::new(host)
+            };
+
+            data.connections.insert(*id, conn);
         }
 
+        drop(data);
         drop(cmgr);
 
-        let table_data_clone_add = table_data.clone();
-        let add_button = move |siv: &mut Cursive| {
-            let table_data_clone_add = table_data_clone_add.clone();
-            let save_host = move |_: &mut _, host: config::Host| {
+        let add_button = enclose!(table_data in move |siv: &mut Cursive| {
+            let save_host = enclose!(table_data in move |_: &mut _, host: config::Host| {
                 let id = Uuid::new_v4();
 
-                let mut data = table_data_clone_add.write().unwrap();
+                let mut data = table_data.write().unwrap();
 
                 data.connections.insert(id, Connection::new(&host));
                 data.rows.push(id);
@@ -282,30 +280,27 @@ impl ConnectionManagerView {
                 let mut cfg = config::write();
                 cfg.connection_manager.hosts.insert(id, host);
                 cfg.save();
-            };
+            });
 
             let dialog = EditHostView::default()
                 .into_dialog("Cancel", "Save", save_host)
                 .title("Add Host");
 
             siv.add_layer(dialog);
-        };
+        });
 
-        let sel_clone_edit = selected_connection.clone();
-        let table_data_clone_edit = table_data.clone();
-        let edit_button = move |siv: &mut Cursive| {
-            let sel = sel_clone_edit.borrow();
-            let id = sel.expect("Edit button should be disabled");
+        let edit_button = enclose!(selected_connection, table_data in move |siv: &mut Cursive| {
+            let id = selected_connection
+                .get()
+                .expect("No selection; edit button should be disabled");
 
-            let conn = &table_data_clone_edit.read().unwrap().connections[&id];
+            let conn = &table_data.read().unwrap().connections[&id];
 
             let view = EditHostView::new(&conn.address, conn.port, &conn.username, &conn.password);
             drop(conn);
 
-            let table_data_clone_edit = table_data_clone_edit.clone();
-
-            let save_host = move |_: &mut _, host: config::Host| {
-                table_data_clone_edit
+            let save_host = enclose!(table_data in move |_: &mut _, host: config::Host| {
+                table_data
                     .write()
                     .unwrap()
                     .connections
@@ -314,22 +309,21 @@ impl ConnectionManagerView {
                 let mut cfg = config::write();
                 cfg.connection_manager.hosts.insert(id, host);
                 cfg.save();
-            };
+            });
 
             let dialog = view
                 .into_dialog("Cancel", "Save", save_host)
                 .title("Edit Host");
 
             siv.add_layer(dialog);
-        };
+        });
 
-        let sel_clone_remove = selected_connection.clone();
-        let table_data_clone_remove = table_data.clone();
-        let remove_button = move |_: &mut _| {
-            let mut sel = sel_clone_remove.borrow_mut();
-            let id = sel.take().expect("Remove button should be disabled");
+        let remove_button = enclose!(selected_connection, table_data in move |_: &mut _| {
+            let id = selected_connection
+                .get()
+                .expect("No selection; remove button should be disabled");
 
-            let mut data = table_data_clone_remove.write().unwrap();
+            let mut data = table_data.write().unwrap();
 
             assert_eq!(data.current_host, Some(id));
             data.current_host = None;
@@ -337,7 +331,7 @@ impl ConnectionManagerView {
             data.connections
                 .remove(&id)
                 .expect("Tried to remove nonexistent connection");
-        };
+        });
 
         let buttons = LinearLayout::horizontal()
             .child(Button::new("Add", add_button))
