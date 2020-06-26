@@ -7,8 +7,7 @@ use cursive::utils::Counter;
 use cursive::view::ViewWrapper;
 use cursive::views::ProgressBar;
 use cursive::Printer;
-use deluge_rpc::{FilterDict, FilterKey, InfoHash, Query, Session, TorrentState};
-use fnv::FnvHashMap;
+use deluge_rpc::{FilterDict, FilterKey, InfoHash, InfoHashMap, Query, Session, TorrentState};
 use futures::FutureExt;
 use std::sync::{Arc, RwLock};
 use tokio::sync::{watch, Notify};
@@ -103,7 +102,7 @@ impl Torrent {
 #[derive(Debug, Default, Clone)]
 pub(crate) struct TorrentsState {
     rows: Vec<InfoHash>,
-    torrents: FnvHashMap<InfoHash, Torrent>,
+    torrents: InfoHashMap<Torrent>,
     sort_column: Column,
     descending_sort: bool,
 }
@@ -238,7 +237,7 @@ impl TorrentsViewThread {
         }
     }
 
-    fn apply_delta(&mut self, delta: FnvHashMap<InfoHash, TorrentDiff>) {
+    fn apply_delta(&mut self, delta: InfoHashMap<TorrentDiff>) {
         let mut toggled_rows = Vec::new();
         let mut should_sort = false;
 
@@ -389,7 +388,7 @@ impl ViewThread for TorrentsViewThread {
                 self.remove_torrent(hash);
             }
             deluge_rpc::Event::TorrentStateChanged(hash, state) => {
-                let mut delta = FnvHashMap::default();
+                let mut delta = InfoHashMap::default();
                 let diff = TorrentDiff {
                     state: Some(state),
                     ..TorrentDiff::default()

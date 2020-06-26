@@ -413,13 +413,14 @@ dependencies = [
 [[package]]
 name = "deluge-rpc"
 version = "0.7.0"
-source = "git+https://github.com/The0x539/rust-deluge-rpc.git?branch=trunk#d356c6a3b6aec53a41564e89b656d20a3e2b1076"
+source = "git+https://github.com/The0x539/rust-deluge-rpc.git?branch=trunk#b0178afb8e4e36901438efd8fc164223736e9739"
 dependencies = [
  "cloudflare-zlib",
  "deluge-rpc-macro",
  "enum-kinds",
  "fnv",
  "futures",
+ "hashers",
  "hex",
  "lazy-regex",
  "lazy_static",
@@ -693,6 +694,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "fxhash"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c31b6d751ae2c7f11320402d34e41349dd1016f8d5d45e48c4312bc8625af50c"
+dependencies = [
+ "byteorder",
+]
+
+[[package]]
 name = "getrandom"
 version = "0.1.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -701,6 +711,15 @@ dependencies = [
  "cfg-if",
  "libc",
  "wasi",
+]
+
+[[package]]
+name = "hashers"
+version = "1.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b2bca93b15ea5a746f220e56587f71e73c6165eab783df9e26590069953e3c30"
+dependencies = [
+ "fxhash",
 ]
 
 [[package]]
