@@ -1,52 +1,5 @@
-use bytesize::ByteSize;
-use pretty_dtoa::{ftoa, FmtFloatConfig};
 use std::cell::RefCell;
-use std::fmt::Display;
 use tokio::sync::oneshot;
-
-pub fn fmt_bytes(amt: u64) -> String {
-    ByteSize(amt).to_string_as(true)
-}
-
-pub fn fmt_bytes_limit(amt: f64) -> String {
-    ByteSize((amt * 1024.0) as u64)
-        .to_string_as(true)
-        .replace(".0", "")
-}
-
-pub fn fmt_speed_pair(val: u64, max: f64) -> String {
-    if max <= 0.0 {
-        fmt_bytes(val) + "/s"
-    } else {
-        format!("{}/s ({}/s)", fmt_bytes(val), fmt_bytes_limit(max))
-    }
-}
-
-pub fn fmt_pair<T, U: Display, F: FnMut(T) -> U>(mut f: F, a: T, b: Option<T>) -> String {
-    match b {
-        Some(b) => format!("{} ({})", f(a), f(b)),
-        None => f(a).to_string(),
-    }
-}
-
-pub fn fmt_percentage(val: f32) -> String {
-    if val == 0.0 {
-        return String::from("0");
-    } else if val == 100.0 {
-        return String::from("100");
-    } else if !(0.0..=100.0).contains(&val) {
-        return String::from("???");
-    }
-
-    let config = FmtFloatConfig {
-        max_decimal_digits: Some(2),
-        add_point_zero: true,
-        force_no_e_notation: true,
-        ..FmtFloatConfig::default()
-    };
-
-    ftoa(val, config)
-}
 
 pub fn digit_width(mut n: u64) -> usize {
     if n == 0 {
@@ -61,62 +14,115 @@ pub fn digit_width(mut n: u64) -> usize {
     digits
 }
 
-pub fn ftime(mut secs: u64) -> String {
-    let mut mins = secs / 60;
-    secs %= 60;
+pub mod fmt {
+    use std::fmt::Display;
 
-    let mut hours = mins / 60;
-    mins %= 60;
+    use bytesize::ByteSize;
+    use pretty_dtoa::FmtFloatConfig;
 
-    let mut days = hours / 24;
-    hours %= 24;
+    pub fn bytes(amt: u64) -> String {
+        ByteSize(amt).to_string_as(true)
+    }
 
-    let years = days / 365;
-    days %= 365;
+    pub fn bytes_limit(amt: f64) -> String {
+        ByteSize((amt * 1024.0) as u64)
+            .to_string_as(true)
+            .replace(".0", "")
+    }
 
-    let weeks = days / 7;
-    days %= 7;
-
-    let mut units = (None, None);
-
-    let amounts = [years, weeks, days, hours, mins, secs];
-
-    for (amount, suffix) in amounts.iter().copied().zip("ywdhms".chars()) {
-        if amount > 0 {
-            if units.0.is_none() {
-                units.0 = Some((amount, suffix));
-            } else {
-                units.1 = Some((amount, suffix));
-                break;
-            }
+    pub fn speed_pair(val: u64, max: f64) -> String {
+        if max <= 0.0 {
+            bytes(val) + "/s"
+        } else {
+            format!("{}/s ({}/s)", bytes(val), bytes_limit(max))
         }
     }
 
-    match units {
-        (None, None) => String::from("now"),
-        (Some((amt, sfx)), None) => format!("{}{}", amt, sfx),
-        (Some((amt1, sfx1)), Some((amt2, sfx2))) => format!("{}{} {}{}", amt1, sfx1, amt2, sfx2),
-        (None, Some(_)) => unreachable!(),
+    pub fn pair<T, U: Display, F: FnMut(T) -> U>(mut f: F, a: T, b: Option<T>) -> String {
+        match b {
+            Some(b) => format!("{} ({})", f(a), f(b)),
+            None => f(a).to_string(),
+        }
     }
-}
 
-pub fn ftime_or_dash(secs: i64) -> String {
-    if secs <= 0 {
-        String::from("-")
-    } else {
-        ftime(secs as u64)
+    pub fn percentage(val: f32) -> String {
+        if val == 0.0 {
+            return String::from("0");
+        } else if val == 100.0 {
+            return String::from("100");
+        } else if !(0.0..=100.0).contains(&val) {
+            return String::from("???");
+        }
+
+        let config = FmtFloatConfig {
+            max_decimal_digits: Some(2),
+            add_point_zero: true,
+            force_no_e_notation: true,
+            ..FmtFloatConfig::default()
+        };
+
+        pretty_dtoa::ftoa(val, config)
     }
-}
 
-pub fn fdate(t: i64) -> String {
-    epochs::unix(t).unwrap().to_string()
-}
+    pub fn duration(mut secs: u64) -> String {
+        let mut mins = secs / 60;
+        secs %= 60;
 
-pub fn fdate_or_dash(t: i64) -> String {
-    if t == 0 || t == -1 {
-        String::from("-")
-    } else {
-        fdate(t)
+        let mut hours = mins / 60;
+        mins %= 60;
+
+        let mut days = hours / 24;
+        hours %= 24;
+
+        let years = days / 365;
+        days %= 365;
+
+        let weeks = days / 7;
+        days %= 7;
+
+        let mut units = (None, None);
+
+        let amounts = [years, weeks, days, hours, mins, secs];
+
+        for (amount, suffix) in amounts.iter().copied().zip("ywdhms".chars()) {
+            if amount > 0 {
+                if units.0.is_none() {
+                    units.0 = Some((amount, suffix));
+                } else {
+                    units.1 = Some((amount, suffix));
+                    break;
+                }
+            }
+        }
+
+        match units {
+            (None, None) => String::from("now"),
+            (Some((amt, sfx)), None) => format!("{}{}", amt, sfx),
+            (Some((amt1, sfx1)), Some((amt2, sfx2))) => {
+                format!("{}{} {}{}", amt1, sfx1, amt2, sfx2)
+            }
+            (None, Some(_)) => unreachable!(),
+        }
+    }
+
+    pub fn time_or_dash(secs: i64) -> String {
+        if secs <= 0 {
+            String::from("-")
+        } else {
+            duration(secs as u64)
+        }
+    }
+
+    pub fn date(t: i64) -> String {
+        epochs::unix(t).unwrap().to_string()
+    }
+
+    pub fn date_or_dash(t: i64) -> String {
+        if t == 0 || t == -1 {
+            String::from("-")
+        } else {
+            date(t)
+        }
     }
 }
 

@@ -142,7 +142,7 @@ impl TableViewData for PeersTableData {
     }
 
     fn draw_cell(&self, printer: &Printer, peer: &Peer, col: Column) {
-        let speed = |n| util::fmt_bytes(n) + "/s";
+        let speed = |n| util::fmt::bytes(n) + "/s";
         let print = |s| printer.print((0, 0), s);
         match col {
             Column::Country => print(&peer.country),

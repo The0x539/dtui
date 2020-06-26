@@ -36,7 +36,7 @@ impl ViewThread for TrackersData {
                 query.trackers.len().to_string(),
                 query.tracker_host,
                 query.tracker_status,
-                util::ftime_or_dash(query.next_announce),
+                util::fmt::time_or_dash(query.next_announce),
                 String::from(if query.private { "Yes" } else { "No" }),
             ]
             .join("\n"),

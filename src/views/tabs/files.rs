@@ -1,7 +1,7 @@
 use super::{BuildableTabData, TabData};
 use crate::menu;
 use crate::simple_slab::{SimpleSlab, SlabKey};
-use crate::util::fmt_bytes;
+use crate::util;
 use crate::views::table::{TableView, TableViewData};
 use crate::views::thread::ViewThread;
 use async_trait::async_trait;
@@ -479,7 +479,7 @@ impl TableViewData for FilesState {
 
             (Column::Size, entry) => {
                 let size = self.get_size(entry);
-                printer.print((0, 0), &fmt_bytes(size));
+                printer.print((0, 0), &util::fmt::bytes(size));
             }
 
             (Column::Progress, entry) => {

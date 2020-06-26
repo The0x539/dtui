@@ -54,18 +54,18 @@ impl Display for StatusBarData {
         }
 
         f.write_str(" ⇄ ")?;
-        f.write_str(&util::fmt_pair(|x| x, self.num_peers, self.max_peers))?;
+        f.write_str(&util::fmt::pair(|x| x, self.num_peers, self.max_peers))?;
         f.write_str(" ")?;
 
         f.write_str(" ↓ ")?;
-        f.write_str(&util::fmt_speed_pair(
+        f.write_str(&util::fmt::speed_pair(
             self.download_rate,
             self.max_download_rate,
         ))?;
         f.write_str(" ")?;
 
         f.write_str(" ↑ ")?;
-        f.write_str(&util::fmt_speed_pair(
+        f.write_str(&util::fmt::speed_pair(
             self.upload_rate,
             self.max_upload_rate,
         ))?;
@@ -77,7 +77,7 @@ impl Display for StatusBarData {
             self.protocol_traffic.0, self.protocol_traffic.1
         )?;
 
-        write!(f, " 💾 {} ", util::fmt_bytes(self.free_space))?;
+        write!(f, " 💾 {} ", util::fmt::bytes(self.free_space))?;
 
         if let Some(ip) = self.ip {
             write!(f, " IP: {} ", ip)?;

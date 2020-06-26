@@ -60,21 +60,21 @@ impl ViewThread for StatusData {
         let label = format!(
             "{} {}%",
             status.state,
-            util::fmt_percentage(status.progress),
+            util::fmt::percentage(status.progress),
         );
         self.progress_label_send.broadcast(label).unwrap();
 
         self.columns[0].set_content(
             [
-                util::fmt_speed_pair(status.download_payload_rate, status.max_download_speed),
-                util::fmt_speed_pair(status.upload_payload_rate, status.max_upload_speed),
-                util::fmt_pair(
-                    util::fmt_bytes,
+                util::fmt::speed_pair(status.download_payload_rate, status.max_download_speed),
+                util::fmt::speed_pair(status.upload_payload_rate, status.max_upload_speed),
+                util::fmt::pair(
+                    util::fmt::bytes,
                     status.total_downloaded,
                     Some(status.total_payload_download),
                 ),
-                util::fmt_pair(
-                    util::fmt_bytes,
+                util::fmt::pair(
+                    util::fmt::bytes,
                     status.total_uploaded,
                     Some(status.total_payload_upload),
                 ),
@@ -87,8 +87,8 @@ impl ViewThread for StatusData {
 
         self.columns[1].set_content(
             [
-                util::fmt_pair(|x| x, status.num_seeds, nonnegative(status.total_seeds)),
-                util::fmt_pair(|x| x, status.num_peers, nonnegative(status.total_peers)),
+                util::fmt::pair(|x| x, status.num_seeds, nonnegative(status.total_seeds)),
+                util::fmt::pair(|x| x, status.num_peers, nonnegative(status.total_peers)),
                 ryu_buf.format(status.ratio).to_owned(),
                 ryu_buf.format(status.availability).to_owned(),
                 status.seed_rank.to_string(),
@@ -98,11 +98,11 @@ impl ViewThread for StatusData {
 
         self.columns[2].set_content(
             [
-                util::ftime_or_dash(status.eta),
-                util::ftime_or_dash(status.active_time),
-                util::ftime_or_dash(status.seeding_time),
-                util::ftime_or_dash(status.time_since_transfer),
-                util::fdate_or_dash(status.last_seen_complete),
+                util::fmt::time_or_dash(status.eta),
+                util::fmt::time_or_dash(status.active_time),
+                util::fmt::time_or_dash(status.seeding_time),
+                util::fmt::time_or_dash(status.time_since_transfer),
+                util::fmt::date_or_dash(status.last_seen_complete),
             ]
             .join("\n"),
         );

@@ -43,7 +43,7 @@ impl ViewThread for DetailsData {
 
         self.left.set_content(
             [
-                util::fmt_bytes(details.total_size),
+                util::fmt::bytes(details.total_size),
                 details.num_files.to_string(),
                 hash.to_string(),
             ]
@@ -52,12 +52,12 @@ impl ViewThread for DetailsData {
 
         self.right.set_content(
             [
-                util::fdate(details.time_added),
-                util::fdate_or_dash(details.completed_time),
+                util::fmt::date(details.time_added),
+                util::fmt::date_or_dash(details.completed_time),
                 format!(
                     "{} ({})",
                     details.num_pieces,
-                    util::fmt_bytes(details.piece_length).replace(".0", "")
+                    util::fmt::bytes(details.piece_length).replace(".0", "")
                 ),
             ]
             .join("\n"),
