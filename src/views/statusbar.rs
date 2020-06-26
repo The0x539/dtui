@@ -54,11 +54,7 @@ impl Display for StatusBarData {
         }
 
         f.write_str(" ⇄ ")?;
-        f.write_str(&util::fmt_pair(
-            util::fmt_bytes,
-            self.num_peers,
-            self.max_peers,
-        ))?;
+        f.write_str(&util::fmt_pair(|x| x, self.num_peers, self.max_peers))?;
         f.write_str(" ")?;
 
         f.write_str(" ↓ ")?;
