@@ -10,7 +10,6 @@ use cursive::traits::*;
 use cursive::views::{LinearLayout, Panel};
 use cursive::Cursive;
 use deluge_rpc::{AuthLevel, FilterDict, InfoHash, Session};
-use futures::FutureExt;
 use std::sync::{Arc, RwLock};
 use tokio::sync::{watch, Barrier, Notify};
 use uuid::Uuid;
@@ -113,18 +112,6 @@ impl AppState {
         self.tx.broadcast(self.val.clone()).unwrap();
 
         if let Some(session) = old.claim().await {
-            session.disconnect().await.map_err(|(_stream, err)| err)?;
-        }
-
-        Ok(())
-    }
-
-    async fn shutdown(self) -> deluge_rpc::Result<()> {
-        let Self { tx, val } = self;
-
-        drop(tx);
-
-        if let Some(session) = val.claim().await {
             session.disconnect().await.map_err(|(_stream, err)| err)?;
         }
 
@@ -242,27 +229,6 @@ async fn main() -> deluge_rpc::Result<()> {
     siv.set_user_data(app_state);
 
     siv.run();
-
-    let app_state = siv.take_user_data::<AppState>().unwrap();
-    let disconnected = app_state.shutdown();
-
-    let hs = (
-        siv.call_on_name("torrents", TorrentsView::take_thread)
-            .unwrap(),
-        siv.call_on_name("filters", FiltersView::take_thread)
-            .unwrap(),
-        siv.call_on_name("status", StatusBarView::take_thread)
-            .unwrap(),
-        siv.call_on_name("tabs", TorrentTabsView::take_thread)
-            .unwrap(),
-    );
-
-    type R = deluge_rpc::Result<()>;
-    let threads_done = futures::future::try_join4(hs.0, hs.1, hs.2, hs.3)
-        .map(Result::<(R, R, R, R), tokio::task::JoinError>::unwrap)
-        .map(|(a, b, c, d)| a.and(b).and(c).and(d));
-
-    tokio::try_join!(threads_done, disconnected)?;
 
     Ok(())
 }

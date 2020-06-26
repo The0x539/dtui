@@ -10,7 +10,6 @@ use std::fmt::{self, Display, Formatter};
 use std::net::IpAddr;
 use std::sync::{Arc, RwLock};
 use tokio::sync::watch;
-use tokio::task::JoinHandle;
 use tokio::time;
 
 #[derive(Default, Debug, Clone, Copy)]
@@ -98,7 +97,6 @@ impl Display for StatusBarData {
 
 pub(crate) struct StatusBarView {
     data: Arc<RwLock<StatusBarData>>,
-    thread: JoinHandle<deluge_rpc::Result<()>>,
 }
 
 struct StatusBarViewThread {
@@ -162,14 +160,8 @@ impl StatusBarView {
     pub fn new(session_recv: watch::Receiver<SessionHandle>) -> Self {
         let data = Arc::new(RwLock::new(StatusBarData::default()));
         let thread_obj = StatusBarViewThread::new(data.clone());
-        let thread = tokio::spawn(thread_obj.run(session_recv));
-        Self { data, thread }
-    }
-
-    pub fn take_thread(&mut self) -> JoinHandle<deluge_rpc::Result<()>> {
-        let dummy_fut = async { Ok(()) };
-        let replacement = tokio::spawn(dummy_fut);
-        std::mem::replace(&mut self.thread, replacement)
+        tokio::spawn(thread_obj.run(session_recv));
+        Self { data }
     }
 }
 

@@ -12,7 +12,6 @@ use fnv::FnvHashMap;
 use futures::FutureExt;
 use std::sync::{Arc, RwLock};
 use tokio::sync::{watch, Notify};
-use tokio::task::JoinHandle;
 use tokio::time;
 
 use super::table::{TableView, TableViewData};
@@ -206,7 +205,6 @@ impl TorrentsState {
 
 pub(crate) struct TorrentsView {
     inner: TableView<TorrentsState>,
-    thread: JoinHandle<deluge_rpc::Result<()>>,
 }
 
 struct TorrentsViewThread {
@@ -456,14 +454,8 @@ impl TorrentsView {
             filters_recv,
             filters_notify,
         );
-        let thread = tokio::spawn(thread_obj.run(session_recv));
-        Self { inner, thread }
-    }
-
-    pub fn take_thread(&mut self) -> JoinHandle<deluge_rpc::Result<()>> {
-        let dummy_fut = async { Ok(()) };
-        let replacement = tokio::spawn(dummy_fut);
-        std::mem::replace(&mut self.thread, replacement)
+        tokio::spawn(thread_obj.run(session_recv));
+        Self { inner }
     }
 }
 

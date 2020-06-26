@@ -12,7 +12,7 @@ use deluge_rpc::{InfoHash, Session};
 use futures::FutureExt;
 use std::sync::{Arc, RwLock};
 use tokio::sync::{watch, Notify};
-use tokio::task::{self, JoinHandle};
+use tokio::task;
 
 use crate::{Selection, SessionHandle};
 
@@ -84,7 +84,6 @@ pub(crate) struct TorrentTabsView {
     view: TabPanel<Tab>,
     active_tab: Tab,
     active_tab_send: watch::Sender<Tab>,
-    thread: JoinHandle<deluge_rpc::Result<()>>,
     // TODO: name all these Notify structs based on who's being notified
     // Right now, they're named based on what's updating, and in this case, that's either of two things.
     thread_notifier: Arc<Notify>,
@@ -218,7 +217,7 @@ impl TorrentTabsView {
             peers_data,
             trackers_data,
         };
-        let thread = task::spawn(thread_obj.run(session_recv));
+        task::spawn(thread_obj.run(session_recv));
 
         let view = TabPanel::new()
             .with_tab(Tab::Status, status_tab)
@@ -235,18 +234,11 @@ impl TorrentTabsView {
             view,
             active_tab,
             active_tab_send,
-            thread,
             thread_notifier,
             options_field_names,
             current_options_recv,
             pending_options,
         }
-    }
-
-    pub fn take_thread(&mut self) -> JoinHandle<deluge_rpc::Result<()>> {
-        let dummy_fut = async { Ok(()) };
-        let replacement = task::spawn(dummy_fut);
-        std::mem::replace(&mut self.thread, replacement)
     }
 }
 

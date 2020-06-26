@@ -10,7 +10,6 @@ use fnv::FnvHashMap;
 use std::collections::BTreeMap;
 use std::sync::{Arc, RwLock};
 use tokio::sync::{watch, Notify};
-use tokio::task::JoinHandle;
 
 use super::scroll::ScrollInner;
 
@@ -35,7 +34,6 @@ pub(crate) struct FiltersView {
     categories: Arc<RwLock<Categories>>,
     filters_send: watch::Sender<FilterDict>,
     filters_notify: Arc<Notify>,
-    thread: JoinHandle<deluge_rpc::Result<()>>,
 }
 
 struct FiltersViewThread {
@@ -152,13 +150,12 @@ impl FiltersView {
     ) -> Self {
         let categories = Arc::new(RwLock::new(Categories::new()));
         let thread_obj = FiltersViewThread::new(categories.clone(), filters_recv);
-        let thread = tokio::spawn(thread_obj.run(session_recv));
+        tokio::spawn(thread_obj.run(session_recv));
         Self {
             active_filters: FilterDict::default(),
             categories,
             filters_send,
             filters_notify,
-            thread,
         }
     }
 
@@ -254,12 +251,6 @@ impl FiltersView {
             }
         }
         h
-    }
-
-    pub fn take_thread(&mut self) -> JoinHandle<deluge_rpc::Result<()>> {
-        let dummy_fut = async { Ok(()) };
-        let replacement = tokio::spawn(dummy_fut);
-        std::mem::replace(&mut self.thread, replacement)
     }
 }
 
