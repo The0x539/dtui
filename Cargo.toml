@@ -23,6 +23,7 @@ itertools = "0.9.0"
 indexmap = { version = "1.4.0", features = ["serde-1"] }
 confy = { git = "https://github.com/rust-cli/confy.git", default_features = false, features = ["yaml_conf"] }
 lazy_static = "1.4.0"
+pretty_dtoa = "0.1.0"
 
 [patch.crates-io]
 deluge-rpc-macro = { git = "https://github.com/The0x539/deluge-macro.git", branch = "trunk" }

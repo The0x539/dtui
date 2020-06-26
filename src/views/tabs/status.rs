@@ -13,7 +13,7 @@ use tokio::sync::watch;
 #[derive(Debug, Clone, Deserialize, Query)]
 struct TorrentStatus {
     state: TorrentState,
-    progress: f64,
+    progress: f32,
 
     download_payload_rate: u64,
     max_download_speed: f64,
@@ -56,13 +56,11 @@ impl ViewThread for StatusData {
         let hash = self.selection;
         let status = session.get_torrent_status::<TorrentStatus>(hash).await?;
 
-        let mut ryu_buf = ryu::Buffer::new();
-
         self.progress_val.set((status.progress * 100.0) as usize);
         let label = format!(
             "{} {}%",
             status.state,
-            ryu_buf.format_finite(status.progress)
+            util::fmt_percentage(status.progress),
         );
         self.progress_label_send.broadcast(label).unwrap();
 
@@ -85,6 +83,7 @@ impl ViewThread for StatusData {
         );
 
         let nonnegative = |n: i64| (n >= 0).then_some(n as u64);
+        let mut ryu_buf = ryu::Buffer::new();
 
         self.columns[1].set_content(
             [

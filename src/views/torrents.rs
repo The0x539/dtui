@@ -16,7 +16,7 @@ use tokio::time;
 
 use super::table::{TableView, TableViewData};
 
-use crate::util::fmt_bytes;
+use crate::util::{fmt_bytes, fmt_percentage};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Column {
@@ -170,8 +170,7 @@ impl TableViewData for TorrentsState {
                     TorrentState::Error => "ERROR",
                     TorrentState::Queued => "QUEUE",
                 };
-                let mut buf = ryu::Buffer::new();
-                let progress = buf.format_finite(tor.progress);
+                let progress = fmt_percentage(tor.progress);
                 // TODO: draw my own damn progress bar
                 let status_msg = format!("{} {}%", status, progress);
                 ProgressBar::new()

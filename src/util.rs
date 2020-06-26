@@ -1,4 +1,5 @@
 use bytesize::ByteSize;
+use pretty_dtoa::{ftoa, FmtFloatConfig};
 use std::cell::RefCell;
 use std::fmt::Display;
 use tokio::sync::oneshot;
@@ -26,6 +27,25 @@ pub fn fmt_pair<T, U: Display, F: FnMut(T) -> U>(mut f: F, a: T, b: Option<T>) -
         Some(b) => format!("{} ({})", f(a), f(b)),
         None => f(a).to_string(),
     }
+}
+
+pub fn fmt_percentage(val: f32) -> String {
+    if val == 0.0 {
+        return String::from("0");
+    } else if val == 100.0 {
+        return String::from("100");
+    } else if !(0.0..100.0).contains(&val) {
+        return String::from("???");
+    }
+
+    let config = FmtFloatConfig {
+        max_decimal_digits: Some(2),
+        add_point_zero: true,
+        force_no_e_notation: true,
+        ..FmtFloatConfig::default()
+    };
+
+    ftoa(val, config)
 }
 
 pub fn digit_width(mut n: u64) -> usize {
