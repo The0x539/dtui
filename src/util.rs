@@ -34,7 +34,7 @@ pub fn fmt_percentage(val: f32) -> String {
         return String::from("0");
     } else if val == 100.0 {
         return String::from("100");
-    } else if !(0.0..100.0).contains(&val) {
+    } else if !(0.0..=100.0).contains(&val) {
         return String::from("???");
     }
 
