@@ -22,7 +22,7 @@ pub(super) struct Peer {
     down_speed: u64,
     #[serde(rename = "ip")]
     addr: SocketAddr,
-    progress: f64,
+    progress: f32,
     #[serde(deserialize_with = "stupid_bool")]
     seed: bool,
     up_speed: u64,
@@ -149,7 +149,7 @@ impl TableViewData for PeersTableData {
             Column::IsSeed => print(&peer.seed.to_string()),
             Column::Address => print(&peer.addr.to_string()),
             Column::Client => print(&peer.client),
-            Column::Progress => print(&peer.progress.to_string()),
+            Column::Progress => print(&(util::fmt::percentage(peer.progress) + "%")),
             Column::DownSpeed => print(&speed(peer.down_speed)),
             Column::UpSpeed => print(&speed(peer.up_speed)),
         }
