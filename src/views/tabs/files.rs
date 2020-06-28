@@ -83,7 +83,7 @@ impl DirEntry {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Deserialize, serde::Serialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
 struct QueryFile {
     index: usize,
     offset: u64,
