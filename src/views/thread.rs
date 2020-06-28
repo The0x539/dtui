@@ -75,31 +75,28 @@ pub(crate) trait ViewThread: Send {
 
                         x = session_recv.recv() => match x {
                             Some(new_handle) => {
-                                handle.relinquish().await;
                                 handle = new_handle;
                                 should_reload = true;
                                 continue 'main;
-                            },
+                            }
                             None => break 'main,
-                        },
+                        }
                     };
 
                     self.on_event(session, event).await?;
                 }
             } else {
-                if let Some(new_handle) = session_recv.recv().await {
-                    handle.relinquish().await;
-                    handle = new_handle;
-                    should_reload = true;
-                    continue 'main;
-                } else {
-                    break 'main;
+                match session_recv.recv().await {
+                    Some(new_handle) => {
+                        handle = new_handle;
+                        should_reload = true;
+                        continue 'main;
+                    }
+                    None => break 'main,
                 }
             }
         }
 
-        drop(session_recv);
-        handle.relinquish().await;
         Ok(())
     }
 }

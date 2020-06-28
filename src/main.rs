@@ -12,7 +12,7 @@ use cursive::views::{LinearLayout, Panel};
 use cursive::Cursive;
 use deluge_rpc::{AuthLevel, FilterDict, InfoHash, Session};
 use std::sync::{Arc, RwLock};
-use tokio::sync::{watch, Barrier, Notify};
+use tokio::sync::{watch, Notify};
 use uuid::Uuid;
 
 #[macro_use]
@@ -31,26 +31,14 @@ mod themes;
 
 type Selection = Arc<RwLock<Option<InfoHash>>>;
 
-// App state, torrents, filters, tabs, status bar.
-const SESSION_HANDLE_REF_COUNT: usize = 5;
-
 #[derive(Debug, Clone)]
 pub(crate) enum SessionHandle {
-    Connected {
-        id: Uuid,
-        session: Arc<Session>,
-        barrier: Arc<Barrier>,
-    },
+    Connected { id: Uuid, session: Arc<Session> },
     Disconnected,
 }
 impl SessionHandle {
     fn new(id: Uuid, session: Arc<Session>) -> Self {
-        let barrier = Arc::new(Barrier::new(SESSION_HANDLE_REF_COUNT));
-        Self::Connected {
-            id,
-            session,
-            barrier,
-        }
+        Self::Connected { id, session }
     }
 
     fn get_id(&self) -> Option<Uuid> {
@@ -66,35 +54,6 @@ impl SessionHandle {
             Self::Disconnected => None,
         }
     }
-
-    async fn claim(self) -> Option<Session> {
-        if let Self::Connected {
-            session, barrier, ..
-        } = self
-        {
-            barrier.wait().await;
-            assert_eq!(Arc::strong_count(&session), 1);
-            Some(Arc::try_unwrap(session).unwrap())
-        } else {
-            None
-        }
-    }
-
-    async fn relinquish(self) {
-        if let Self::Connected {
-            session, barrier, ..
-        } = self
-        {
-            assert_ne!(Arc::strong_count(&session), 1);
-            drop(session);
-            barrier.wait().await;
-        }
-    }
-}
-impl Default for SessionHandle {
-    fn default() -> Self {
-        Self::Disconnected
-    }
 }
 
 struct AppState {
@@ -106,16 +65,9 @@ impl AppState {
         &self.val
     }
 
-    async fn replace(&mut self, val: SessionHandle) -> deluge_rpc::Result<()> {
-        let old = std::mem::replace(&mut self.val, val);
-
+    fn replace(&mut self, val: SessionHandle) {
+        self.val = val;
         self.tx.broadcast(self.val.clone()).unwrap();
-
-        if let Some(session) = old.claim().await {
-            session.disconnect().await.map_err(|(_stream, err)| err)?;
-        }
-
-        Ok(())
     }
 }
 

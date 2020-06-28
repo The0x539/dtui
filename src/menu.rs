@@ -107,11 +107,9 @@ fn replace_session(siv: &mut Cursive, new: Option<(Uuid, Arc<Session>, String, S
             block_on(fut).unwrap();
             SessionHandle::new(id, session)
         })
-        .unwrap_or_default();
+        .unwrap_or(SessionHandle::Disconnected);
 
-    let app_state = siv.user_data::<AppState>().unwrap();
-    let fut = app_state.replace(handle);
-    block_on(fut).unwrap();
+    siv.user_data::<AppState>().unwrap().replace(handle);
 }
 
 pub fn show_connection_manager(siv: &mut Cursive) {
