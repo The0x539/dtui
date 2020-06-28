@@ -81,7 +81,7 @@ impl Form for EditHostView {
 
         let username: String = take_content::<EditView>(&mut username_row, 1);
         let password: String = take_content::<EditView>(&mut password_row, 1);
-        let port: u16 = take_content::<PortSpinView>(&mut host_row, 3);
+        let port: u16 = take_content::<PortSpinView>(&mut host_row, 2);
         let address: String = take_content::<EditView>(&mut host_row, 1);
 
         Host {
