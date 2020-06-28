@@ -320,10 +320,8 @@ fn remove_button_cb(
 
 impl ConnectionManagerView {
     pub fn new(current_host: SessionHandle) -> Self {
-        // TODO: where did this handle come from?
-        // is it an additional ref not listed in main.rs?
-
-        let cmgr = &config::read().connection_manager;
+        let cfg = config::read();
+        let cmgr = &cfg.connection_manager;
 
         let autoconnect_host = cmgr.autoconnect;
         let hide_dialog = cmgr.hide_on_start;
@@ -365,7 +363,7 @@ impl ConnectionManagerView {
         }
 
         drop(data);
-        drop(cmgr);
+        drop(cfg);
 
         let add_button = add_button_cb(Arc::clone(&table_data));
         let edit_button = edit_button_cb(Arc::clone(&table_data), Rc::clone(&selected_connection));
