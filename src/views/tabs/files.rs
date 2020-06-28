@@ -1,7 +1,9 @@
 use super::{BuildableTabData, TabData};
 use crate::menu;
-use crate::simple_slab::{SimpleSlab, SlabKey};
-use crate::util;
+use crate::util::{
+    self,
+    simple_slab::{SimpleSlab, SlabKey},
+};
 use crate::views::table::{TableView, TableViewData};
 use crate::views::thread::ViewThread;
 use async_trait::async_trait;

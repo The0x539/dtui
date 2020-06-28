@@ -26,7 +26,6 @@ use views::{
 mod config;
 mod form;
 mod menu;
-mod simple_slab;
 mod themes;
 
 type Selection = Arc<RwLock<Option<InfoHash>>>;

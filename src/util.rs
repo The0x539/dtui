@@ -15,6 +15,7 @@ pub fn digit_width(mut n: u64) -> usize {
 }
 
 pub mod fmt;
+pub mod simple_slab;
 
 enum EventualState<T> {
     Pending(oneshot::Receiver<T>),
