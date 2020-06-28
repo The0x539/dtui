@@ -1,8 +1,8 @@
 use crate::form::Form;
+use crate::util::digit_width;
 use cursive::event::{AnyCb, Callback, Event, EventResult};
 use cursive::traits::*;
-use cursive::view::Selector;
-use cursive::view::ViewWrapper;
+use cursive::view::{Selector, SizeConstraint, ViewWrapper};
 use cursive::views::{Button, DummyView, EditView, LinearLayout, TextView};
 use cursive::Cursive;
 use std::rc::Rc;
@@ -20,7 +20,13 @@ use std::{
 pub trait Spinnable:
     Default + PartialEq + PartialOrd + From<u8> + Copy + Display + FromStr
 {
+    const MAX_WIDTH: Option<usize>;
+
     fn is_float() -> bool;
+
+    fn max_width() -> Option<usize> {
+        None
+    }
 
     fn checked_incr(self) -> Option<Self>;
     fn checked_decr(self) -> Option<Self>;
@@ -59,6 +65,8 @@ pub trait Spinnable:
 }
 
 impl Spinnable for u64 {
+    const MAX_WIDTH: Option<usize> = Some(digit_width(u64::MAX));
+
     fn is_float() -> bool {
         false
     }
@@ -74,6 +82,8 @@ impl Spinnable for u64 {
 }
 
 impl Spinnable for i64 {
+    const MAX_WIDTH: Option<usize> = Some(1 + digit_width(i64::MAX as u64));
+
     fn is_float() -> bool {
         false
     }
@@ -86,6 +96,8 @@ impl Spinnable for i64 {
 }
 
 impl Spinnable for u16 {
+    const MAX_WIDTH: Option<usize> = Some(digit_width(u16::MAX as u64));
+
     fn is_float() -> bool {
         false
     }
@@ -101,6 +113,8 @@ impl Spinnable for u16 {
 }
 
 impl Spinnable for f64 {
+    const MAX_WIDTH: Option<usize> = Some(20); // ¯\_(ツ)_/¯
+
     fn is_float() -> bool {
         true
     }
@@ -133,6 +147,11 @@ where
 
         let edit_id = Uuid::new_v4().to_string();
 
+        let width_constraint = match T::MAX_WIDTH {
+            Some(width) => SizeConstraint::AtMost(width),
+            None => SizeConstraint::Free,
+        };
+
         // TODO: figure out semantics of editing vs. being done editing
         let edit = EditView::new()
             .content(val.to_string())
@@ -143,7 +162,10 @@ where
             .on_submit(move |s, _content| {
                 let cb = s.call_on_name(&id1, Self::submit).unwrap();
                 cb(s)
-            });
+            })
+            .with_name(&edit_id)
+            .resized(SizeConstraint::Full, SizeConstraint::Fixed(1))
+            .resized(width_constraint, SizeConstraint::Fixed(1));
 
         let decr = Button::new_raw(" - ", move |s| {
             let cb = s.call_on_name(&id2, Self::decr).unwrap();
@@ -161,7 +183,7 @@ where
             v.append(": ");
             inner.add_child(v);
         }
-        inner.add_child(edit.with_name(&edit_id).full_width());
+        inner.add_child(edit);
         inner.add_child(DummyView);
         if let Some(label) = label {
             inner.add_child(TextView::new(label).no_wrap());

@@ -228,8 +228,7 @@ impl BuildableTabData for OptionsData {
 
         let col1 = LinearLayout::vertical()
             .child(TextView::new("Bandwidth Limits"))
-            .child(bandwidth_limits)
-            .max_width(40);
+            .child(bandwidth_limits);
 
         let apply_notify = Arc::new(Notify::new());
 
@@ -252,9 +251,7 @@ impl BuildableTabData for OptionsData {
                     .with_name(&names.remove_at_ratio);
 
                 let layout = LinearLayout::vertical().child(spinner).child(checkbox);
-                EnableableView::new(Panel::new(layout))
-                    .with_name(&names.ratio_limit_panel)
-                    .max_width(30)
+                EnableableView::new(Panel::new(layout)).with_name(&names.ratio_limit_panel)
             };
 
             let apply_notify = apply_notify.clone();

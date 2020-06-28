@@ -1,7 +1,7 @@
 use std::cell::RefCell;
 use tokio::sync::oneshot;
 
-pub fn digit_width(mut n: u64) -> usize {
+pub const fn digit_width(mut n: u64) -> usize {
     if n == 0 {
         return 1;
     }
