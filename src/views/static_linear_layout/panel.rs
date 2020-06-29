@@ -26,6 +26,20 @@ impl<T: View> Child<T> {
             title,
         }
     }
+
+    #[allow(dead_code)]
+    pub fn get_inner(&self) -> &T {
+        self.inner.get_inner()
+    }
+
+    pub fn get_inner_mut(&mut self) -> &mut T {
+        self.inner.get_inner_mut()
+    }
+
+    #[allow(dead_code)]
+    pub fn into_inner(self) -> T {
+        self.inner.into_inner().ok().unwrap()
+    }
 }
 
 impl<T: View> ViewWrapper for Child<T> {
@@ -113,6 +127,16 @@ macro_rules! impls {
                 #[allow(dead_code)]
                 pub fn vertical(children: ($($name,)+)) -> Self {
                     Self::new(Orientation::Vertical, children)
+                }
+
+                #[allow(dead_code)]
+                pub fn get_children(&self) -> &($(Child<$name>,)+) {
+                    self.inner.get_inner().get_children()
+                }
+
+                #[allow(dead_code)]
+                pub fn get_children_mut(&mut self) -> &mut ($(Child<$name>,)+) {
+                    self.inner.get_inner_mut().get_children_mut()
                 }
             }
 

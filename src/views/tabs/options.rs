@@ -46,10 +46,6 @@ pub(super) struct OptionsQuery {
 
 #[derive(Clone)]
 pub(super) struct OptionsNames {
-    pub max_download_speed: String,
-    pub max_upload_speed: String,
-    pub max_connections: String,
-    pub max_upload_slots: String,
     pub auto_managed: String,
     pub stop_at_ratio: String,
     pub stop_ratio: String,
@@ -71,10 +67,6 @@ impl OptionsNames {
         use uuid::Uuid;
         let v4 = || Uuid::new_v4().to_string();
         Self {
-            max_download_speed: v4(),
-            max_upload_speed: v4(),
-            max_connections: v4(),
-            max_upload_slots: v4(),
             auto_managed: v4(),
             stop_at_ratio: v4(),
             stop_ratio: v4(),
@@ -190,13 +182,13 @@ impl TabData for OptionsData {
 type FloatSpinView = SpinView<f64, std::ops::RangeFrom<f64>>;
 type IntSpinView = SpinView<i64, std::ops::RangeFrom<i64>>;
 
-type BandwidthLimitsPanel = StaticLinearPanel<(
-    Child<NamedView<FloatSpinView>>,
-    Child<NamedView<FloatSpinView>>,
-    Child<NamedView<IntSpinView>>,
-    Child<NamedView<IntSpinView>>,
-)>;
-
+type BandwidthLimits = (
+    Child<FloatSpinView>,
+    Child<FloatSpinView>,
+    Child<IntSpinView>,
+    Child<IntSpinView>,
+);
+type BandwidthLimitsPanel = StaticLinearPanel<BandwidthLimits>;
 type BandwidthLimitsColumn = StaticLinearLayout<(TextView, BandwidthLimitsPanel)>;
 
 pub(super) type RatioLimitControls =
@@ -221,13 +213,39 @@ type ThirdColumn = StaticLinearLayout<(
     ResizedView<NamedView<EditView>>,
 )>;
 
-type OptionsView = StaticLinearLayout<(
+pub(super) type OptionsView = StaticLinearLayout<(
     BandwidthLimitsColumn,
     ResizedView<DummyView>,
     SecondColumn,
     ResizedView<DummyView>,
     ThirdColumn,
 )>;
+
+impl OptionsView {
+    pub fn bandwidth_limits(&mut self) -> &mut BandwidthLimits {
+        self.get_children_mut()
+            .0
+            .get_children_mut()
+            .1
+            .get_children_mut()
+    }
+
+    pub fn max_download_speed(&mut self) -> &mut FloatSpinView {
+        self.bandwidth_limits().0.get_inner_mut()
+    }
+
+    pub fn max_upload_speed(&mut self) -> &mut FloatSpinView {
+        self.bandwidth_limits().1.get_inner_mut()
+    }
+
+    pub fn max_connections(&mut self) -> &mut IntSpinView {
+        self.bandwidth_limits().2.get_inner_mut()
+    }
+
+    pub fn max_upload_slots(&mut self) -> &mut IntSpinView {
+        self.bandwidth_limits().3.get_inner_mut()
+    }
+}
 
 impl BuildableTabData for OptionsData {
     type V = OptionsView;
@@ -253,20 +271,16 @@ impl BuildableTabData for OptionsData {
 
         let bandwidth_limits = {
             let down = SpinView::new(Some("Download Speed"), Some("kiB/s"), -1.0f64..)
-                .on_modify(set!(pending_options.max_download_speed))
-                .with_name(&names.max_download_speed);
+                .on_modify(set!(pending_options.max_download_speed));
 
             let up = SpinView::new(Some("Upload Speed"), Some("kiB/s"), -1.0f64..)
-                .on_modify(set!(pending_options.max_upload_speed))
-                .with_name(&names.max_upload_speed);
+                .on_modify(set!(pending_options.max_upload_speed));
 
             let peers = SpinView::new(Some("Connections"), None, -1i64..)
-                .on_modify(set!(pending_options.max_connections))
-                .with_name(&names.max_connections);
+                .on_modify(set!(pending_options.max_connections));
 
             let slots = SpinView::new(Some("Upload Slots"), None, -1i64..)
-                .on_modify(set!(pending_options.max_upload_slots))
-                .with_name(&names.max_upload_slots);
+                .on_modify(set!(pending_options.max_upload_slots));
 
             BandwidthLimitsPanel::vertical((down, up, peers, slots))
         };

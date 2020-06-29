@@ -222,7 +222,7 @@ impl TorrentTabsView {
         let view = TabPanel::new()
             .with_tab(Tab::Status, status_tab)
             .with_tab(Tab::Details, details_tab)
-            .with_tab(Tab::Options, options_tab)
+            .with_tab(Tab::Options, options_tab.with_name("options tab"))
             .with_tab(Tab::Files, files_tab)
             .with_tab(Tab::Peers, peers_tab)
             .with_tab(Tab::Trackers, trackers_tab)
@@ -304,10 +304,13 @@ impl ViewWrapper for TorrentTabsView {
                     }};
                 }
 
-                update!(Spin<f64>, set_val(max_download_speed));
-                update!(Spin<f64>, set_val(max_upload_speed));
-                update!(Spin<i64>, set_val(max_connections));
-                update!(Spin<i64>, set_val(max_upload_slots));
+                view.call_on_name("options tab", |view: &mut options::OptionsView| {
+                    view.max_download_speed().set_val(opts.max_download_speed);
+                    view.max_upload_speed().set_val(opts.max_upload_speed);
+                    view.max_connections().set_val(opts.max_connections);
+                    view.max_upload_slots().set_val(opts.max_upload_slots);
+                })
+                .unwrap();
 
                 update!(LabeledCheckbox, set_checked(auto_managed));
                 update!(LabeledCheckbox, set_checked(stop_at_ratio));
