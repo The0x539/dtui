@@ -182,9 +182,12 @@ impl<T: ViewTuple> StaticLinearLayout<T> {
     }
 
     fn children_are_sleeping(&self) -> bool {
-        self.children
-            .with_each(|t, i| t.needs_relayout(i))
-            .contains(&true)
+        for i in 0..self.len() {
+            if self.children.needs_relayout(i) {
+                return false;
+            }
+        }
+        return true;
     }
 
     fn move_focus(&mut self, source: direction::Direction) -> EventResult {
