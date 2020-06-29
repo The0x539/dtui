@@ -278,29 +278,7 @@ impl ViewWrapper for TorrentTabsView {
 
                 self.view
                     .call_on_name("options tab", |view: &mut options::OptionsView| {
-                        view.max_download_speed().set_val(opts.max_download_speed);
-                        view.max_upload_speed().set_val(opts.max_upload_speed);
-                        view.max_connections().set_val(opts.max_connections);
-                        view.max_upload_slots().set_val(opts.max_upload_slots);
-
-                        view.auto_managed().set_checked(opts.auto_managed);
-                        view.stop_at_ratio().set_checked(opts.stop_at_ratio);
-                        view.stop_ratio().set_val(opts.stop_ratio);
-                        view.remove_at_ratio().set_checked(opts.remove_at_ratio);
-
-                        view.second_column().2.set_enabled(opts.stop_at_ratio);
-                        view.apply_button().get_inner_mut().disable();
-
-                        let col3 = view.third_column();
-                        col3.1.set_checked(opts.shared);
-                        col3.2.set_checked(opts.prioritize_first_last_pieces);
-                        col3.3.set_checked(opts.sequential_download);
-                        col3.4.set_checked(opts.super_seeding);
-                        col3.5.set_checked(opts.move_completed);
-
-                        let path = view.move_completed_path();
-                        path.set_enabled(opts.move_completed);
-                        path.set_content(&opts.move_completed_path);
+                        view.update(opts);
                     })
                     .unwrap();
             }

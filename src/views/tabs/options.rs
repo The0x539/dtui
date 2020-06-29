@@ -242,6 +242,32 @@ impl OptionsView {
     pub fn move_completed_path(&mut self) -> &mut EditView {
         self.third_column().6.get_inner_mut()
     }
+
+    pub(super) fn update(&mut self, opts: OptionsQuery) {
+        self.max_download_speed().set_val(opts.max_download_speed);
+        self.max_upload_speed().set_val(opts.max_upload_speed);
+        self.max_connections().set_val(opts.max_connections);
+        self.max_upload_slots().set_val(opts.max_upload_slots);
+
+        self.auto_managed().set_checked(opts.auto_managed);
+        self.stop_at_ratio().set_checked(opts.stop_at_ratio);
+        self.stop_ratio().set_val(opts.stop_ratio);
+        self.remove_at_ratio().set_checked(opts.remove_at_ratio);
+
+        self.second_column().2.set_enabled(opts.stop_at_ratio);
+        self.apply_button().get_inner_mut().disable();
+
+        let col3 = self.third_column();
+        col3.1.set_checked(opts.shared);
+        col3.2.set_checked(opts.prioritize_first_last_pieces);
+        col3.3.set_checked(opts.sequential_download);
+        col3.4.set_checked(opts.super_seeding);
+        col3.5.set_checked(opts.move_completed);
+
+        let path = self.move_completed_path();
+        path.set_enabled(opts.move_completed);
+        path.set_content(&opts.move_completed_path);
+    }
 }
 
 impl BuildableTabData for OptionsData {
