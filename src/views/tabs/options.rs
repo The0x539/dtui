@@ -187,48 +187,8 @@ impl OptionsView {
             .get_children_mut()
     }
 
-    pub fn max_download_speed(&mut self) -> &mut FloatSpinView {
-        self.bandwidth_limits().0.get_inner_mut()
-    }
-
-    pub fn max_upload_speed(&mut self) -> &mut FloatSpinView {
-        self.bandwidth_limits().1.get_inner_mut()
-    }
-
-    pub fn max_connections(&mut self) -> &mut IntSpinView {
-        self.bandwidth_limits().2.get_inner_mut()
-    }
-
-    pub fn max_upload_slots(&mut self) -> &mut IntSpinView {
-        self.bandwidth_limits().3.get_inner_mut()
-    }
-
     pub fn second_column(&mut self) -> &mut SecondColumnElements {
         self.get_children_mut().2.get_children_mut()
-    }
-
-    pub fn auto_managed(&mut self) -> &mut LabeledCheckbox {
-        &mut self.second_column().0
-    }
-
-    pub fn stop_at_ratio(&mut self) -> &mut LabeledCheckbox {
-        &mut self.second_column().1
-    }
-
-    pub fn ratio_limit_panel(&mut self) -> &mut (FloatSpinView, LabeledCheckbox) {
-        self.second_column()
-            .2
-            .get_inner_mut()
-            .get_inner_mut()
-            .get_children_mut()
-    }
-
-    pub fn stop_ratio(&mut self) -> &mut FloatSpinView {
-        &mut self.ratio_limit_panel().0
-    }
-
-    pub fn remove_at_ratio(&mut self) -> &mut LabeledCheckbox {
-        &mut self.ratio_limit_panel().1
     }
 
     pub fn apply_button(&mut self) -> &mut Panel<Button> {
@@ -244,18 +204,21 @@ impl OptionsView {
     }
 
     pub(super) fn update(&mut self, opts: OptionsQuery) {
-        self.max_download_speed().set_val(opts.max_download_speed);
-        self.max_upload_speed().set_val(opts.max_upload_speed);
-        self.max_connections().set_val(opts.max_connections);
-        self.max_upload_slots().set_val(opts.max_upload_slots);
+        let col1 = self.bandwidth_limits();
+        col1.0.get_inner_mut().set_val(opts.max_download_speed);
+        col1.1.get_inner_mut().set_val(opts.max_upload_speed);
+        col1.2.get_inner_mut().set_val(opts.max_connections);
+        col1.3.get_inner_mut().set_val(opts.max_upload_slots);
 
-        self.auto_managed().set_checked(opts.auto_managed);
-        self.stop_at_ratio().set_checked(opts.stop_at_ratio);
-        self.stop_ratio().set_val(opts.stop_ratio);
-        self.remove_at_ratio().set_checked(opts.remove_at_ratio);
+        let col2 = self.second_column();
+        col2.0.set_checked(opts.auto_managed);
+        col2.1.set_checked(opts.stop_at_ratio);
+        col2.2.set_enabled(opts.stop_at_ratio);
+        col2.3.get_inner_mut().disable();
 
-        self.second_column().2.set_enabled(opts.stop_at_ratio);
-        self.apply_button().get_inner_mut().disable();
+        let ratio_limit_panel = col2.2.get_inner_mut().get_inner_mut().get_children_mut();
+        ratio_limit_panel.0.set_val(opts.stop_ratio);
+        ratio_limit_panel.1.set_checked(opts.remove_at_ratio);
 
         let col3 = self.third_column();
         col3.1.set_checked(opts.shared);
