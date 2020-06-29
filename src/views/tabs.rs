@@ -4,7 +4,7 @@ use cursive::align::HAlign;
 use cursive::traits::*;
 use cursive::vec::Vec2;
 use cursive::view::ViewWrapper;
-use cursive::views::{DummyView, EditView, LinearLayout, TextContent, TextView};
+use cursive::views::{DummyView, LinearLayout, TextContent, TextView};
 use cursive_tabs::TabPanel;
 use deluge_rpc::{InfoHash, Session};
 use futures::FutureExt;
@@ -13,8 +13,6 @@ use tokio::sync::{watch, Notify};
 use tokio::task;
 
 use crate::{Selection, SessionHandle};
-
-use crate::views::labeled_checkbox::LabeledCheckbox;
 
 fn column(rows: &[&str], h_align: HAlign) -> (LinearLayout, TextContent) {
     let labels = TextView::new(rows.join("\n")).effect(cursive::theme::Effect::Bold);
@@ -86,7 +84,6 @@ pub(crate) struct TorrentTabsView {
     // Right now, they're named based on what's updating, and in this case, that's either of two things.
     thread_notifier: Arc<Notify>,
 
-    options_field_names: options::OptionsNames,
     current_options_recv: watch::Receiver<options::OptionsQuery>,
     pending_options: Arc<RwLock<Option<options::OptionsQuery>>>,
 }
@@ -192,7 +189,6 @@ impl TorrentTabsView {
         let (peers_tab, peers_data) = peers::PeersData::view();
         let (trackers_tab, trackers_data) = trackers::TrackersData::view();
 
-        let options_field_names = options_data.names.clone();
         let current_options_recv = options_data.current_options_recv.clone();
         let pending_options = options_data.pending_options.clone();
 
@@ -233,7 +229,6 @@ impl TorrentTabsView {
             active_tab,
             active_tab_send,
             thread_notifier,
-            options_field_names,
             current_options_recv,
             pending_options,
         }
@@ -264,68 +259,50 @@ impl ViewWrapper for TorrentTabsView {
             if let Some(opts) =
                 task::block_in_place(|| self.pending_options.read().unwrap().clone())
             {
-                let names = &self.options_field_names;
-                let view = &mut self.view;
-
-                view.call_on_name("options tab", |view: &mut options::OptionsView| {
-                    view.second_column().2.set_enabled(opts.stop_at_ratio);
-                    view.apply_button().get_inner_mut().enable()
-                })
-                .unwrap();
-
-                view.call_on_name(&names.move_completed_path, |v: &mut EditView| {
-                    v.set_enabled(opts.move_completed)
-                })
-                .unwrap();
+                self.view
+                    .call_on_name("options tab", |view: &mut options::OptionsView| {
+                        view.second_column().2.set_enabled(opts.stop_at_ratio);
+                        view.apply_button().get_inner_mut().enable();
+                        view.move_completed_path().set_enabled(opts.move_completed);
+                    })
+                    .unwrap();
 
                 return;
             } else if let Some(opts) = self.current_options_recv.recv().now_or_never() {
                 let opts = opts.unwrap();
-                let names = &self.options_field_names;
-                let view = &mut self.view;
 
                 // Intentionally ignoring the callbacks returned here.
                 // In this case, those callbacks will update the pending options.
                 // That is very much what we don't want. We're just tracking updates from the server,
                 // so we don't want these updates to be treated like user input.
 
-                macro_rules! update {
-                    ($type:ty, $method:ident($field:ident)) => {{
-                        let cb = |v: &mut $type| v.$method(opts.$field);
-                        view.call_on_name(&names.$field, cb).unwrap();
-                    }};
-                }
+                self.view
+                    .call_on_name("options tab", |view: &mut options::OptionsView| {
+                        view.max_download_speed().set_val(opts.max_download_speed);
+                        view.max_upload_speed().set_val(opts.max_upload_speed);
+                        view.max_connections().set_val(opts.max_connections);
+                        view.max_upload_slots().set_val(opts.max_upload_slots);
 
-                view.call_on_name("options tab", |view: &mut options::OptionsView| {
-                    view.max_download_speed().set_val(opts.max_download_speed);
-                    view.max_upload_speed().set_val(opts.max_upload_speed);
-                    view.max_connections().set_val(opts.max_connections);
-                    view.max_upload_slots().set_val(opts.max_upload_slots);
+                        view.auto_managed().set_checked(opts.auto_managed);
+                        view.stop_at_ratio().set_checked(opts.stop_at_ratio);
+                        view.stop_ratio().set_val(opts.stop_ratio);
+                        view.remove_at_ratio().set_checked(opts.remove_at_ratio);
 
-                    view.auto_managed().set_checked(opts.auto_managed);
-                    view.stop_at_ratio().set_checked(opts.stop_at_ratio);
-                    view.stop_ratio().set_val(opts.stop_ratio);
-                    view.remove_at_ratio().set_checked(opts.remove_at_ratio);
+                        view.second_column().2.set_enabled(opts.stop_at_ratio);
+                        view.apply_button().get_inner_mut().disable();
 
-                    view.second_column().2.set_enabled(opts.stop_at_ratio);
-                    view.apply_button().get_inner_mut().disable()
-                })
-                .unwrap();
+                        let col3 = view.third_column();
+                        col3.1.set_checked(opts.shared);
+                        col3.2.set_checked(opts.prioritize_first_last_pieces);
+                        col3.3.set_checked(opts.sequential_download);
+                        col3.4.set_checked(opts.super_seeding);
+                        col3.5.set_checked(opts.move_completed);
 
-                update!(LabeledCheckbox, set_checked(shared));
-                update!(LabeledCheckbox, set_checked(prioritize_first_last_pieces));
-                update!(LabeledCheckbox, set_checked(sequential_download));
-                update!(LabeledCheckbox, set_checked(super_seeding));
-                update!(LabeledCheckbox, set_checked(move_completed));
-                view.call_on_name(&names.move_completed_path, |v: &mut EditView| {
-                    v.set_content(&opts.move_completed_path)
-                })
-                .unwrap();
-
-                view.call_on_name(&names.move_completed_path, |v: &mut EditView| {
-                    v.set_enabled(opts.move_completed)
-                })
-                .unwrap();
+                        let path = view.move_completed_path();
+                        path.set_enabled(opts.move_completed);
+                        path.set_content(&opts.move_completed_path);
+                    })
+                    .unwrap();
             }
         }
 

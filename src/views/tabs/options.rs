@@ -9,11 +9,9 @@ use crate::views::{
     },
 };
 use async_trait::async_trait;
-use cursive::traits::Nameable;
 use cursive::traits::Resizable;
 use cursive::views::{
-    Button, DummyView, EditView, EnableableView, NamedView, Panel, ResizedView, TextContent,
-    TextView,
+    Button, DummyView, EditView, EnableableView, Panel, ResizedView, TextContent, TextView,
 };
 use deluge_rpc::{InfoHash, Query, Session};
 use serde::Deserialize;
@@ -44,33 +42,6 @@ pub(super) struct OptionsQuery {
     pub move_completed_path: String,
 }
 
-#[derive(Clone)]
-pub(super) struct OptionsNames {
-    pub owner: String,
-    pub shared: String,
-    pub prioritize_first_last_pieces: String,
-    pub sequential_download: String,
-    pub super_seeding: String,
-    pub move_completed: String,
-    pub move_completed_path: String,
-}
-
-impl OptionsNames {
-    fn new() -> Self {
-        use uuid::Uuid;
-        let v4 = || Uuid::new_v4().to_string();
-        Self {
-            owner: v4(),
-            shared: v4(),
-            prioritize_first_last_pieces: v4(),
-            sequential_download: v4(),
-            super_seeding: v4(),
-            move_completed: v4(),
-            move_completed_path: v4(),
-        }
-    }
-}
-
 pub(super) struct OptionsData {
     selection: InfoHash,
     current_options_send: watch::Sender<OptionsQuery>,
@@ -78,7 +49,6 @@ pub(super) struct OptionsData {
     owner: TextContent,
     pub current_options_recv: watch::Receiver<OptionsQuery>,
     pub pending_options: Arc<RwLock<Option<OptionsQuery>>>,
-    pub names: OptionsNames,
 }
 
 impl OptionsData {
@@ -187,17 +157,18 @@ type SecondColumnElements = (
 );
 type SecondColumn = StaticLinearLayout<SecondColumnElements>;
 
-type OwnerTextView = StaticLinearLayout<(TextView, NamedView<TextView>)>;
+type OwnerTextView = StaticLinearLayout<(TextView, TextView)>;
 
-type ThirdColumn = StaticLinearLayout<(
+type ThirdColumnElements = (
     OwnerTextView,
-    NamedView<LabeledCheckbox>,
-    NamedView<LabeledCheckbox>,
-    NamedView<LabeledCheckbox>,
-    NamedView<LabeledCheckbox>,
-    NamedView<LabeledCheckbox>,
-    ResizedView<NamedView<EditView>>,
-)>;
+    LabeledCheckbox,
+    LabeledCheckbox,
+    LabeledCheckbox,
+    LabeledCheckbox,
+    LabeledCheckbox,
+    ResizedView<EditView>,
+);
+type ThirdColumn = StaticLinearLayout<ThirdColumnElements>;
 
 pub(super) type OptionsView = StaticLinearLayout<(
     BandwidthLimitsColumn,
@@ -263,6 +234,14 @@ impl OptionsView {
     pub fn apply_button(&mut self) -> &mut Panel<Button> {
         &mut self.second_column().3
     }
+
+    pub fn third_column(&mut self) -> &mut ThirdColumnElements {
+        self.get_children_mut().4.get_children_mut()
+    }
+
+    pub fn move_completed_path(&mut self) -> &mut EditView {
+        self.third_column().6.get_inner_mut()
+    }
 }
 
 impl BuildableTabData for OptionsData {
@@ -271,8 +250,6 @@ impl BuildableTabData for OptionsData {
     fn view() -> (Self::V, Self) {
         let pending_options = Arc::new(RwLock::new(None));
         let (current_options_send, current_options_recv) = watch::channel(OptionsQuery::default());
-        let names = OptionsNames::new();
-
         macro_rules! set {
             ($obj:ident.$field:ident) => {{
                 let cloned_arc = $obj.clone();
@@ -336,30 +313,23 @@ impl BuildableTabData for OptionsData {
         let owner_content = TextContent::new("");
 
         let col3 = {
-            let owner_text =
-                TextView::new_with_content(owner_content.clone()).with_name(&names.owner);
+            let owner_text = TextView::new_with_content(owner_content.clone());
 
             let owner = OwnerTextView::horizontal((TextView::new("Owner: "), owner_text));
 
-            let shared = LabeledCheckbox::new("Shared")
-                .on_change(set!(pending_options.shared))
-                .with_name(&names.shared);
+            let shared = LabeledCheckbox::new("Shared").on_change(set!(pending_options.shared));
 
             let prioritize_first_last_pieces = LabeledCheckbox::new("Prioritize First/Last")
-                .on_change(set!(pending_options.prioritize_first_last_pieces))
-                .with_name(&names.prioritize_first_last_pieces);
+                .on_change(set!(pending_options.prioritize_first_last_pieces));
 
             let sequential_download = LabeledCheckbox::new("Sequential Download")
-                .on_change(set!(pending_options.sequential_download))
-                .with_name(&names.sequential_download);
+                .on_change(set!(pending_options.sequential_download));
 
             let super_seeding = LabeledCheckbox::new("Super Seeding")
-                .on_change(set!(pending_options.super_seeding))
-                .with_name(&names.super_seeding);
+                .on_change(set!(pending_options.super_seeding));
 
             let move_completed = LabeledCheckbox::new("Move completed:")
-                .on_change(set!(pending_options.move_completed))
-                .with_name(&names.move_completed);
+                .on_change(set!(pending_options.move_completed));
 
             let edit_cb = {
                 let cloned_arc = pending_options.clone();
@@ -373,10 +343,7 @@ impl BuildableTabData for OptionsData {
                 }
             };
 
-            let move_completed_path = EditView::new()
-                .on_edit(edit_cb)
-                .with_name(&names.move_completed_path)
-                .min_width(25);
+            let move_completed_path = EditView::new().on_edit(edit_cb).min_width(25);
 
             ThirdColumn::vertical((
                 owner,
@@ -404,7 +371,6 @@ impl BuildableTabData for OptionsData {
             owner: owner_content,
             apply_notify,
             pending_options,
-            names,
         };
         (view, data)
     }
