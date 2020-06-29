@@ -328,7 +328,9 @@ impl ViewWrapper for TorrentTabsView {
 
                 view.call_on_name(
                     &names.ratio_limit_panel,
-                    |v: &mut EnableableView<Panel<LinearLayout>>| v.set_enabled(opts.stop_at_ratio),
+                    |v: &mut EnableableView<Panel<options::RatioLimitControls>>| {
+                        v.set_enabled(opts.stop_at_ratio)
+                    },
                 )
                 .unwrap();
 

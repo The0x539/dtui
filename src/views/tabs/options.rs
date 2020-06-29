@@ -1,12 +1,19 @@
 use super::{BuildableTabData, TabData};
 use crate::views::spin::SpinView;
 use crate::views::thread::ViewThread;
-use crate::views::{labeled_checkbox::LabeledCheckbox, linear_panel::LinearPanel};
+use crate::views::{
+    labeled_checkbox::LabeledCheckbox,
+    static_linear_layout::{
+        panel::{Child, StaticLinearPanel},
+        StaticLinearLayout,
+    },
+};
 use async_trait::async_trait;
 use cursive::traits::Nameable;
 use cursive::traits::Resizable;
 use cursive::views::{
-    Button, DummyView, EditView, EnableableView, LinearLayout, Panel, TextContent, TextView,
+    Button, DummyView, EditView, EnableableView, NamedView, Panel, ResizedView, TextContent,
+    TextView,
 };
 use deluge_rpc::{InfoHash, Query, Session};
 use serde::Deserialize;
@@ -180,8 +187,50 @@ impl TabData for OptionsData {
     }
 }
 
+type FloatSpinView = SpinView<f64, std::ops::RangeFrom<f64>>;
+type IntSpinView = SpinView<i64, std::ops::RangeFrom<i64>>;
+
+type BandwidthLimitsPanel = StaticLinearPanel<(
+    Child<NamedView<FloatSpinView>>,
+    Child<NamedView<FloatSpinView>>,
+    Child<NamedView<IntSpinView>>,
+    Child<NamedView<IntSpinView>>,
+)>;
+
+type BandwidthLimitsColumn = StaticLinearLayout<(TextView, BandwidthLimitsPanel)>;
+
+pub(super) type RatioLimitControls =
+    StaticLinearLayout<(NamedView<FloatSpinView>, NamedView<LabeledCheckbox>)>;
+
+type SecondColumn = StaticLinearLayout<(
+    NamedView<LabeledCheckbox>,
+    NamedView<LabeledCheckbox>,
+    NamedView<EnableableView<Panel<RatioLimitControls>>>,
+    Panel<NamedView<Button>>,
+)>;
+
+type OwnerTextView = StaticLinearLayout<(TextView, NamedView<TextView>)>;
+
+type ThirdColumn = StaticLinearLayout<(
+    OwnerTextView,
+    NamedView<LabeledCheckbox>,
+    NamedView<LabeledCheckbox>,
+    NamedView<LabeledCheckbox>,
+    NamedView<LabeledCheckbox>,
+    NamedView<LabeledCheckbox>,
+    ResizedView<NamedView<EditView>>,
+)>;
+
+type OptionsView = StaticLinearLayout<(
+    BandwidthLimitsColumn,
+    ResizedView<DummyView>,
+    SecondColumn,
+    ResizedView<DummyView>,
+    ThirdColumn,
+)>;
+
 impl BuildableTabData for OptionsData {
-    type V = LinearLayout;
+    type V = OptionsView;
 
     fn view() -> (Self::V, Self) {
         let pending_options = Arc::new(RwLock::new(None));
@@ -219,16 +268,11 @@ impl BuildableTabData for OptionsData {
                 .on_modify(set!(pending_options.max_upload_slots))
                 .with_name(&names.max_upload_slots);
 
-            LinearPanel::vertical()
-                .child(down, None)
-                .child(up, None)
-                .child(peers, None)
-                .child(slots, None)
+            BandwidthLimitsPanel::vertical((down, up, peers, slots))
         };
 
-        let col1 = LinearLayout::vertical()
-            .child(TextView::new("Bandwidth Limits"))
-            .child(bandwidth_limits);
+        let col1 =
+            BandwidthLimitsColumn::vertical((TextView::new("Bandwidth Limits"), bandwidth_limits));
 
         let apply_notify = Arc::new(Notify::new());
 
@@ -250,7 +294,7 @@ impl BuildableTabData for OptionsData {
                     .on_change(set!(pending_options.remove_at_ratio))
                     .with_name(&names.remove_at_ratio);
 
-                let layout = LinearLayout::vertical().child(spinner).child(checkbox);
+                let layout = RatioLimitControls::vertical((spinner, checkbox));
                 EnableableView::new(Panel::new(layout)).with_name(&names.ratio_limit_panel)
             };
 
@@ -259,11 +303,7 @@ impl BuildableTabData for OptionsData {
                 Button::new("Apply", move |_| apply_notify.notify()).with_name(&names.apply_button);
             let apply_panel = Panel::new(apply);
 
-            LinearLayout::vertical()
-                .child(auto_managed)
-                .child(stop_at_ratio)
-                .child(ratio_limit_panel)
-                .child(apply_panel)
+            SecondColumn::vertical((auto_managed, stop_at_ratio, ratio_limit_panel, apply_panel))
         };
 
         let owner_content = TextContent::new("");
@@ -272,9 +312,7 @@ impl BuildableTabData for OptionsData {
             let owner_text =
                 TextView::new_with_content(owner_content.clone()).with_name(&names.owner);
 
-            let owner = LinearLayout::horizontal()
-                .child(TextView::new("Owner: "))
-                .child(owner_text);
+            let owner = OwnerTextView::horizontal((TextView::new("Owner: "), owner_text));
 
             let shared = LabeledCheckbox::new("Shared")
                 .on_change(set!(pending_options.shared))
@@ -313,22 +351,24 @@ impl BuildableTabData for OptionsData {
                 .with_name(&names.move_completed_path)
                 .min_width(25);
 
-            LinearLayout::vertical()
-                .child(owner)
-                .child(shared)
-                .child(prioritize_first_last_pieces)
-                .child(sequential_download)
-                .child(super_seeding)
-                .child(move_completed)
-                .child(move_completed_path)
+            ThirdColumn::vertical((
+                owner,
+                shared,
+                prioritize_first_last_pieces,
+                sequential_download,
+                super_seeding,
+                move_completed,
+                move_completed_path,
+            ))
         };
 
-        let view = LinearLayout::horizontal()
-            .child(col1)
-            .child(DummyView.fixed_width(2))
-            .child(col2)
-            .child(DummyView.fixed_width(2))
-            .child(col3);
+        let view = OptionsView::horizontal((
+            col1,
+            DummyView.fixed_width(2),
+            col2,
+            DummyView.fixed_width(2),
+            col3,
+        ));
 
         let data = Self {
             selection: InfoHash::default(),
