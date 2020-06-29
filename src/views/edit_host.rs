@@ -1,10 +1,12 @@
 use crate::config::Host;
 use crate::form::Form;
 
-use crate::views::{linear_panel::LinearPanel, spin::SpinView};
+use crate::views::{
+    linear_panel::LinearPanel, spin::SpinView, static_linear_layout::StaticLinearLayout,
+};
 
 use cursive::view::ViewWrapper;
-use cursive::views::{LinearLayout, TextArea, TextView};
+use cursive::views::{TextArea, TextView};
 
 type PortSpinView = SpinView<u16, std::ops::RangeFull>;
 
@@ -12,20 +14,44 @@ pub struct EditHostView {
     inner: LinearPanel,
 }
 
+type HostRow = StaticLinearLayout<(TextView, TextArea, PortSpinView)>;
+
+impl Form for HostRow {
+    type Data = (String, u16);
+
+    fn into_data(self) -> Self::Data {
+        let children = self.into_children();
+        (children.1.into_data(), children.2.into_data())
+    }
+}
+
+type TextRow = StaticLinearLayout<(TextView, TextArea)>;
+
+impl Form for TextRow {
+    type Data = String;
+
+    fn into_data(self) -> Self::Data {
+        self.into_children().1.into_data()
+    }
+}
+
 impl EditHostView {
     pub fn new(hostname: &str, port: u16, username: &str, password: &str) -> Self {
-        let host_row = LinearLayout::horizontal()
-            .child(TextView::new("Hostname: "))
-            .child(TextArea::new().content(hostname))
-            .child(SpinView::new(Some("Port: "), None, ..).with_val(port));
+        let host_row = HostRow::horizontal((
+            TextView::new("Hostname: "),
+            TextArea::new().content(hostname),
+            SpinView::new(Some("Port: "), None, ..).with_val(port),
+        ));
 
-        let username_row = LinearLayout::horizontal()
-            .child(TextView::new("Username: "))
-            .child(TextArea::new().content(username));
+        let username_row = TextRow::horizontal((
+            TextView::new("Username: "),
+            TextArea::new().content(username),
+        ));
 
-        let password_row = LinearLayout::horizontal()
-            .child(TextView::new("Password: "))
-            .child(TextArea::new().content(password));
+        let password_row = TextRow::horizontal((
+            TextView::new("Password: "),
+            TextArea::new().content(password),
+        ));
 
         let inner = LinearPanel::vertical()
             .child(host_row, None)
@@ -52,16 +78,8 @@ impl ViewWrapper for EditHostView {
     cursive::wrap_impl!(self.inner: LinearPanel);
 }
 
-fn take_row(rows: &mut LinearPanel, index: usize) -> Box<LinearLayout> {
+fn take_row_content<T: Form>(rows: &mut LinearPanel, index: usize) -> T::Data {
     rows.remove_child(index)
-        .unwrap()
-        .downcast::<LinearLayout>()
-        .ok()
-        .unwrap()
-}
-
-fn take_content<T: Form>(row: &mut LinearLayout, index: usize) -> T::Data {
-    row.remove_child(index)
         .unwrap()
         .downcast::<T>()
         .ok()
@@ -75,14 +93,9 @@ impl Form for EditHostView {
     fn into_data(self) -> Self::Data {
         let mut inner = self.inner;
 
-        let mut password_row = take_row(&mut inner, 2);
-        let mut username_row = take_row(&mut inner, 1);
-        let mut host_row = take_row(&mut inner, 0);
-
-        let username: String = take_content::<TextArea>(&mut username_row, 1);
-        let password: String = take_content::<TextArea>(&mut password_row, 1);
-        let port: u16 = take_content::<PortSpinView>(&mut host_row, 2);
-        let address: String = take_content::<TextArea>(&mut host_row, 1);
+        let password = take_row_content::<TextRow>(&mut inner, 2);
+        let username = take_row_content::<TextRow>(&mut inner, 1);
+        let (address, port) = take_row_content::<HostRow>(&mut inner, 0);
 
         Host {
             address,
