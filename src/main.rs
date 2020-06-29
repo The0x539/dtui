@@ -5,10 +5,9 @@
 #![feature(trait_alias)]
 #![feature(const_fn, const_if_match, const_loop)]
 
-use cursive::direction::Orientation;
 use cursive::menu::MenuTree;
 use cursive::traits::*;
-use cursive::views::{LinearLayout, Panel};
+use cursive::views::Panel;
 use cursive::Cursive;
 use deluge_rpc::{AuthLevel, FilterDict, InfoHash, Session};
 use std::sync::{Arc, RwLock};
@@ -20,8 +19,8 @@ mod util;
 
 mod views;
 use views::{
-    filters::FiltersView, scroll::ScrollInner, statusbar::StatusBarView, tabs::TorrentTabsView,
-    torrents::TorrentsView,
+    filters::FiltersView, scroll::ScrollInner, static_linear_layout::StaticLinearLayout,
+    statusbar::StatusBarView, tabs::TorrentTabsView, torrents::TorrentsView,
 };
 
 mod config;
@@ -124,9 +123,10 @@ async fn main() -> deluge_rpc::Result<()> {
 
     let status_bar = StatusBarView::new(session_recv.clone()).with_name("status");
 
-    let torrents_ui = LinearLayout::new(Orientation::Horizontal)
-        .child(Panel::new(filters).title("Filters"))
-        .child(Panel::new(torrents).title("Torrents"));
+    let torrents_ui = StaticLinearLayout::horizontal((
+        Panel::new(filters).title("Filters"),
+        Panel::new(torrents).title("Torrents"),
+    ));
 
     let torrent_tabs =
         TorrentTabsView::new(session_recv.clone(), selection, selection_notify).with_name("tabs");
@@ -135,10 +135,7 @@ async fn main() -> deluge_rpc::Result<()> {
     // It's important to drop so that we can unwrap the Arc<SessionHandle> on close.
     drop(session_recv);
 
-    let main_ui = LinearLayout::new(Orientation::Vertical)
-        .child(torrents_ui)
-        .child(torrent_tabs)
-        .child(status_bar);
+    let main_ui = StaticLinearLayout::vertical((torrents_ui, torrent_tabs, status_bar));
 
     let mut siv = cursive::Cursive::new(|| {
         cursive::backends::crossterm::Backend::init()
