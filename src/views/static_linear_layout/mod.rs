@@ -1,3 +1,4 @@
+pub mod panel;
 mod view_tuple;
 pub use view_tuple::ViewTuple;
 
