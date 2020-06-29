@@ -4,9 +4,7 @@ use cursive::align::HAlign;
 use cursive::traits::*;
 use cursive::vec::Vec2;
 use cursive::view::ViewWrapper;
-use cursive::views::{
-    Button, DummyView, EditView, EnableableView, LinearLayout, Panel, TextContent, TextView,
-};
+use cursive::views::{DummyView, EditView, LinearLayout, TextContent, TextView};
 use cursive_tabs::TabPanel;
 use deluge_rpc::{InfoHash, Session};
 use futures::FutureExt;
@@ -16,7 +14,7 @@ use tokio::task;
 
 use crate::{Selection, SessionHandle};
 
-use crate::views::{labeled_checkbox::LabeledCheckbox, spin::SpinView};
+use crate::views::labeled_checkbox::LabeledCheckbox;
 
 fn column(rows: &[&str], h_align: HAlign) -> (LinearLayout, TextContent) {
     let labels = TextView::new(rows.join("\n")).effect(cursive::theme::Effect::Bold);
@@ -269,19 +267,16 @@ impl ViewWrapper for TorrentTabsView {
                 let names = &self.options_field_names;
                 let view = &mut self.view;
 
-                view.call_on_name(
-                    &names.ratio_limit_panel,
-                    |v: &mut EnableableView<Panel<LinearLayout>>| v.set_enabled(opts.stop_at_ratio),
-                )
+                view.call_on_name("options tab", |view: &mut options::OptionsView| {
+                    view.second_column().2.set_enabled(opts.stop_at_ratio);
+                    view.apply_button().get_inner_mut().enable()
+                })
                 .unwrap();
 
                 view.call_on_name(&names.move_completed_path, |v: &mut EditView| {
                     v.set_enabled(opts.move_completed)
                 })
                 .unwrap();
-
-                view.call_on_name(&names.apply_button, Button::enable)
-                    .unwrap();
 
                 return;
             } else if let Some(opts) = self.current_options_recv.recv().now_or_never() {
@@ -293,9 +288,6 @@ impl ViewWrapper for TorrentTabsView {
                 // In this case, those callbacks will update the pending options.
                 // That is very much what we don't want. We're just tracking updates from the server,
                 // so we don't want these updates to be treated like user input.
-
-                use std::ops::RangeFrom;
-                type Spin<T> = SpinView<T, RangeFrom<T>>;
 
                 macro_rules! update {
                     ($type:ty, $method:ident($field:ident)) => {{
@@ -309,13 +301,16 @@ impl ViewWrapper for TorrentTabsView {
                     view.max_upload_speed().set_val(opts.max_upload_speed);
                     view.max_connections().set_val(opts.max_connections);
                     view.max_upload_slots().set_val(opts.max_upload_slots);
+
+                    view.auto_managed().set_checked(opts.auto_managed);
+                    view.stop_at_ratio().set_checked(opts.stop_at_ratio);
+                    view.stop_ratio().set_val(opts.stop_ratio);
+                    view.remove_at_ratio().set_checked(opts.remove_at_ratio);
+
+                    view.second_column().2.set_enabled(opts.stop_at_ratio);
+                    view.apply_button().get_inner_mut().disable()
                 })
                 .unwrap();
-
-                update!(LabeledCheckbox, set_checked(auto_managed));
-                update!(LabeledCheckbox, set_checked(stop_at_ratio));
-                update!(Spin<f64>, set_val(stop_ratio));
-                update!(LabeledCheckbox, set_checked(remove_at_ratio));
 
                 update!(LabeledCheckbox, set_checked(shared));
                 update!(LabeledCheckbox, set_checked(prioritize_first_last_pieces));
@@ -327,23 +322,10 @@ impl ViewWrapper for TorrentTabsView {
                 })
                 .unwrap();
 
-                // And now for the "secondary" updates.
-
-                view.call_on_name(
-                    &names.ratio_limit_panel,
-                    |v: &mut EnableableView<Panel<options::RatioLimitControls>>| {
-                        v.set_enabled(opts.stop_at_ratio)
-                    },
-                )
-                .unwrap();
-
                 view.call_on_name(&names.move_completed_path, |v: &mut EditView| {
                     v.set_enabled(opts.move_completed)
                 })
                 .unwrap();
-
-                view.call_on_name(&names.apply_button, Button::disable)
-                    .unwrap();
             }
         }
 

@@ -46,10 +46,6 @@ pub(super) struct OptionsQuery {
 
 #[derive(Clone)]
 pub(super) struct OptionsNames {
-    pub auto_managed: String,
-    pub stop_at_ratio: String,
-    pub stop_ratio: String,
-    pub remove_at_ratio: String,
     pub owner: String,
     pub shared: String,
     pub prioritize_first_last_pieces: String,
@@ -57,9 +53,6 @@ pub(super) struct OptionsNames {
     pub super_seeding: String,
     pub move_completed: String,
     pub move_completed_path: String,
-
-    pub ratio_limit_panel: String,
-    pub apply_button: String,
 }
 
 impl OptionsNames {
@@ -67,10 +60,6 @@ impl OptionsNames {
         use uuid::Uuid;
         let v4 = || Uuid::new_v4().to_string();
         Self {
-            auto_managed: v4(),
-            stop_at_ratio: v4(),
-            stop_ratio: v4(),
-            remove_at_ratio: v4(),
             owner: v4(),
             shared: v4(),
             prioritize_first_last_pieces: v4(),
@@ -78,9 +67,6 @@ impl OptionsNames {
             super_seeding: v4(),
             move_completed: v4(),
             move_completed_path: v4(),
-
-            ratio_limit_panel: v4(),
-            apply_button: v4(),
         }
     }
 }
@@ -191,15 +177,15 @@ type BandwidthLimits = (
 type BandwidthLimitsPanel = StaticLinearPanel<BandwidthLimits>;
 type BandwidthLimitsColumn = StaticLinearLayout<(TextView, BandwidthLimitsPanel)>;
 
-pub(super) type RatioLimitControls =
-    StaticLinearLayout<(NamedView<FloatSpinView>, NamedView<LabeledCheckbox>)>;
+pub(super) type RatioLimitControls = StaticLinearLayout<(FloatSpinView, LabeledCheckbox)>;
 
-type SecondColumn = StaticLinearLayout<(
-    NamedView<LabeledCheckbox>,
-    NamedView<LabeledCheckbox>,
-    NamedView<EnableableView<Panel<RatioLimitControls>>>,
-    Panel<NamedView<Button>>,
-)>;
+type SecondColumnElements = (
+    LabeledCheckbox,
+    LabeledCheckbox,
+    EnableableView<Panel<RatioLimitControls>>,
+    Panel<Button>,
+);
+type SecondColumn = StaticLinearLayout<SecondColumnElements>;
 
 type OwnerTextView = StaticLinearLayout<(TextView, NamedView<TextView>)>;
 
@@ -244,6 +230,38 @@ impl OptionsView {
 
     pub fn max_upload_slots(&mut self) -> &mut IntSpinView {
         self.bandwidth_limits().3.get_inner_mut()
+    }
+
+    pub fn second_column(&mut self) -> &mut SecondColumnElements {
+        self.get_children_mut().2.get_children_mut()
+    }
+
+    pub fn auto_managed(&mut self) -> &mut LabeledCheckbox {
+        &mut self.second_column().0
+    }
+
+    pub fn stop_at_ratio(&mut self) -> &mut LabeledCheckbox {
+        &mut self.second_column().1
+    }
+
+    pub fn ratio_limit_panel(&mut self) -> &mut (FloatSpinView, LabeledCheckbox) {
+        self.second_column()
+            .2
+            .get_inner_mut()
+            .get_inner_mut()
+            .get_children_mut()
+    }
+
+    pub fn stop_ratio(&mut self) -> &mut FloatSpinView {
+        &mut self.ratio_limit_panel().0
+    }
+
+    pub fn remove_at_ratio(&mut self) -> &mut LabeledCheckbox {
+        &mut self.ratio_limit_panel().1
+    }
+
+    pub fn apply_button(&mut self) -> &mut Panel<Button> {
+        &mut self.second_column().3
     }
 }
 
@@ -291,30 +309,25 @@ impl BuildableTabData for OptionsData {
         let apply_notify = Arc::new(Notify::new());
 
         let col2 = {
-            let auto_managed = LabeledCheckbox::new("Auto Managed")
-                .on_change(set!(pending_options.auto_managed))
-                .with_name(&names.auto_managed);
+            let auto_managed =
+                LabeledCheckbox::new("Auto Managed").on_change(set!(pending_options.auto_managed));
 
             let stop_at_ratio = LabeledCheckbox::new("Stop seed at ratio:")
-                .on_change(set!(pending_options.stop_at_ratio))
-                .with_name(&names.stop_at_ratio);
+                .on_change(set!(pending_options.stop_at_ratio));
 
             let ratio_limit_panel = {
-                let spinner = SpinView::new(None, None, 0.0f64..)
-                    .on_modify(set!(pending_options.stop_ratio))
-                    .with_name(&names.stop_ratio);
+                let spinner =
+                    SpinView::new(None, None, 0.0f64..).on_modify(set!(pending_options.stop_ratio));
 
                 let checkbox = LabeledCheckbox::new("Remove at ratio")
-                    .on_change(set!(pending_options.remove_at_ratio))
-                    .with_name(&names.remove_at_ratio);
+                    .on_change(set!(pending_options.remove_at_ratio));
 
                 let layout = RatioLimitControls::vertical((spinner, checkbox));
-                EnableableView::new(Panel::new(layout)).with_name(&names.ratio_limit_panel)
+                EnableableView::new(Panel::new(layout))
             };
 
             let apply_notify = apply_notify.clone();
-            let apply =
-                Button::new("Apply", move |_| apply_notify.notify()).with_name(&names.apply_button);
+            let apply = Button::new("Apply", move |_| apply_notify.notify());
             let apply_panel = Panel::new(apply);
 
             SecondColumn::vertical((auto_managed, stop_at_ratio, ratio_limit_panel, apply_panel))
