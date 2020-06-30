@@ -133,6 +133,10 @@ impl<T: ViewTuple> StaticLinearLayout<T> {
         }
     }
 
+    pub fn get_focus_index(&mut self) -> usize {
+        self.focus
+    }
+
     fn invalidate(&mut self) {
         self.cache = None;
     }

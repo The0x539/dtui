@@ -1,9 +1,11 @@
 use crate::form::Form;
 use crate::util::digit_width;
+use crate::views::static_linear_layout::StaticLinearLayout;
+
 use cursive::event::{AnyCb, Callback, Event, EventResult};
 use cursive::traits::*;
 use cursive::view::{Selector, SizeConstraint, ViewWrapper};
-use cursive::views::{Button, DummyView, EditView, LinearLayout, TextView};
+use cursive::views::{Button, DummyView, EditView, ResizedView, TextView};
 use cursive::Cursive;
 use std::rc::Rc;
 use uuid::Uuid;
@@ -126,12 +128,20 @@ impl Spinnable for f64 {
     }
 }
 
+type SpinViewInner = StaticLinearLayout<(
+    TextView,
+    ResizedView<ResizedView<EditView>>,
+    DummyView,
+    TextView,
+    Button,
+    Button,
+)>;
+
 pub(crate) struct SpinView<T: Spinnable, B: RangeBounds<T>> {
     bounds: B,
     val: T,
     own_id: String,
-    edit_id: String,
-    inner: LinearLayout,
+    inner: SpinViewInner,
     on_modify: Option<Rc<dyn Fn(&mut Cursive, T)>>,
 }
 
@@ -144,8 +154,6 @@ where
 
         let id = Rc::new(Uuid::new_v4().to_string());
         let (id0, id1, id2, id3) = (id.clone(), id.clone(), id.clone(), id.clone());
-
-        let edit_id = Uuid::new_v4().to_string();
 
         let width_constraint = match T::MAX_WIDTH {
             Some(width) => SizeConstraint::AtMost(width),
@@ -163,7 +171,6 @@ where
                 let cb = s.call_on_name(&id1, Self::submit).unwrap();
                 cb(s)
             })
-            .with_name(&edit_id)
             .resized(SizeConstraint::Full, SizeConstraint::Fixed(1))
             .resized(width_constraint, SizeConstraint::Fixed(1));
 
@@ -177,20 +184,10 @@ where
             cb(s)
         });
 
-        let mut inner = LinearLayout::horizontal();
-        if let Some(title) = title {
-            let mut v = TextView::new(title).no_wrap();
-            v.append(": ");
-            inner.add_child(v);
-        }
-        inner.add_child(edit);
-        inner.add_child(DummyView);
-        if let Some(label) = label {
-            inner.add_child(TextView::new(label).no_wrap());
-            inner.add_child(DummyView);
-        }
-        inner.add_child(decr);
-        inner.add_child(incr);
+        let title_view = TextView::new(title.map_or("".into(), |title| title.to_owned() + ": "));
+        let label_view = TextView::new(label.map_or("".into(), |label| label.to_owned() + " "));
+        let children = (title_view, edit, DummyView, label_view, decr, incr);
+        let inner = SpinViewInner::horizontal(children);
 
         let own_id = String::clone(id.as_ref());
 
@@ -198,7 +195,6 @@ where
             bounds,
             val,
             own_id,
-            edit_id,
             inner,
             on_modify: None,
         }
@@ -210,7 +206,7 @@ where
 
     pub fn set_val(&mut self, new_val: T) -> Callback {
         self.val = new_val;
-        let cb = self.call_on_edit_view(|v| v.set_content(new_val.to_string()));
+        let cb = self.get_edit_view_mut().set_content(new_val.to_string());
         if let Some(f) = self.on_modify.as_ref() {
             let f = f.clone();
             let val = self.val;
@@ -237,12 +233,20 @@ where
         self
     }
 
-    fn call_on_edit_view<F: FnOnce(&mut EditView) -> R, R>(&mut self, f: F) -> R {
-        self.inner.call_on_name(&self.edit_id, f).unwrap()
+    fn get_edit_view(&self) -> &EditView {
+        self.inner.get_children().1.get_inner().get_inner()
+    }
+
+    fn get_edit_view_mut(&mut self) -> &mut EditView {
+        self.inner
+            .get_children_mut()
+            .1
+            .get_inner_mut()
+            .get_inner_mut()
     }
 
     fn get_content(&mut self) -> Rc<String> {
-        self.call_on_edit_view(|v| v.get_content())
+        self.get_edit_view().get_content()
     }
 
     fn parse_content(&mut self, content: &str) {
@@ -279,7 +283,7 @@ impl<T: Spinnable, B: RangeBounds<T>> ViewWrapper for SpinView<T, B>
 where
     Self: 'static,
 {
-    cursive::wrap_impl!(self.inner: LinearLayout);
+    cursive::wrap_impl!(self.inner: SpinViewInner);
 
     fn wrap_on_event(&mut self, event: Event) -> EventResult {
         if self.inner.get_focus_index() == 0 {
