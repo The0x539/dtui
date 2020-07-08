@@ -225,28 +225,27 @@ fn selection_change_cb(
 }
 
 fn add_button_cb(table_data: Arc<RwLock<ConnectionTableData>>) -> impl Fn(&mut Cursive) {
-    let save_host = move |_: &mut _, host: config::Host| {
-        let id = Uuid::new_v4();
-
-        let mut data = table_data.write().unwrap();
-
-        data.connections.insert(id, Connection::new(&host));
-        data.rows.push(id);
-
-        let mut cfg = config::write();
-        cfg.connection_manager.hosts.insert(id, host);
-        cfg.save();
-    };
-
-    let dialog = EditHostView::default()
-        .into_dialog("Cancel", "Save", save_host)
-        .title("Add Host");
-
-    let f = Cell::new(Some(|siv: &mut Cursive| siv.add_layer(dialog)));
     move |siv: &mut Cursive| {
-        if let Some(f) = f.take() {
-            f(siv);
-        }
+        let table_data = table_data.clone();
+
+        let save_host = move |_: &mut _, host: config::Host| {
+            let id = Uuid::new_v4();
+
+            let mut data = table_data.write().unwrap();
+
+            data.connections.insert(id, Connection::new(&host));
+            data.rows.push(id);
+
+            let mut cfg = config::write();
+            cfg.connection_manager.hosts.insert(id, host);
+            cfg.save();
+        };
+
+        let dialog = EditHostView::default()
+            .into_dialog("Cancel", "Save", save_host)
+            .title("Add Host");
+
+        siv.add_layer(dialog)
     }
 }
 
@@ -260,7 +259,6 @@ fn edit_button_cb(
             .expect("No selection; edit button should be disabled");
 
         let conn = &table_data.read().unwrap().connections[&id];
-
         let view = EditHostView::new(&conn.address, conn.port, &conn.username, &conn.password);
         drop(conn);
 
@@ -278,25 +276,14 @@ fn edit_button_cb(
             cfg.save();
         };
 
-        let f = Cell::new(Some(save_host));
-
         let dialog = view
-            .into_dialog("Cancel", "Save", move |siv: &mut _, host| {
-                if let Some(f) = f.take() {
-                    f(siv, host);
-                }
-            })
+            .into_dialog("Cancel", "Save", save_host)
             .title("Edit Host");
 
         siv.add_layer(dialog);
     };
 
-    let f = Cell::new(Some(cb));
-    move |siv: &mut Cursive| {
-        if let Some(f) = f.take() {
-            f(siv);
-        }
-    }
+    cursive::immut1!(cb)
 }
 
 fn remove_button_cb(
@@ -310,8 +297,10 @@ fn remove_button_cb(
 
         let mut data = table_data.write().unwrap();
 
-        assert_eq!(data.current_host, Some(id));
-        data.current_host = None;
+        if data.current_host.contains(&id) {
+            data.current_host = None;
+        }
+
         data.connections
             .remove(&id)
             .expect("Tried to remove nonexistent connection");
@@ -365,8 +354,8 @@ impl ConnectionManagerView {
         drop(data);
         drop(cfg);
 
-        let add_button = add_button_cb(Arc::clone(&table_data));
-        let edit_button = edit_button_cb(Arc::clone(&table_data), Rc::clone(&selected_connection));
+        let add_button = add_button_cb(table_data.clone());
+        let edit_button = edit_button_cb(table_data.clone(), selected_connection.clone());
         let remove_button = remove_button_cb(table_data, selected_connection);
 
         let buttons = LinearLayout::horizontal()
