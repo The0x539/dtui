@@ -38,8 +38,20 @@ impl<T> EventualState<T> {
 pub struct Eventual<T>(RefCell<EventualState<T>>);
 
 impl<T> Eventual<T> {
-    pub fn new(rx: oneshot::Receiver<T>) -> Self {
-        Self(RefCell::new(EventualState::Pending(rx)))
+    pub fn new() -> (Self, oneshot::Sender<T>) {
+        let (tx, rx) = oneshot::channel();
+
+        let state = EventualState::Pending(rx);
+        let cell = RefCell::new(state);
+
+        (Self(cell), tx)
+    }
+
+    pub fn ready(val: T) -> Self {
+        let state = EventualState::Ready(val);
+        let cell = RefCell::new(state);
+
+        Self(cell)
     }
 
     pub fn is_ready(&self) -> bool {

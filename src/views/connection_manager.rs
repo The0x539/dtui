@@ -57,8 +57,8 @@ pub(crate) struct Connection {
 // TODO: helper EqByKey trait in util?
 impl Connection {
     fn new(host: &config::Host) -> Self {
-        let (ses_tx, ses_rx) = oneshot::channel::<Arc<Session>>();
-        let (ver_tx, ver_rx) = oneshot::channel::<String>();
+        let (session, ses_tx) = Eventual::new();
+        let (version, ver_tx) = Eventual::new();
         let fut = connect(host.address.clone(), host.port, ses_tx, ver_tx);
         task::spawn(fut);
 
@@ -67,19 +67,18 @@ impl Connection {
             port: host.port,
             username: host.username.clone(),
             password: host.password.clone(),
-            version: Eventual::new(ver_rx),
-            session: Eventual::new(ses_rx),
+            version,
+            session,
         }
     }
 
-    fn existing(host: &config::Host, session: Arc<Session>) -> Self {
-        let (mut ver_tx, ver_rx) = oneshot::channel();
-        let (ses_tx, ses_rx) = oneshot::channel();
-        ses_tx.send(session.clone()).unwrap();
+    fn existing(host: &config::Host, ses: Arc<Session>) -> Self {
+        let (version, mut ver_tx) = Eventual::new();
+        let session = Eventual::ready(ses.clone());
 
         let fut = async move {
             tokio::select! {
-                result = session.daemon_info() => match result {
+                result = ses.daemon_info() => match result {
                     Ok(ver) => ver_tx.send(ver).unwrap_or(()),
                     Err(_) => (),
                 },
@@ -93,8 +92,8 @@ impl Connection {
             port: host.port,
             username: host.username.clone(),
             password: host.password.clone(),
-            version: Eventual::new(ver_rx),
-            session: Eventual::new(ses_rx),
+            version,
+            session,
         }
     }
 
