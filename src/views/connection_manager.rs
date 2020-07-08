@@ -11,7 +11,7 @@ use super::{
 };
 use crate::config;
 use crate::form::Form;
-use crate::util::Eventual;
+use crate::util::eventual::Eventual;
 use crate::SessionHandle;
 
 use tokio::sync::oneshot;
