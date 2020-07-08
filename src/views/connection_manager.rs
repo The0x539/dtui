@@ -6,6 +6,7 @@ use std::sync::{Arc, RwLock};
 use super::{
     edit_host::EditHostView,
     labeled_checkbox::LabeledCheckbox,
+    static_linear_layout::StaticLinearLayout,
     table::{TableCallback, TableView, TableViewData},
 };
 use crate::config;
@@ -20,8 +21,8 @@ use deluge_rpc::Session;
 
 use cursive::{
     event::Callback,
-    view::{View, ViewWrapper},
-    views::{Button, DummyView, LinearLayout, Panel},
+    view::ViewWrapper,
+    views::{Button, DummyView, Panel},
     Cursive, Printer,
 };
 use uuid::Uuid;
@@ -184,8 +185,19 @@ impl TableViewData for ConnectionTableData {
     }
 }
 
+type ConnectionManagerButtons =
+    StaticLinearLayout<(Button, Button, Button, Button, DummyView, Button)>;
+
+type StartupOptions = StaticLinearLayout<(LabeledCheckbox, LabeledCheckbox)>;
+
+type ConnectionManagerLayout = StaticLinearLayout<(
+    TableView<ConnectionTableData>,
+    ConnectionManagerButtons,
+    Panel<StartupOptions>,
+)>;
+
 pub(crate) struct ConnectionManagerView {
-    inner: LinearLayout,
+    inner: ConnectionManagerLayout,
 }
 
 async fn connect(
@@ -358,59 +370,38 @@ impl ConnectionManagerView {
         let edit_button = edit_button_cb(table_data.clone(), selected_connection.clone());
         let remove_button = remove_button_cb(table_data, selected_connection);
 
-        let buttons = LinearLayout::horizontal()
-            .child(Button::new("Add", add_button))
-            .child(Button::new("Edit", edit_button))
-            .child(Button::new("Remove", remove_button))
-            .child(Button::new("Refresh", |_| ()))
-            .child(DummyView)
-            .child(Button::new("Stop Daemon", |_| ()));
+        let buttons = ConnectionManagerButtons::horizontal((
+            Button::new("Add", add_button),
+            Button::new("Edit", edit_button),
+            Button::new("Remove", remove_button),
+            Button::new("Refresh", |_| ()),
+            DummyView,
+            Button::new("Stop Daemon", |_| ()),
+        ));
 
         let startup_options = {
-            let auto_connect_checkbox =
-                LabeledCheckbox::new("Auto-connect to selected daemon").with_checked(auto_connect);
-
-            let hide_dialog_checkbox =
-                LabeledCheckbox::new("Hide this dialog").with_checked(hide_dialog);
-
-            let content = LinearLayout::vertical()
-                .child(auto_connect_checkbox)
-                .child(hide_dialog_checkbox);
+            let content = StartupOptions::vertical((
+                LabeledCheckbox::new("Auto-connect to selected daemon").with_checked(auto_connect),
+                LabeledCheckbox::new("Hide this dialog").with_checked(hide_dialog),
+            ));
 
             Panel::new(content).title("Startup Options")
         };
 
-        let inner = LinearLayout::vertical()
-            .child(table)
-            .child(buttons)
-            .child(startup_options);
+        let inner = ConnectionManagerLayout::vertical((table, buttons, startup_options));
         Self { inner }
     }
 }
 
 impl ViewWrapper for ConnectionManagerView {
-    cursive::wrap_impl!(self.inner: LinearLayout);
-}
-
-// Entirely as soon as tuple-based layouts are implemented
-fn remove_last<T: View>(view: &mut LinearLayout) -> Box<T> {
-    assert_ne!(view.len(), 0);
-    let child = view.remove_child(view.len() - 1).unwrap();
-
-    assert!(child.is::<T>());
-    child.downcast::<T>().ok().unwrap()
+    cursive::wrap_impl!(self.inner: ConnectionManagerLayout);
 }
 
 impl Form for ConnectionManagerView {
     type Data = Option<(Uuid, Arc<Session>, String, String)>;
 
     fn into_data(self) -> Self::Data {
-        let mut inner = self.inner;
-
-        remove_last::<Panel<LinearLayout>>(&mut inner); // startup options
-        remove_last::<LinearLayout>(&mut inner); // table buttons
-        let table = remove_last::<TableView<ConnectionTableData>>(&mut inner);
-
+        let table: TableView<ConnectionTableData> = self.inner.into_children().0;
         let data: Arc<RwLock<ConnectionTableData>> = table.get_data();
 
         // TODO: Save prefs BEFORE THIS POINT.
