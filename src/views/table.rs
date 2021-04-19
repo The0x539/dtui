@@ -230,7 +230,7 @@ where
 
         scroll::draw_lines(self, &printer.offset((0, 2)), |this, p, i| {
             if let Some(row) = data.rows().get(i) {
-                p.with_selection(this.selected.contains(row), |p| {
+                p.with_selection(this.selected == Some(*row), |p| {
                     data.draw_row(p, &this.columns, data.get_row_value(row))
                 });
             }
@@ -333,7 +333,7 @@ where
                         if let Some(&row) = data.rows().get(i) {
                             let mut res = EventResult::Consumed(None);
 
-                            let selection_changed = !self.selected.contains(&row);
+                            let selection_changed = self.selected != Some(row);
                             let double_clicked = self.double_click_primed && !selection_changed;
 
                             self.double_click_primed = !double_clicked;
@@ -369,7 +369,7 @@ where
                     let mut data = self.data.write().unwrap();
                     if let Some(&row) = data.rows().get(i) {
                         let mut res = EventResult::Consumed(None);
-                        if !self.selected.contains(&row) {
+                        if self.selected != Some(row) {
                             self.selected = Some(row);
                             res = Self::run_cb(
                                 res,

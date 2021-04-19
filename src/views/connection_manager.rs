@@ -163,7 +163,7 @@ impl TableViewData for ConnectionTableData {
         match column {
             Column::Status => {
                 // uuuuuuugh, the catch-22 of passing draw-cell a value vs an index
-                if self.get_current_host().contains(&connection) {
+                if self.get_current_host() == Some(connection) {
                     assert!(connection.session.get().is_some());
                     print("Connected");
                 } else if connection.session.get().is_some() {
@@ -309,7 +309,7 @@ fn remove_button_cb(
 
         let mut data = table_data.write().unwrap();
 
-        if data.current_host.contains(&id) {
+        if data.current_host == Some(id) {
             data.current_host = None;
         }
 
@@ -353,7 +353,7 @@ impl ConnectionManagerView {
         data.current_host = current_id;
 
         for (id, host) in &cmgr.hosts {
-            let conn = if current_id.contains(id) {
+            let conn = if current_id == Some(*id) {
                 let session = current_host.get_session().unwrap().clone();
                 Connection::existing(host, session)
             } else {
@@ -417,7 +417,7 @@ impl Form for ConnectionManagerView {
             .remove(&selected)
             .expect("No selection; the connection button ought to be disabled.");
 
-        if data.current_host.contains(&selected) {
+        if data.current_host == Some(selected) {
             assert!(connection.session.is_ready());
             None // Disconnect from current session
         } else if let Some(session) = connection.session.get() {

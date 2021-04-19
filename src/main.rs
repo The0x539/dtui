@@ -1,5 +1,4 @@
 #![feature(async_closure)]
-#![feature(option_result_contains)]
 #![feature(drain_filter)]
 #![feature(const_fn)]
 

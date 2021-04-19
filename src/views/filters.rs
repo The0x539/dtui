@@ -59,7 +59,7 @@ impl FiltersViewThread {
         /* TODO: "show zero hits" pref */
         {
             true
-        } else if self.filters_recv.borrow().get(&key).contains(&val) {
+        } else if self.filters_recv.borrow().get(&key) == Some(val) {
             true
         } else {
             false
