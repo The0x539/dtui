@@ -10,7 +10,7 @@ tokio = { version = "0.2", features = ["time", "dns"] }
 cursive = { path = "experiment/cursive/cursive", default-features = false, features = ["crossterm-backend"] }
 deluge-rpc = { git = "https://github.com/The0x539/rust-deluge-rpc.git", branch = "trunk" }
 bytesize = "1.0.1"
-cursive-tabs = { path = "experiment/cursive-tabs" }
+cursive-tabs = "0.5.0"
 cursive_buffered_backend = "0.4.0"
 futures = "*"
 fnv = "1.0.7"

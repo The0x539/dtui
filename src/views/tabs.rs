@@ -222,7 +222,7 @@ impl TorrentTabsView {
             .with_tab(Tab::Trackers, trackers_tab)
             //.with_bar_placement(cursive_tabs::Placement::VerticalLeft)
             .with_active_tab(active_tab)
-            .unwrap();
+            .unwrap_or_else(|x| x);
 
         Self {
             view,
@@ -243,7 +243,7 @@ impl ViewWrapper for TorrentTabsView {
     fn wrap_on_event(&mut self, event: Event) -> EventResult {
         let old_tab = self.active_tab;
         let result = self.view.on_event(event);
-        if let Some(new_tab) = self.view.active_tab() {
+        if let Some(new_tab) = self.view.active_tab().copied() {
             if new_tab != old_tab {
                 self.active_tab = new_tab;
                 self.active_tab_send.broadcast(new_tab).unwrap();
