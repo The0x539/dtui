@@ -2,7 +2,6 @@
 #![feature(bool_to_option)]
 #![feature(option_result_contains)]
 #![feature(drain_filter)]
-#![feature(trait_alias)]
 #![feature(const_fn)]
 
 use cursive::menu::MenuTree;

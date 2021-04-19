@@ -89,8 +89,14 @@ macro_rules! impl_table {
     };
 }
 
-pub(super) trait TableCallback<T: TableViewData> =
-    Fn(&mut T, &<T as TableViewData>::RowIndex, Vec2, Vec2) -> Callback + 'static;
+pub(super) trait TableCallback<T: TableViewData>:
+    Fn(&mut T, &T::RowIndex, Vec2, Vec2) -> Callback + 'static
+{
+}
+impl<T: TableViewData, F: Fn(&mut T, &T::RowIndex, Vec2, Vec2) -> Callback + 'static>
+    TableCallback<T> for F
+{
+}
 type BoxedTableCallback<T> = Box<dyn TableCallback<T>>;
 
 pub(crate) struct TableView<T: TableViewData> {
