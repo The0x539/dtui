@@ -1,6 +1,5 @@
 #![feature(async_closure)]
 #![feature(drain_filter)]
-#![feature(const_fn)]
 
 use cursive::menu::MenuTree;
 use cursive::traits::*;
