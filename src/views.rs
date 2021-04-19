@@ -1,5 +1,4 @@
 // traits
-pub(crate) mod scroll;
 pub(crate) mod thread;
 #[macro_use]
 pub(crate) mod table;

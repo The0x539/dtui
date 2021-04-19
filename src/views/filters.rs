@@ -11,7 +11,7 @@ use std::collections::BTreeMap;
 use std::sync::{Arc, RwLock};
 use tokio::sync::{watch, Notify};
 
-use super::scroll::ScrollInner;
+//use super::scroll::ScrollInner;
 
 use crate::util::digit_width;
 
@@ -252,9 +252,7 @@ impl FiltersView {
         }
         h
     }
-}
 
-impl ScrollInner for FiltersView {
     fn draw_row(&self, printer: &Printer, y: usize) {
         let categories = self.categories.read().unwrap();
 

@@ -19,8 +19,8 @@ mod util;
 
 mod views;
 use views::{
-    filters::FiltersView, scroll::ScrollInner, static_linear_layout::StaticLinearLayout,
-    statusbar::StatusBarView, tabs::TorrentTabsView, torrents::TorrentsView,
+    filters::FiltersView, static_linear_layout::StaticLinearLayout, statusbar::StatusBarView,
+    tabs::TorrentTabsView, torrents::TorrentsView,
 };
 
 mod config;
@@ -119,7 +119,7 @@ async fn main() -> deluge_rpc::Result<()> {
         filters_notify,
     )
     .with_name("filters")
-    .into_scroll_wrapper();
+    .scrollable();
 
     let status_bar = StatusBarView::new(session_recv.clone()).with_name("status");
 
