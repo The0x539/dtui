@@ -4,7 +4,7 @@ use std::sync::{Arc, RwLock};
 
 use cursive::direction::Direction;
 use cursive::event::{Callback, Event, EventResult, MouseButton, MouseEvent};
-use cursive::view::ScrollBase;
+use cursive::view::scroll;
 use cursive::Printer;
 use cursive::Vec2;
 use cursive::View;
@@ -96,7 +96,7 @@ type BoxedTableCallback<T> = Box<dyn TableCallback<T>>;
 pub(crate) struct TableView<T: TableViewData> {
     data: Arc<RwLock<T>>,
     columns: Vec<(T::Column, usize)>,
-    scrollbase: ScrollBase,
+    scroll_core: scroll::Core,
     selected: Option<T::RowIndex>,
     double_click_primed: bool,
     on_selection_change: Option<BoxedTableCallback<T>>,
@@ -109,7 +109,7 @@ impl<T: TableViewData> TableView<T> {
         Self {
             data: Arc::new(RwLock::new(T::default())),
             columns,
-            scrollbase: ScrollBase::default(),
+            scroll_core: scroll::Core::default(),
             selected: None,
             double_click_primed: false,
             on_selection_change: None,
@@ -177,6 +177,16 @@ impl<T: TableViewData> TableView<T> {
     }
 }
 
+impl<T: TableViewData> scroll::Scroller for TableView<T> {
+    fn get_scroller(&self) -> &scroll::Core {
+        &self.scroll_core
+    }
+
+    fn get_scroller_mut(&mut self) -> &mut scroll::Core {
+        &mut self.scroll_core
+    }
+}
+
 impl<T: TableViewData> View for TableView<T>
 where
     Self: 'static,
@@ -212,31 +222,47 @@ where
             x += 1;
         }
 
-        self.scrollbase.draw(&printer.offset((0, 2)), |p, i| {
+        scroll::draw_lines(self, &printer.offset((0, 2)), |this, p, i| {
             if let Some(row) = data.rows().get(i) {
-                p.with_selection(self.selected.contains(row), |p| {
-                    data.draw_row(p, &self.columns, data.get_row_value(row))
+                p.with_selection(this.selected.contains(row), |p| {
+                    data.draw_row(p, &this.columns, data.get_row_value(row))
                 });
             }
         });
     }
 
-    fn required_size(&mut self, req: Vec2) -> Vec2 {
-        req
+    fn required_size(&mut self, constraint: Vec2) -> Vec2 {
+        let data_constraint = constraint.saturating_sub((0, 2));
+        let data_requirement = scroll::required_size(
+            self,
+            data_constraint,
+            true, // TODO: figure out what's up with this
+            |this, constraint| (constraint.x, this.data.read().unwrap().rows().len()).into(),
+        );
+        let mut requirement = data_requirement + (0, 2);
+        // Take up all available vertical space.
+        // Flexbox is hard and this seems to work for what I need.
+        requirement.y = requirement.y.max(constraint.y);
+        requirement
     }
 
     fn layout(&mut self, size: Vec2) {
+        // Don't trust the scroll core to tell us how wide we are.
+        // The presence of a scroll bar shouldn't change column width,
+        // because it doesn't extend into the header.
+        // Other code might need to be changed accordingly,
+        // but if you have spare space in your last column, you're fine.
         let others_width = self.columns[1..].iter().map(|(_, w)| w + 1).sum::<usize>();
-
         self.columns[0].1 = size.x - others_width;
 
-        let sb = &mut self.scrollbase;
-
-        sb.view_height = size.y - 2;
-        sb.content_height = self.data.read().unwrap().rows().len();
-        sb.start_line = sb
-            .start_line
-            .min(sb.content_height.saturating_sub(sb.view_height));
+        let data_size = size.checked_sub((0, 2)).expect("bar");
+        scroll::layout(
+            self,
+            data_size,
+            true, // TODO: when do we need to relayout?
+            |_this, _size| (),
+            |this, constraint| (constraint.x, this.data.read().unwrap().rows().len()).into(),
+        );
     }
 
     fn take_focus(&mut self, _: Direction) -> bool {
@@ -268,11 +294,11 @@ where
                 event,
             } => match event {
                 MouseEvent::WheelUp => {
-                    self.scrollbase.scroll_up(1);
+                    self.scroll_core.scroll_up(1);
                     return EventResult::Consumed(None);
                 }
                 MouseEvent::WheelDown => {
-                    self.scrollbase.scroll_down(1);
+                    self.scroll_core.scroll_down(1);
                     return EventResult::Consumed(None);
                 }
                 MouseEvent::Press(MouseButton::Left) => {
@@ -286,15 +312,17 @@ where
 
                     pos.y = pos.y.saturating_sub(2);
 
-                    let self_width = self.width(); // c'mon, borrow checker
-                    let sb = &mut self.scrollbase;
+                    let core = &mut self.scroll_core;
 
-                    if sb.content_height > sb.view_height && sb.start_drag(pos, self_width) {
+                    if core.inner_size().y > core.last_outer_size().y
+                        //&& pos.x == self_width
+                        && core.start_drag(pos)
+                    {
                         return EventResult::Consumed(None);
                     }
 
-                    if pos.y < sb.view_height {
-                        let i = pos.y + sb.start_line;
+                    if pos.y < core.last_outer_size().y {
+                        let i = pos.y + core.content_viewport().top();
                         let mut data = self.data.write().unwrap();
                         if let Some(&row) = data.rows().get(i) {
                             let mut res = EventResult::Consumed(None);
@@ -331,7 +359,7 @@ where
                 }
                 MouseEvent::Press(MouseButton::Right) if position.y >= offset.y + 2 => {
                     let pos = position.saturating_sub(offset + (0, 2));
-                    let i = pos.y + self.scrollbase.start_line;
+                    let i = pos.y + self.scroll_core.content_viewport().top();
                     let mut data = self.data.write().unwrap();
                     if let Some(&row) = data.rows().get(i) {
                         let mut res = EventResult::Consumed(None);
@@ -358,19 +386,17 @@ where
                 }
                 MouseEvent::Hold(MouseButton::Left) if position.y >= offset.y + 2 => {
                     let pos = position.saturating_sub(offset + (0, 2));
-                    self.scrollbase.drag(pos);
+                    self.scroll_core.drag(pos);
                     self.double_click_primed = false;
                     return EventResult::Consumed(None);
                 }
                 MouseEvent::Release(MouseButton::Left) => {
-                    if self.scrollbase.is_dragging() {
-                        self.scrollbase.release_grab();
-                        self.double_click_primed = false;
-                    } else if position.y < offset.y + 2 {
+                    self.scroll_core.release_grab();
+                    if position.y < offset.y + 2 || position.x == self.width() {
                         self.double_click_primed = false;
                     } else {
                         let pos = position.saturating_sub(offset + (0, 2));
-                        let i = pos.y + self.scrollbase.start_line;
+                        let i = pos.y + self.scroll_core.content_viewport().top();
                         let data = self.data.read().unwrap();
                         self.double_click_primed &= self.selected.as_ref() == data.rows().get(i);
                     }
