@@ -8,6 +8,7 @@ use cursive::utils::Counter;
 use cursive::views::{DummyView, LinearLayout, ProgressBar, TextContent};
 use deluge_rpc::{InfoHash, Query, Session, TorrentState};
 use serde::Deserialize;
+use std::convert::TryInto;
 use tokio::sync::watch;
 
 #[derive(Debug, Clone, Deserialize, Query)]
@@ -82,7 +83,7 @@ impl ViewThread for StatusData {
             .join("\n"),
         );
 
-        let nonnegative = |n: i64| (n >= 0).then_some(n as u64);
+        let nonnegative = |n: i64| -> Option<u64> { n.try_into().ok() };
         let mut ryu_buf = ryu::Buffer::new();
 
         self.columns[1].set_content(

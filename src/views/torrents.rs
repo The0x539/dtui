@@ -286,7 +286,8 @@ impl TorrentsViewThread {
 
         let iter = torrents
             .iter()
-            .filter_map(|(hash, torrent)| torrent.matches_filters(&self.filters).then_some(*hash));
+            .filter(|(_hash, torrent)| torrent.matches_filters(&self.filters))
+            .map(|(hash, _torrent)| *hash);
 
         data.rows.clear();
         data.rows.extend(iter);
