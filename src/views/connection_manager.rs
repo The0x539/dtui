@@ -113,6 +113,7 @@ pub(crate) struct ConnectionTableData {
     rows: Vec<Uuid>,
     connections: FnvIndexMap<Uuid, Connection>,
     current_host: Option<Uuid>,
+    #[allow(dead_code)]
     autoconnect_host: Option<Uuid>,
 }
 

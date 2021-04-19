@@ -24,6 +24,7 @@ pub struct StaticLinearLayout<T> {
 struct ChildMetadata {
     required_size: Vec2,
     last_size: Vec2,
+    #[allow(dead_code)]
     weight: usize,
 }
 

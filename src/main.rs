@@ -3,7 +3,7 @@
 #![feature(option_result_contains)]
 #![feature(drain_filter)]
 #![feature(trait_alias)]
-#![feature(const_fn, const_if_match, const_loop)]
+#![feature(const_fn)]
 
 use cursive::menu::MenuTree;
 use cursive::traits::*;
