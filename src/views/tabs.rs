@@ -15,7 +15,7 @@ use tokio::task;
 use crate::{Selection, SessionHandle};
 
 fn column(rows: &[&str], h_align: HAlign) -> (LinearLayout, TextContent) {
-    let labels = TextView::new(rows.join("\n")).effect(cursive::theme::Effect::Bold);
+    let labels = TextView::new(rows.join("\n")).style(cursive::theme::Effect::Bold);
 
     let content = TextContent::new("");
     let values = TextView::new_with_content(content.clone()).h_align(h_align);
