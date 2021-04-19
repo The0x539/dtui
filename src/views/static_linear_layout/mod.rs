@@ -5,7 +5,7 @@ pub use view_tuple::ViewTuple;
 use cursive::{
     direction,
     event::{AnyCb, Event, EventResult, Key},
-    view::{Selector, SizeCache, View, ViewPath},
+    view::{Selector, SizeCache, View, ViewNotFound},
     Printer, Rect, Vec2, XY,
 };
 
@@ -318,7 +318,7 @@ impl<T: ViewTuple + 'static> View for StaticLinearLayout<T> {
             metadata[i].required_size = required_size;
             required_size
         });
-        let ideal = o.stack(ideal_sizes.iter());
+        let ideal = o.stack(ideal_sizes.iter().copied());
 
         if ideal.fits_in(req) {
             self.cache = Some(SizeCache::build(ideal, req));
@@ -333,7 +333,7 @@ impl<T: ViewTuple + 'static> View for StaticLinearLayout<T> {
             metadata[i].required_size = required_size;
             required_size
         });
-        let desperate = o.stack(min_sizes.iter());
+        let desperate = o.stack(min_sizes.iter().copied());
 
         if desperate.get(o) > req.get(o) {
             cap(
@@ -380,7 +380,7 @@ impl<T: ViewTuple + 'static> View for StaticLinearLayout<T> {
             metadata[i].required_size = size;
         }
 
-        let compromise = o.stack(metadata.iter().map(|c| &c.required_size));
+        let compromise = o.stack(metadata.iter().map(|c| c.required_size));
 
         self.cache = Some(SizeCache::build(compromise, req));
         self.child_metadata = metadata;
@@ -449,43 +449,18 @@ impl<T: ViewTuple + 'static> View for StaticLinearLayout<T> {
     }
 
     fn call_on_any<'a>(&mut self, selector: &Selector<'_>, callback: AnyCb<'a>) {
-        if let Selector::Path(ViewPath { ref path }) = selector {
-            if let Some(index) = path.first().copied() {
-                // TODO: should this perhaps be part of ViewTuple?
-                if index < self.len() {
-                    let new_path = ViewPath::from(&path[1..]);
-                    let new_selector = Selector::Path(&new_path);
-                    self.children.call_on_any(index, &new_selector, callback)
-                }
-            }
-        } else {
-            for i in 0..self.len() {
-                self.children.call_on_any(i, selector, callback)
-            }
+        for i in 0..self.len() {
+            self.children.call_on_any(i, selector, callback)
         }
     }
 
-    fn focus_view(&mut self, selector: &Selector<'_>) -> Result<(), ()> {
-        if let Selector::Path(ViewPath { ref path }) = selector {
-            if let Some(index) = path.first().copied() {
-                if index < self.len() {
-                    let new_path = ViewPath::from(&path[1..]);
-                    let new_selector = Selector::Path(&new_path);
-                    self.children.focus_view(index, &new_selector)
-                } else {
-                    Err(())
-                }
-            } else {
-                Err(())
+    fn focus_view(&mut self, selector: &Selector<'_>) -> Result<(), ViewNotFound> {
+        for i in 0..self.len() {
+            if self.children.focus_view(i, selector).is_ok() {
+                return Ok(());
             }
-        } else {
-            for i in 0..self.len() {
-                if self.children.focus_view(i, selector).is_ok() {
-                    return Ok(());
-                }
-            }
-            Err(())
         }
+        Err(ViewNotFound)
     }
 
     fn important_area(&self, _: Vec2) -> Rect {

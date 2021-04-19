@@ -137,12 +137,11 @@ async fn main() -> deluge_rpc::Result<()> {
 
     let main_ui = StaticLinearLayout::vertical((torrents_ui, torrent_tabs, status_bar));
 
+    /*
     let mut siv = cursive::Cursive::new(|| {
-        cursive::backends::crossterm::Backend::init()
-            .map(cursive_buffered_backend::BufferedBackend::new)
-            .map(Box::new)
-            .unwrap()
     });
+    */
+    let mut siv = cursive::Cursive::new();
     siv.set_fps(4);
     siv.set_autohide_menu(false);
     siv.set_theme(themes::dracula());
@@ -177,7 +176,12 @@ async fn main() -> deluge_rpc::Result<()> {
 
     siv.set_user_data(app_state);
 
-    siv.run();
+    siv.run_with(|| {
+        cursive::backends::crossterm::Backend::init()
+            .map(cursive_buffered_backend::BufferedBackend::new)
+            .map(Box::new)
+            .expect("Failed to initialize backend")
+    });
 
     Ok(())
 }

@@ -1,7 +1,7 @@
 use cursive::{
     direction::Direction,
     event::{AnyCb, Event, EventResult},
-    view::{Selector, View},
+    view::{Selector, View, ViewNotFound},
     Printer, Rect, Vec2,
 };
 
@@ -17,7 +17,7 @@ pub trait ViewTuple {
     fn required_size(&mut self, i: usize, constraint: Vec2) -> Vec2;
     fn on_event(&mut self, i: usize, event: Event) -> EventResult;
     fn call_on_any<'a>(&mut self, i: usize, selector: &Selector, callback: AnyCb<'a>);
-    fn focus_view(&mut self, i: usize, selector: &Selector) -> Result<(), ()>;
+    fn focus_view(&mut self, i: usize, selector: &Selector) -> Result<(), ViewNotFound>;
     fn take_focus(&mut self, i: usize, source: Direction) -> bool;
     fn important_area(&self, i: usize, view_size: Vec2) -> Rect;
 
@@ -100,7 +100,7 @@ macro_rules! tuple_impls {
                     }
                 }
 
-                fn focus_view(&mut self, i: usize, selector: &Selector) -> Result<(), ()> {
+                fn focus_view(&mut self, i: usize, selector: &Selector) -> Result<(), ViewNotFound> {
                     match i {
                         $($n => self.$n.focus_view(selector)),+,
                         _ => panic!("out of bounds"),

@@ -38,9 +38,37 @@ pub(crate) enum Tab {
     Trackers,
 }
 
+impl AsRef<str> for Tab {
+    fn as_ref(&self) -> &str {
+        match self {
+            Self::Status => "Status",
+            Self::Details => "Details",
+            Self::Options => "Options",
+            Self::Files => "Files",
+            Self::Peers => "Peers",
+            Self::Trackers => "Trackers",
+        }
+    }
+}
+
+impl std::str::FromStr for Tab {
+    type Err = ();
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(match s {
+            "Status" => Self::Status,
+            "Details" => Self::Details,
+            "Options" => Self::Options,
+            "Files" => Self::Files,
+            "Peers" => Self::Peers,
+            "Trackers" => Self::Trackers,
+            _ => return Err(()),
+        })
+    }
+}
+
 impl std::fmt::Display for Tab {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        std::fmt::Debug::fmt(self, f)
+        f.write_str(self.as_ref())
     }
 }
 
@@ -77,7 +105,7 @@ struct TorrentTabsViewThread {
 }
 
 pub(crate) struct TorrentTabsView {
-    view: TabPanel<Tab>,
+    view: TabPanel,
     active_tab: Tab,
     active_tab_send: watch::Sender<Tab>,
     // TODO: name all these Notify structs based on who's being notified
@@ -214,14 +242,14 @@ impl TorrentTabsView {
         task::spawn(thread_obj.run(session_recv));
 
         let view = TabPanel::new()
-            .with_tab(Tab::Status, status_tab)
-            .with_tab(Tab::Details, details_tab)
-            .with_tab(Tab::Options, options_tab.with_name("options tab"))
-            .with_tab(Tab::Files, files_tab)
-            .with_tab(Tab::Peers, peers_tab)
-            .with_tab(Tab::Trackers, trackers_tab)
+            .with_tab(status_tab.with_name("Status"))
+            .with_tab(details_tab.with_name("Details"))
+            .with_tab(options_tab.with_name("Options"))
+            .with_tab(files_tab.with_name("Files"))
+            .with_tab(peers_tab.with_name("Peers"))
+            .with_tab(trackers_tab.with_name("Trackers"))
             //.with_bar_placement(cursive_tabs::Placement::VerticalLeft)
-            .with_active_tab(active_tab)
+            .with_active_tab(active_tab.as_ref())
             .unwrap_or_else(|x| x);
 
         Self {
@@ -238,12 +266,13 @@ impl TorrentTabsView {
 use cursive::event::{Event, EventResult};
 
 impl ViewWrapper for TorrentTabsView {
-    cursive::wrap_impl!(self.view: TabPanel<Tab>);
+    cursive::wrap_impl!(self.view: TabPanel);
 
     fn wrap_on_event(&mut self, event: Event) -> EventResult {
         let old_tab = self.active_tab;
         let result = self.view.on_event(event);
-        if let Some(new_tab) = self.view.active_tab().copied() {
+        if let Some(new_tab) = self.view.active_tab() {
+            let new_tab: Tab = new_tab.parse().expect("bad tab name");
             if new_tab != old_tab {
                 self.active_tab = new_tab;
                 self.active_tab_send.broadcast(new_tab).unwrap();
@@ -260,7 +289,7 @@ impl ViewWrapper for TorrentTabsView {
                 task::block_in_place(|| self.pending_options.read().unwrap().clone())
             {
                 self.view
-                    .call_on_name("options tab", |view: &mut options::OptionsView| {
+                    .call_on_name("Options", |view: &mut options::OptionsView| {
                         view.second_column().2.set_enabled(opts.stop_at_ratio);
                         view.apply_button().get_inner_mut().enable();
                         view.move_completed_path().set_enabled(opts.move_completed);
@@ -277,7 +306,7 @@ impl ViewWrapper for TorrentTabsView {
                 // so we don't want these updates to be treated like user input.
 
                 self.view
-                    .call_on_name("options tab", |view: &mut options::OptionsView| {
+                    .call_on_name("Options", |view: &mut options::OptionsView| {
                         view.update(opts);
                     })
                     .unwrap();
