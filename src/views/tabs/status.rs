@@ -63,7 +63,7 @@ impl ViewThread for StatusData {
             status.state,
             util::fmt::percentage(status.progress),
         );
-        self.progress_label_send.broadcast(label).unwrap();
+        self.progress_label_send.send(label).unwrap();
 
         self.columns[0].set_content(
             [
@@ -113,7 +113,7 @@ impl ViewThread for StatusData {
 
     fn clear(&mut self) {
         self.progress_val.set(0);
-        self.progress_label_send.broadcast(String::new()).unwrap();
+        self.progress_label_send.send(String::new()).unwrap();
         self.columns.iter_mut().for_each(|c| c.set_content(""));
     }
 }

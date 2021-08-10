@@ -1,7 +1,6 @@
 use crate::SessionHandle;
 use async_trait::async_trait;
 use deluge_rpc::{Event, Session};
-use futures::FutureExt;
 use std::sync::Arc;
 use tokio::sync::{broadcast, watch, Notify};
 use tokio::time;
@@ -34,16 +33,13 @@ pub(crate) trait ViewThread: Send {
     where
         Self: Sized,
     {
-        let mut handle = session_recv
-            .recv()
-            .now_or_never()
-            .expect("Receiver must have a value ready.")
-            .expect("Receiver must not be closed.");
+        let mut handle = session_recv.borrow().clone();
 
         let mut events = broadcast::channel(1).1;
         let update_notifier = self.update_notifier();
 
         let mut should_reload = true;
+        let mut should_check = true;
 
         'main: loop {
             if should_reload {
@@ -71,32 +67,37 @@ pub(crate) trait ViewThread: Send {
                         event = events.recv() => event.unwrap(),
 
                         _ = update_notifier.notified() => break 'idle,
-                        _ = time::delay_until(tick) => break 'idle,
+                        _ = time::sleep_until(tick) => break 'idle,
 
-                        x = session_recv.recv() => match x {
-                            Some(new_handle) => {
-                                handle = new_handle;
+                        x = session_recv.changed() => match x {
+                            Ok(()) => {
+                                handle = session_recv.borrow().clone();
                                 should_reload = true;
                                 continue 'main;
+                            },
+                            Err(_) => {
+                                should_check = false;
+                                continue 'main;
                             }
-                            None => break 'main,
-                        }
+                        },
                     };
 
                     self.on_event(session, event).await?;
                 }
-            } else {
-                match session_recv.recv().await {
-                    Some(new_handle) => {
-                        handle = new_handle;
+            } else if should_check {
+                match session_recv.changed().await {
+                    Ok(()) => {
+                        handle = session_recv.borrow().clone();
                         should_reload = true;
-                        continue 'main;
                     }
-                    None => break 'main,
+                    Err(_) => should_check = false,
                 }
+            } else {
+                // There's no active session.
+                // The sending end of the channel we'd receive a new one on has been dropped.
+                // We're never going to get another session.
+                return Ok(());
             }
         }
-
-        Ok(())
     }
 }

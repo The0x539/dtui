@@ -6,7 +6,7 @@ edition = "2018"
 
 [dependencies]
 serde = "*"
-tokio = { version = "0.2", features = ["time", "dns"] }
+tokio = { version = "1.9.0", features = ["time", "net", "sync", "macros", "rt-multi-thread"] }
 cursive = { version = "0.16.0", default-features = false, features = ["crossterm-backend"] }
 deluge-rpc = { git = "https://github.com/The0x539/rust-deluge-rpc.git", branch = "trunk" }
 bytesize = "1.0.1"

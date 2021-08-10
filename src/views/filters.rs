@@ -127,7 +127,7 @@ impl ViewThread for FiltersViewThread {
     async fn on_event(&mut self, _: &Session, event: deluge_rpc::Event) -> deluge_rpc::Result<()> {
         use deluge_rpc::EventKind::*;
         if let TorrentAdded | TorrentRemoved | TorrentStateChanged = event.into() {
-            self.update_notifier.notify();
+            self.update_notifier.notify_one();
         }
         Ok(())
     }
@@ -222,10 +222,10 @@ impl FiltersView {
 
                 let new_dict = self.get_active_filters();
                 self.filters_send
-                    .broadcast(new_dict)
+                    .send(new_dict)
                     .expect("Couldn't send new view filters");
 
-                self.filters_notify.notify();
+                self.filters_notify.notify_one();
             }
             None => (),
         }

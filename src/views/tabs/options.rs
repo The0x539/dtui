@@ -59,7 +59,7 @@ impl OptionsData {
             opts.take().unwrap()
         });
 
-        self.current_options_send.broadcast(new_options).unwrap();
+        self.current_options_send.send(new_options).unwrap();
 
         let options = {
             let c = self.current_options_recv.borrow();
@@ -98,7 +98,7 @@ impl ViewThread for OptionsData {
             let hash = self.selection;
             let options = session.get_torrent_status::<OptionsQuery>(hash).await?;
             self.owner.set_content(&options.owner);
-            self.current_options_send.broadcast(options).unwrap();
+            self.current_options_send.send(options).unwrap();
         } else {
             let timeout = time::timeout_at(deadline, self.apply_notify.notified());
             if let Ok(()) = timeout.await {
@@ -115,7 +115,7 @@ impl ViewThread for OptionsData {
         let hash = self.selection;
         let options = session.get_torrent_status::<OptionsQuery>(hash).await?;
         self.owner.set_content(&options.owner);
-        self.current_options_send.broadcast(options).unwrap();
+        self.current_options_send.send(options).unwrap();
 
         Ok(())
     }
@@ -293,7 +293,7 @@ impl BuildableTabData for OptionsData {
             };
 
             let apply_notify = apply_notify.clone();
-            let apply = Button::new("Apply", move |_| apply_notify.notify());
+            let apply = Button::new("Apply", move |_| apply_notify.notify_one());
             let apply_panel = Panel::new(apply);
 
             SecondColumn::vertical((auto_managed, stop_at_ratio, ratio_limit_panel, apply_panel))

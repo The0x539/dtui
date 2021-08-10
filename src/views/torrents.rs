@@ -326,7 +326,7 @@ impl TorrentsViewThread {
         let mut selection = self.selection.write().unwrap();
         if *selection == Some(hash) {
             *selection = None;
-            self.selection_notify.notify();
+            self.selection_notify.notify_one();
         }
 
         let mut data = self.data.write().unwrap();
@@ -360,8 +360,9 @@ impl ViewThread for TorrentsViewThread {
     }
 
     async fn update(&mut self, session: &Session) -> deluge_rpc::Result<()> {
-        if let Some(new_filters) = self.filters_recv.recv().now_or_never() {
-            self.replace_filters(new_filters.unwrap());
+        if let Some(Ok(())) = self.filters_recv.changed().now_or_never() {
+            let new_filters = self.filters_recv.borrow().clone();
+            self.replace_filters(new_filters);
         }
 
         let delta = session.get_torrents_status_diff::<Torrent>(None).await?;
@@ -415,7 +416,7 @@ impl ViewThread for TorrentsViewThread {
         data.torrents.clear();
         data.rows.clear();
         self.selection.write().unwrap().take();
-        self.selection_notify.notify();
+        self.selection_notify.notify_one();
         self.missed_torrents.clear();
         self.filters.clear();
     }
@@ -440,7 +441,7 @@ impl TorrentsView {
         let mut inner = TableView::new(columns);
         inner.set_on_selection_change(move |_: &mut _, sel: &InfoHash, _, _| {
             selection_clone.write().unwrap().replace(*sel);
-            selection_notify_clone.notify();
+            selection_notify_clone.notify_one();
             cursive::event::Callback::dummy()
         });
         inner.set_on_right_click(|data: &mut TorrentsState, sel: &InfoHash, position, _| {

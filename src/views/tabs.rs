@@ -168,8 +168,8 @@ impl ViewThread for TorrentTabsViewThread {
             }
         }
 
-        if let Some(tab) = self.active_tab_recv.recv().now_or_never() {
-            self.active_tab = tab.unwrap();
+        if let Some(Ok(())) = self.active_tab_recv.changed().now_or_never() {
+            self.active_tab = self.active_tab_recv.borrow().clone();
             self.should_reload = true;
         }
 
@@ -275,8 +275,8 @@ impl ViewWrapper for TorrentTabsView {
             let new_tab: Tab = new_tab.parse().expect("bad tab name");
             if new_tab != old_tab {
                 self.active_tab = new_tab;
-                self.active_tab_send.broadcast(new_tab).unwrap();
-                self.thread_notifier.notify();
+                self.active_tab_send.send(new_tab).unwrap();
+                self.thread_notifier.notify_one();
             }
         }
 
@@ -297,8 +297,8 @@ impl ViewWrapper for TorrentTabsView {
                     .unwrap();
 
                 return;
-            } else if let Some(opts) = self.current_options_recv.recv().now_or_never() {
-                let opts = opts.unwrap();
+            } else if let Some(Ok(())) = self.current_options_recv.changed().now_or_never() {
+                let opts = self.current_options_recv.borrow().clone();
 
                 // Intentionally ignoring the callbacks returned here.
                 // In this case, those callbacks will update the pending options.

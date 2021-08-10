@@ -62,7 +62,7 @@ impl AppState {
 
     fn replace(&mut self, val: SessionHandle) {
         self.val = val;
-        self.tx.broadcast(self.val.clone()).unwrap();
+        self.tx.send(self.val.clone()).unwrap();
     }
 }
 
@@ -84,7 +84,7 @@ async fn main() -> deluge_rpc::Result<()> {
             assert!(auth_level >= AuthLevel::Normal);
 
             let handle = SessionHandle::new(id, Arc::new(ses));
-            session_send.broadcast(handle).unwrap();
+            session_send.send(handle).unwrap();
         }
     }
 
