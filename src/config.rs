@@ -45,13 +45,13 @@ impl Config {
         // Mutation isn't required, but exclusive access makes sense.
         // Moreover, if you didn't already have a mutable ref to the config,
         // then you can't possibly have any changes to save anyway.
-        confy::store(APP_NAME, None, self).unwrap()
+        confy::store(APP_NAME, Some(APP_NAME), self).unwrap()
     }
 }
 
 lazy_static! {
     static ref CONFIG: Arc<RwLock<Config>> = {
-        let cfg: Config = confy::load(APP_NAME, None).unwrap();
+        let cfg: Config = confy::load(APP_NAME, Some(APP_NAME)).unwrap();
         let cmgr = &cfg.connection_manager;
         if let Some(id) = cmgr.autoconnect {
             assert!(cmgr.hosts.contains_key(&id));
