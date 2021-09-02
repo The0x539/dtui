@@ -11,8 +11,10 @@ use std::cmp::Ordering;
 use std::net::SocketAddr;
 use std::sync::{Arc, RwLock};
 
+// deluge, for some reason, returns an integer with a masked flag, not a single bit or a boolean.
+// this traces back to what libtorrent gives deluge, but still makes no sense.
 fn stupid_bool<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<bool, D::Error> {
-    u8::deserialize(deserializer).map(|v| v != 0)
+    u32::deserialize(deserializer).map(|v| v != 0)
 }
 
 #[derive(Debug, Clone, Deserialize, PartialEq)]
