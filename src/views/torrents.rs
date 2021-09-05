@@ -118,6 +118,8 @@ impl TableViewData for TorrentsState {
         descending_sort = self.descending_sort;
     }
 
+    const SHOULD_GROW_TO_FIT: bool = true;
+
     fn get_row_value<'a>(&'a self, index: &'a InfoHash) -> &'a Torrent {
         &self.torrents[index]
     }

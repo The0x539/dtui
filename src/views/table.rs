@@ -15,6 +15,8 @@ pub(crate) trait TableViewData: Default {
     type RowValue;
     type Rows: DerefMut<Target = [Self::RowIndex]> + Default;
 
+    const SHOULD_GROW_TO_FIT: bool = false;
+
     fn sort_column(&self) -> Self::Column;
     fn set_sort_column(&mut self, val: Self::Column);
 
@@ -246,9 +248,16 @@ where
             |this, constraint| (constraint.x, this.data.read().unwrap().rows().len()).into(),
         );
         let mut requirement = data_requirement + (0, 2);
-        // Take up all available vertical space.
-        // Flexbox is hard and this seems to work for what I need.
-        requirement.y = requirement.y.max(constraint.y);
+
+        if T::SHOULD_GROW_TO_FIT {
+            // Take up all available vertical space.
+            // Flexbox is hard and this seems to work for what I need.
+            //
+            // BUG: If a tab is tall enough (easy to achieve for the Files and Peers tabs),
+            // then the pane at the bottom will somehow crowd out the status bar.
+            // TODO: Find to find a way to fix this.
+            requirement.y = requirement.y.max(constraint.y);
+        };
         requirement
     }
 
