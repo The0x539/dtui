@@ -282,6 +282,30 @@ pub fn torrent_context_menu(hash: InfoHash, name: &str, position: Vec2) -> Callb
     let cb = move |siv: &mut Cursive| {
         let name = name.take().unwrap();
 
+        let label_menu = {
+            use crate::views::filters::FILTER_CATEGORIES;
+            use deluge_rpc::FilterKey;
+            let categories = FILTER_CATEGORIES.read().unwrap();
+
+            let mut menu = MenuTree::new();
+            if let Some(filter_cat) = categories.get(&FilterKey::Label) {
+                for (label, _) in &filter_cat.filters {
+                    let owned_label = label.to_owned();
+                    let cb = move |siv: &mut Cursive| {
+                        siv.with_session_blocking(|ses| ses.set_torrent_label(hash, &owned_label))
+                            .unwrap()
+                    };
+
+                    let display_label = if label.is_empty() { "No Label" } else { label };
+                    menu.add_leaf(display_label, cb);
+                }
+            }
+            if menu.is_empty() {
+                menu.add_delimiter();
+            }
+            menu
+        };
+
         let menu_tree = MenuTree::new()
             .leaf("Pause", wsbuf!(:pause_torrent, hash))
             .leaf("Resume", wsbuf!(:resume_torrent, hash))
@@ -299,7 +323,7 @@ pub fn torrent_context_menu(hash: InfoHash, name: &str, position: Vec2) -> Callb
             .delimiter()
             .leaf("Force Re-check", wsbuf!(:force_recheck, &[hash]))
             .leaf("Move Download Folder", |_| todo!())
-            .subtree("Label", MenuTree::new().delimiter());
+            .subtree("Label", label_menu);
 
         let menu_popup = MenuPopup::new(Rc::new(menu_tree));
 

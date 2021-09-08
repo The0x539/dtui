@@ -7,6 +7,7 @@ use cursive::vec::Vec2;
 use cursive::Printer;
 use deluge_rpc::{FilterDict, FilterKey, Session};
 use fnv::FnvHashMap;
+use once_cell::sync::Lazy;
 use std::collections::BTreeMap;
 use std::sync::{Arc, RwLock};
 use tokio::sync::{watch, Notify};
@@ -16,12 +17,12 @@ use tokio::sync::{watch, Notify};
 use crate::util::digit_width;
 
 #[derive(Debug)]
-struct Category {
-    filters: Vec<(String, u64)>,
-    collapsed: bool,
+pub(crate) struct Category {
+    pub filters: Vec<(String, u64)>,
+    pub collapsed: bool,
 }
 
-type Categories = BTreeMap<FilterKey, Category>;
+pub(crate) type Categories = BTreeMap<FilterKey, Category>;
 
 enum Row {
     Parent(FilterKey),
@@ -31,19 +32,24 @@ enum Row {
 pub(crate) struct FiltersView {
     // TODO: figure out how to remove filters that vanish.
     active_filters: FilterDict,
-    categories: Arc<RwLock<Categories>>,
+    categories: &'static RwLock<Categories>,
     filters_send: watch::Sender<FilterDict>,
     filters_notify: Arc<Notify>,
 }
 
+pub(crate) static FILTER_CATEGORIES: Lazy<RwLock<Categories>> = Lazy::new(Default::default);
+
 struct FiltersViewThread {
-    categories: Arc<RwLock<Categories>>,
+    categories: &'static RwLock<Categories>,
     filters_recv: watch::Receiver<FilterDict>,
     update_notifier: Arc<Notify>,
 }
 
 impl FiltersViewThread {
-    fn new(categories: Arc<RwLock<Categories>>, filters_recv: watch::Receiver<FilterDict>) -> Self {
+    fn new(
+        categories: &'static RwLock<Categories>,
+        filters_recv: watch::Receiver<FilterDict>,
+    ) -> Self {
         let update_notifier = Arc::new(Notify::new());
         Self {
             categories,
@@ -148,8 +154,8 @@ impl FiltersView {
         filters_recv: watch::Receiver<FilterDict>,
         filters_notify: Arc<Notify>,
     ) -> Self {
-        let categories = Arc::new(RwLock::new(Categories::new()));
-        let thread_obj = FiltersViewThread::new(categories.clone(), filters_recv);
+        let categories = &*FILTER_CATEGORIES;
+        let thread_obj = FiltersViewThread::new(categories, filters_recv);
         tokio::spawn(thread_obj.run(session_recv));
         Self {
             active_filters: FilterDict::default(),

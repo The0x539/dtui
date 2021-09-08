@@ -344,7 +344,7 @@ dependencies = [
 [[package]]
 name = "deluge-rpc"
 version = "0.8.0"
-source = "git+https://github.com/The0x539/rust-deluge-rpc.git?branch=trunk#594fcb376bf24a19a24f5828f5dab7337fa1c1ce"
+source = "git+https://github.com/The0x539/rust-deluge-rpc.git?branch=trunk#5a2d9cfe375e77f23ebe717aa81a78841098dea4"
 dependencies = [
  "cloudflare-zlib",
  "deluge-rpc-macro",
@@ -353,14 +353,14 @@ dependencies = [
  "futures",
  "hashers",
  "hex",
- "lazy-regex",
- "lazy_static",
  "num_enum",
+ "once_cell",
  "regex",
  "rencode",
  "ron",
  "rustls",
  "serde",
+ "thiserror",
  "tokio",
  "tokio-rustls",
 ]
@@ -430,6 +430,7 @@ dependencies = [
  "indexmap",
  "itertools",
  "lazy_static",
+ "once_cell",
  "pretty_dtoa",
  "ryu",
  "serde",
@@ -688,15 +689,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "lazy-regex"
-version = "0.1.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "40809bc26ac1dcd2983527fcc0b05fd22629e44022e9ca596637166a22782238"
-dependencies = [
- "lazy_static",
-]
-
-[[package]]
 name = "lazy_static"
 version = "1.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -888,9 +880,9 @@ dependencies = [
 
 [[package]]
 name = "once_cell"
-version = "1.7.2"
+version = "1.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "af8b08b04175473088b46763e51ee54da5f9a164bc162f615b91bc179dbf15a3"
+checksum = "692fcb63b64b1758029e0a96ee63e049ce8c5948587f2f7208df04625e5f6b56"
 
 [[package]]
 name = "owning_ref"
@@ -1273,6 +1265,26 @@ dependencies = [
  "proc-macro2",
  "quote",
  "unicode-xid",
+]
+
+[[package]]
+name = "thiserror"
+version = "1.0.29"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "602eca064b2d83369e2b2f34b09c70b605402801927c65c11071ac911d299b88"
+dependencies = [
+ "thiserror-impl",
+]
+
+[[package]]
+name = "thiserror-impl"
+version = "1.0.29"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bad553cc2c78e8de258400763a647e80e6d1b31ee237275d756f6836d204494c"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
 ]
 
 [[package]]
