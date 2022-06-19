@@ -6,25 +6,25 @@ edition = "2018"
 
 [dependencies]
 serde = "*"
-tokio = { version = "1.9.0", features = ["time", "net", "sync", "macros", "rt-multi-thread"] }
+tokio = { version = "1.19.2", features = ["time", "net", "sync", "macros", "rt-multi-thread"] }
 cursive = { version = "0.16.0", default-features = false, features = ["crossterm-backend"] }
 deluge-rpc = { git = "https://github.com/The0x539/rust-deluge-rpc.git", branch = "trunk" }
-bytesize = "1.0.1"
+bytesize = "1.1.0"
 cursive-tabs = "0.6.0"
 cursive_buffered_backend = "0.5.0"
 futures = "*"
 fnv = "1.0.7"
-ryu = "1.0.4"
-async-trait = "0.1.31"
+ryu = "1.0.10"
+async-trait = "0.1.56"
 epochs = "0.2.4"
 static_assertions = "1.1.0"
-uuid = { version = "0.8.1", features = ["v4", "serde"] }
-itertools = "0.9.0"
-indexmap = { version = "1.4.0", features = ["serde-1"] }
+uuid = { version = "1.1.2", features = ["v4", "serde"] }
+itertools = "0.10.3"
+indexmap = { version = "1.9.0", features = ["serde-1"] }
 confy = { git = "https://github.com/rust-cli/confy.git", default_features = false, features = ["yaml_conf"] }
 lazy_static = "1.4.0"
-pretty_dtoa = "0.1.0"
-once_cell = "1.8.0"
+pretty_dtoa = "0.3.0"
+once_cell = "1.12.0"
 
 [patch.crates-io]
 deluge-rpc-macro = { git = "https://github.com/The0x539/deluge-macro.git", branch = "trunk" }
