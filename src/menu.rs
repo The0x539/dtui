@@ -1,5 +1,5 @@
 use cursive::event::Callback;
-use cursive::menu::MenuTree;
+use cursive::menu::Tree;
 use cursive::traits::*;
 use cursive::views::{MenuPopup, TextArea};
 use cursive::Cursive;
@@ -213,7 +213,7 @@ pub fn files_tab_file_menu(
     let old_name = Rc::from(old_name);
     let cb = move |siv: &mut Cursive| {
         let old_name = Rc::clone(&old_name);
-        let menu_tree = MenuTree::new()
+        let menu_tree = Tree::new()
             .leaf("Rename", move |siv| {
                 rename_file_dialog(siv, hash, index, &old_name)
             })
@@ -249,7 +249,7 @@ pub(crate) fn files_tab_folder_menu(
     let mut name = Some(Rc::from(name));
     let cb = move |siv: &mut Cursive| {
         let name = name.take().unwrap();
-        let menu_tree = MenuTree::new()
+        let menu_tree = Tree::new()
             .leaf("Rename", move |siv| {
                 rename_folder_dialog(siv, hash, Rc::clone(&name))
             })
@@ -287,7 +287,7 @@ pub fn torrent_context_menu(hash: InfoHash, name: &str, position: Vec2) -> Callb
             use deluge_rpc::FilterKey;
             let categories = FILTER_CATEGORIES.read().unwrap();
 
-            let mut menu = MenuTree::new();
+            let mut menu = Tree::new();
             if let Some(filter_cat) = categories.get(&FilterKey::Label) {
                 for (label, _) in &filter_cat.filters {
                     let owned_label = label.to_owned();
@@ -306,13 +306,13 @@ pub fn torrent_context_menu(hash: InfoHash, name: &str, position: Vec2) -> Callb
             menu
         };
 
-        let menu_tree = MenuTree::new()
+        let menu_tree = Tree::new()
             .leaf("Pause", wsbuf!(:pause_torrent, hash))
             .leaf("Resume", wsbuf!(:resume_torrent, hash))
             .delimiter()
-            .subtree("Options", MenuTree::new().delimiter())
+            .subtree("Options", Tree::new().delimiter())
             .delimiter()
-            .subtree("Queue", MenuTree::new().delimiter())
+            .subtree("Queue", Tree::new().delimiter())
             .delimiter()
             .leaf("Update Tracker", wsbuf!(:force_reannounce, &[hash]))
             .leaf("Edit Trackers", |_| todo!())

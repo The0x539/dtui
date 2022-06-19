@@ -1,7 +1,7 @@
 #![feature(async_closure)]
 #![feature(drain_filter)]
 
-use cursive::menu::MenuTree;
+use cursive::menu::Tree;
 use cursive::traits::*;
 use cursive::views::Panel;
 use cursive::Cursive;
@@ -153,7 +153,7 @@ async fn main() -> deluge_rpc::Result<()> {
     siv.menubar()
         .add_subtree(
             "File",
-            MenuTree::new()
+            Tree::new()
                 .leaf("Add torrent", menu::add_torrent_dialog)
                 .leaf("Create torrent", |_| ())
                 .delimiter()
@@ -163,7 +163,7 @@ async fn main() -> deluge_rpc::Result<()> {
         )
         .add_subtree(
             "Edit",
-            MenuTree::new()
+            Tree::new()
                 .leaf("Preferences", |_| ())
                 .leaf("Connection Manager", menu::show_connection_manager),
         );

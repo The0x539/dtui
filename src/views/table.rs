@@ -4,7 +4,7 @@ use std::sync::{Arc, RwLock};
 
 use cursive::direction::Direction;
 use cursive::event::{Callback, Event, EventResult, MouseButton, MouseEvent};
-use cursive::view::scroll;
+use cursive::view::{scroll, CannotFocus};
 use cursive::Printer;
 use cursive::Vec2;
 use cursive::View;
@@ -280,8 +280,8 @@ where
         );
     }
 
-    fn take_focus(&mut self, _: Direction) -> bool {
-        true
+    fn take_focus(&mut self, _: Direction) -> Result<EventResult, CannotFocus> {
+        Ok(EventResult::Consumed(None))
     }
 
     fn on_event(&mut self, event: Event) -> EventResult {

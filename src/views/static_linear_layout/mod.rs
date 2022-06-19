@@ -5,7 +5,7 @@ pub use view_tuple::ViewTuple;
 use cursive::{
     direction,
     event::{AnyCb, Event, EventResult, Key},
-    view::{Selector, SizeCache, View, ViewNotFound},
+    view::{CannotFocus, Selector, SizeCache, View, ViewNotFound},
     Printer, Rect, Vec2, XY,
 };
 
@@ -123,10 +123,11 @@ impl<T: ViewTuple> StaticLinearLayout<T> {
     pub fn set_focus_index(&mut self, index: usize) -> Result<(), ()> {
         if index >= self.len() {
             Err(())
-        } else if self
+        } else if let Ok(_) = self
             .children
             .take_focus(index, direction::Direction::none())
         {
+            // TODO: am I supposed to do something with that callback?
             self.focus = index;
             Ok(())
         } else {
@@ -206,9 +207,9 @@ impl<T: ViewTuple> StaticLinearLayout<T> {
                     break EventResult::Ignored;
                 }
                 focus -= 1;
-                if self.children.take_focus(focus, source) {
+                if let Ok(x) = self.children.take_focus(focus, source) {
                     self.focus = focus;
-                    break EventResult::Consumed(None);
+                    break x;
                 }
             },
             Some(direction::Relative::Front) => loop {
@@ -216,9 +217,9 @@ impl<T: ViewTuple> StaticLinearLayout<T> {
                 if focus == self.len() {
                     break EventResult::Ignored;
                 }
-                if self.children.take_focus(focus, source) {
+                if let Ok(x) = self.children.take_focus(focus, source) {
                     self.focus = focus;
-                    break EventResult::Consumed(None);
+                    break x;
                 }
             },
             None => EventResult::Ignored,
@@ -251,10 +252,11 @@ impl<T: ViewTuple> StaticLinearLayout<T> {
             ) {
                 let child_size = item.child.last_size.get(self.orientation);
                 if item.offset + child_size > position {
-                    if self
+                    if let Ok(_) = self
                         .children
                         .take_focus(item.index, direction::Direction::none())
                     {
+                        // TODO: use callback?
                         self.focus = item.index;
                     }
                     break;
@@ -388,16 +390,16 @@ impl<T: ViewTuple + 'static> View for StaticLinearLayout<T> {
         compromise
     }
 
-    fn take_focus(&mut self, source: direction::Direction) -> bool {
+    fn take_focus(&mut self, source: direction::Direction) -> Result<EventResult, CannotFocus> {
         if source.relative(self.orientation).is_some() {
-            self.move_focus(source).is_consumed()
+            Ok(self.move_focus(source))
         } else {
             for i in 0..self.len() {
-                if self.children.take_focus(i, source) {
-                    return true;
+                if let Ok(x) = self.children.take_focus(i, source) {
+                    return Ok(x);
                 }
             }
-            return false;
+            Err(CannotFocus)
         }
     }
 
@@ -454,10 +456,10 @@ impl<T: ViewTuple + 'static> View for StaticLinearLayout<T> {
         }
     }
 
-    fn focus_view(&mut self, selector: &Selector<'_>) -> Result<(), ViewNotFound> {
+    fn focus_view(&mut self, selector: &Selector<'_>) -> Result<EventResult, ViewNotFound> {
         for i in 0..self.len() {
-            if self.children.focus_view(i, selector).is_ok() {
-                return Ok(());
+            if let Ok(x) = self.children.focus_view(i, selector) {
+                return Ok(x);
             }
         }
         Err(ViewNotFound)
@@ -465,7 +467,7 @@ impl<T: ViewTuple + 'static> View for StaticLinearLayout<T> {
 
     fn important_area(&self, _: Vec2) -> Rect {
         if self.len() == 0 {
-            return Rect::from((0, 0));
+            return Rect::from_point((0, 0));
         }
 
         let item = ChildRefIter::new(

@@ -1,7 +1,7 @@
 use cursive::{
     direction::Direction,
     event::{AnyCb, Event, EventResult},
-    view::{Selector, View, ViewNotFound},
+    view::{CannotFocus, Selector, View, ViewNotFound},
     Printer, Rect, Vec2,
 };
 
@@ -17,8 +17,8 @@ pub trait ViewTuple {
     fn required_size(&mut self, i: usize, constraint: Vec2) -> Vec2;
     fn on_event(&mut self, i: usize, event: Event) -> EventResult;
     fn call_on_any<'a>(&mut self, i: usize, selector: &Selector, callback: AnyCb<'a>);
-    fn focus_view(&mut self, i: usize, selector: &Selector) -> Result<(), ViewNotFound>;
-    fn take_focus(&mut self, i: usize, source: Direction) -> bool;
+    fn focus_view(&mut self, i: usize, selector: &Selector) -> Result<EventResult, ViewNotFound>;
+    fn take_focus(&mut self, i: usize, source: Direction) -> Result<EventResult, CannotFocus>;
     fn important_area(&self, i: usize, view_size: Vec2) -> Rect;
 
     fn with_each<F: FnMut(&Self, usize) -> T, T>(&self, mut f: F) -> Vec<T> {
@@ -100,14 +100,14 @@ macro_rules! tuple_impls {
                     }
                 }
 
-                fn focus_view(&mut self, i: usize, selector: &Selector) -> Result<(), ViewNotFound> {
+                fn focus_view(&mut self, i: usize, selector: &Selector) -> Result<EventResult, ViewNotFound> {
                     match i {
                         $($n => self.$n.focus_view(selector)),+,
                         _ => panic!("out of bounds"),
                     }
                 }
 
-                fn take_focus(&mut self, i: usize, source: Direction) -> bool {
+                fn take_focus(&mut self, i: usize, source: Direction) -> Result<EventResult, CannotFocus> {
                     match i {
                         $($n => self.$n.take_focus(source)),+,
                         _ => panic!("out of bounds"),

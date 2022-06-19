@@ -7,11 +7,11 @@ edition = "2018"
 [dependencies]
 serde = "*"
 tokio = { version = "1.19.2", features = ["time", "net", "sync", "macros", "rt-multi-thread"] }
-cursive = { version = "0.16.0", default-features = false, features = ["crossterm-backend"] }
+cursive = { version = "0.17.0", default-features = false, features = ["crossterm-backend"] }
 deluge-rpc = { git = "https://github.com/The0x539/rust-deluge-rpc.git", branch = "trunk" }
 bytesize = "1.1.0"
-cursive-tabs = "0.6.0"
-cursive_buffered_backend = "0.5.0"
+cursive-tabs = "0.7.0"
+cursive_buffered_backend = "0.6.0"
 futures = "*"
 fnv = "1.0.7"
 ryu = "1.0.10"

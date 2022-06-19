@@ -4,6 +4,7 @@ use async_trait::async_trait;
 use cursive::event::{Event, EventResult, MouseButton, MouseEvent};
 use cursive::traits::*;
 use cursive::vec::Vec2;
+use cursive::view::CannotFocus;
 use cursive::Printer;
 use deluge_rpc::{FilterDict, FilterKey, Session};
 use fnv::FnvHashMap;
@@ -314,8 +315,8 @@ impl View for FiltersView {
             .into()
     }
 
-    fn take_focus(&mut self, _: cursive::direction::Direction) -> bool {
-        true
+    fn take_focus(&mut self, _: cursive::direction::Direction) -> Result<EventResult, CannotFocus> {
+        Ok(EventResult::Consumed(None))
     }
 
     fn on_event(&mut self, event: Event) -> EventResult {
